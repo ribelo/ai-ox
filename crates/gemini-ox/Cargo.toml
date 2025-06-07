@@ -1,0 +1,89 @@
+[package]
+name = "gemini-ox"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+# Default features include the procedural macros
+default = []
+leaky-bucket = ["dep:leaky-bucket"]
+# Feature to enable the procedural macros (like #[toolbox])
+# macros = ["dep:gemini-ox-macros"]
+# Feature to enable audio input using cpal
+audio = ["dep:cpal"]
+# Feature to enable video input using nokhwa and image processing
+video = ["dep:nokhwa", "dep:image"]
+
+[dependencies]
+# Use workspace dependencies where possible
+futures-util = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+leaky-bucket = { workspace = true, optional = true }
+bytes = { workspace = true }
+mime_guess = { workspace = true }
+mime = { workspace = true }
+strum = { workspace = true }
+bon = { workspace = true }
+derive_more = { workspace = true }
+base64 = { workspace = true }
+async-stream = { workspace = true }
+tokio-tungstenite = { workspace = true }
+tungstenite = { workspace = true }
+rustls = { workspace = true }
+url = { workspace = true }
+http = { workspace = true }
+anyhow = { workspace = true }
+
+# Optional dependencies for audio and video features
+cpal = { workspace = true, optional = true }
+nokhwa = { workspace = true, optional = true }
+image = { workspace = true, optional = true }
+
+# Macros crate dependency - optional, enabled by the 'macros' feature
+# gemini-ox-macros = { path = "../gemini-ox-macros", version = "0.1.0", optional = true }
+
+
+[dev-dependencies]
+# Use workspace tokio
+tokio = { workspace = true }
+cpal = { workspace = true }
+ringbuf = { workspace = true }
+clap = { workspace = true }
+
+# [lints.clippy]
+# all = { level = "warn", priority = -2 }
+# # restriction
+# dbg_macro = "warn"
+# todo = "warn"
+# unimplemented = "warn"
+# # I like the explicitness of this rule as it removes confusion around `clone`.
+# # This increases readability, avoids `clone` mindlessly and heap allocating on accident.
+# clone_on_ref_ptr = "warn"
+# # These two are mutually exclusive, I like `mod.rs` files for better fuzzy searches on module entries.
+# self_named_module_files = "warn"         # "-Wclippy::mod_module_files"
+# empty_drop = "warn"
+# empty_structs_with_brackets = "warn"
+# exit = "warn"
+# filetype_is_file = "warn"
+# get_unwrap = "warn"
+# impl_trait_in_params = "allow"
+# rc_buffer = "warn"
+# rc_mutex = "warn"
+# rest_pat_in_fully_bound_structs = "warn"
+# unnecessary_safety_comment = "warn"
+# undocumented_unsafe_blocks = "warn"
+# # I want to write the best Rust code so pedantic is enabled.
+# # We should only disable rules globally if they are either false positives, chaotic, or does not make sense.
+# pedantic = { level = "warn", priority = -1 }
+# # Allowed rules
+# # pedantic
+# # Strict naming conventions improve searchability and API clarity
+# module_name_repetitions = "warn"
+# # nursery
+# ignored_unit_patterns = "allow"
+# wildcard_imports = "allow"

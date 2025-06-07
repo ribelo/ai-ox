@@ -1,0 +1,13 @@
+# Rust
+/target/
+Cargo.lock
+
+# Benchmarks
+criterion/
+
+# Todo and notes
+todo/
+
+# AI
+.rules
+CLAUDE.md

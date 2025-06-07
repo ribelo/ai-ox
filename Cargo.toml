@@ -1,0 +1,49 @@
+[workspace]
+members = ["crates/gemini-ox"]
+
+resolver = "2"
+
+# Define shared workspace dependencies
+[workspace.dependencies]
+futures-util = "0.3.31"
+schemars = "1.0.0-alpha.20"
+leaky-bucket = { version = "1.1" }
+mime = "0.3.17"
+strum = { version = "0.27", features = ["derive"] }
+bon = "3.6.0"
+derive_more = { version = "2.0", features = [
+    "deref",
+    "deref_mut",
+    "display",
+    "into_iterator",
+] }
+base64 = "0.22"
+rustls = { version = "0.23", features = ["ring"] }
+url = "2.5"
+http = "1.3"
+image = { version = "0.25" }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+reqwest = { version = "0.12", default-features = false, features = [
+    "http2",
+    "charset",
+    "json",
+    "rustls-tls",
+    "stream",
+    "multipart",
+] }
+bytes = "1.10"
+mime_guess = "2.0"
+async-stream = "0.3.6"
+tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
+tungstenite = "0.26.2"
+anyhow = "1.0"
+cpal = "0.15"
+nokhwa = { version = "0.10.7", features = ["input-native"] }
+ringbuf = "0.3"
+tokio = { version = "1.45.1", features = ["rt", "macros", "sync", "io-std"] }
+clap = { version = "4.5.39", features = ["derive"] }
+
+[workspace.dev-dependencies]
+tokio = { version = "1.45.1", features = ["full"] }
