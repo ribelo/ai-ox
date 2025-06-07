@@ -130,6 +130,17 @@ impl Content {
             role: Role::User,
         }
     }
+
+    /// Creates a `Content` with `Role::User` containing a single `Blob` part.
+    /// This is useful for live API media content like audio or video data.
+    #[must_use]
+    pub fn blob(mime_type: impl Into<String>, data: impl Into<String>) -> Self {
+        let blob = Blob::new(mime_type, data);
+        Self {
+            parts: vec![Part::new(blob)],
+            role: Role::User,
+        }
+    }
 }
 
 impl<S: content_builder::State> ContentBuilder<S> {
@@ -309,28 +320,9 @@ impl From<Content> for Vec<Content> {
 /// 2. Within each Content item, adjacent Text parts are merged
 /// 3. Empty Content items are skipped
 ///
-/// # Examples
-///
-/// ```
-/// use gemini_ox::generate_content::content::{Content, Role, combine_content_list}; // Added imports (Removed Part)
-///
-/// // Combining content with different roles preserves the separate roles
-/// let user_content = Content::new(Role::User, vec!["Hello"]);
-/// let model_content = Content::new(Role::Model, vec!["Hi there"]);
-/// let result = combine_content_list(vec![user_content, model_content]);
-/// assert_eq!(result.len(), 2);
-/// assert_eq!(result[0].role, Role::User);
-/// assert_eq!(result[1].role, Role::Model);
-///
-/// // Combining two text parts with the same role merges the text within one Content
-/// let content1 = Content::text("Hello");
-/// let content2 = Content::text(" world");
-/// let result = combine_content_list(vec![content1, content2]);
-/// assert_eq!(result.len(), 1);
-/// assert_eq!(result[0].parts.len(), 1);
-/// assert_eq!(result[0].parts[0].as_text().unwrap().to_string(), "Hello world");
-/// ```
-pub fn combine_content_list(content_list: impl IntoIterator<Item = Content>) -> Vec<Content> {
+pub(crate) fn combine_content_list(
+    content_list: impl IntoIterator<Item = Content>,
+) -> Vec<Content> {
     let mut result: Vec<Content> = Vec::new();
     let mut current_parts: Vec<Part> = Vec::new();
     let mut current_role: Option<Role> = None;

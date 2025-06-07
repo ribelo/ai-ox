@@ -6,7 +6,8 @@ use crate::{
     tool::{Tool, config::ToolConfig},
 };
 
-use super::{GenerationConfig, SafetySettings, content::Content};
+use super::{GenerationConfig, SafetySettings};
+use crate::content::Content;
 
 #[derive(Debug, Serialize, Builder)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +26,8 @@ pub struct GenerateContentRequest {
     system_instruction: Option<Content>,
     #[serde(skip_serializing_if = "Option::is_none")]
     generation_config: Option<GenerationConfig>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cached_content: Option<String>,
     #[serde(skip)]
     pub(crate) gemini: Gemini,
 }

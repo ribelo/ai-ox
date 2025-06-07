@@ -1,4 +1,4 @@
-use crate::generate_content::content::Content;
+use crate::content::{Blob, Content};
 use crate::generate_content::{GenerationConfig, SafetySettings};
 use crate::tool::Tool;
 use serde::{Deserialize, Serialize};
@@ -67,7 +67,7 @@ pub struct PrebuiltVoiceConfig {
 #[serde(rename_all = "camelCase")]
 pub struct RealtimeInputConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub media_chunks: Option<Vec<MediaChunk>>,
+    pub media_chunks: Option<Vec<Blob>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub automatic_activity_detection: Option<AutomaticActivityDetection>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -118,15 +118,6 @@ pub enum TurnCoverage {
     PerActivity,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaChunk {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mime_type: Option<String>,
-
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<String>, // Base64 encoded data
-}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

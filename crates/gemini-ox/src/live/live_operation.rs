@@ -23,7 +23,7 @@ pub struct LiveOperation {
     pub model: Model,
 
     #[builder(into)]
-    pub system_instruction: Option<crate::generate_content::content::Content>,
+    pub system_instruction: Option<crate::content::Content>,
 
     pub generation_config: Option<crate::generate_content::GenerationConfig>,
 
@@ -53,7 +53,7 @@ impl LiveOperation {
     /// ```rust,no_run
     /// use gemini_ox::{Gemini, Model};
     /// use gemini_ox::live::message_types::{ClientContentPayload, ClientMessage};
-    /// use gemini_ox::generate_content::content::{Content, Role};
+    /// use gemini_ox::content::{Content, Role};
     ///
     /// #[tokio::main(flavor = "current_thread")]
     /// async fn main() -> Result<(), Box<dyn std::error::Error>> {

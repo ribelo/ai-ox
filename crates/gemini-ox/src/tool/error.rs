@@ -1,6 +1,6 @@
 //! Error types for tool usage and invocation.
 
-use crate::generate_content::content::Content; // Assuming this path
+use crate::content::Content;
 use serde::{Deserialize, Serialize}; // Add Deserialize import
 use thiserror::Error;
 

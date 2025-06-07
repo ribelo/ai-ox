@@ -2,12 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::tool::{ToolBox, error::FunctionCallError};
 
-use super::{
-    PromptFeedback, ResponseCandidate,
-    content::{Content, Role},
-    part::{FunctionCall, Part},
-    usage::UsageMetadata,
-};
+use super::{PromptFeedback, ResponseCandidate, usage::UsageMetadata};
+use crate::content::{Content, FunctionCall, Part, Role};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

@@ -1,6 +1,6 @@
 #![cfg(feature = "video")]
 
-use crate::live::message_types::MediaChunk;
+use crate::content::{mime_types, Blob};
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use image::{DynamicImage, ImageBuffer, ImageOutputFormat, Rgb};
@@ -11,7 +11,6 @@ use std::io::Cursor;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, interval};
 
-const MIME_TYPE_JPEG: &str = "image/jpeg";
 const TARGET_FPS: u32 = 1; // Capture 1 frame per second, as per Python example
 const JPEG_QUALITY: u8 = 80;
 
@@ -22,12 +21,12 @@ pub struct VideoCapturer {
 
 impl VideoCapturer {
     /// Start capturing video from the specified camera
-    /// Returns a receiver that yields MediaChunk objects containing base64-encoded JPEG images
+    /// Returns a receiver that yields Blob objects containing base64-encoded JPEG images
     pub fn start_capturing(
         index: CameraIndex,
         width: u32,
         height: u32,
-    ) -> Result<(Self, mpsc::Receiver<MediaChunk>)> {
+    ) -> Result<(Self, mpsc::Receiver<Blob>)> {
         let (tx, rx) = mpsc::channel(5); // Buffer a few frames
 
         tokio::spawn(async move {
@@ -42,7 +41,7 @@ impl VideoCapturer {
     }
 
     async fn capture_task(
-        tx: mpsc::Sender<MediaChunk>,
+        tx: mpsc::Sender<Blob>,
         index: CameraIndex,
         width: u32,
         height: u32,
@@ -78,10 +77,7 @@ impl VideoCapturer {
                             {
                                 let image_bytes = buffer.into_inner();
                                 let b64_encoded_data = BASE64_STANDARD.encode(&image_bytes);
-                                let chunk = MediaChunk {
-                                    mime_type: Some(MIME_TYPE_JPEG.to_string()),
-                                    data: Some(b64_encoded_data),
-                                };
+                                let chunk = Blob::new(mime_types::IMAGE_JPEG, b64_encoded_data);
 
                                 if tx.send(chunk).await.is_err() {
                                     eprintln!("Video frame send failed, channel closed.");
@@ -125,7 +121,7 @@ impl VideoCapturer {
     }
 
     /// Start capturing with default settings (camera 0, 640x480)
-    pub fn start_capturing_default() -> Result<(Self, mpsc::Receiver<MediaChunk>)> {
+    pub fn start_capturing_default() -> Result<(Self, mpsc::Receiver<Blob>)> {
         Self::start_capturing(CameraIndex::Index(0), 640, 480)
     }
 }
@@ -143,13 +139,10 @@ mod tests {
         // Try to capture one frame
         let timeout = tokio::time::timeout(Duration::from_secs(5), async {
             if let Some(chunk) = rx.recv().await {
-                assert!(chunk.mime_type.is_some());
-                assert!(chunk.data.is_some());
-                assert_eq!(chunk.mime_type.as_ref().unwrap(), MIME_TYPE_JPEG);
+                assert_eq!(chunk.mime_type, mime_types::IMAGE_JPEG);
 
                 // Verify base64 data can be decoded
-                let data = chunk.data.unwrap();
-                let decoded = BASE64_STANDARD.decode(data)?;
+                let decoded = BASE64_STANDARD.decode(&chunk.data)?;
                 assert!(!decoded.is_empty());
 
                 // Basic JPEG header check (starts with FF D8)

@@ -1,10 +1,16 @@
 // pub mod agent;
+pub mod cache;
+pub mod content;
 // pub mod files;
 pub mod embedding;
 pub mod generate_content;
 pub mod live;
+pub mod model;
 pub mod tokens;
 pub mod tool;
+
+// Re-export types from modules
+pub use crate::model::response::{ListModelsResponse, Model as ApiModel};
 
 // Re-export the procedural macro from gemini-ox-macros if the 'macros' feature is enabled.
 // #[cfg(feature = "macros")]
@@ -220,6 +226,11 @@ impl Gemini {
         crate::live::live_operation::live_operation_builder::SetGemini,
     > {
         crate::live::LiveOperation::builder().gemini(self.clone())
+    }
+
+    /// Returns a handler for caching operations.
+    pub fn caches(&self) -> crate::cache::Caches {
+        crate::cache::Caches::new(self.clone())
     }
 }
 

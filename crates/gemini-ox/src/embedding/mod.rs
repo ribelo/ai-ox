@@ -20,7 +20,7 @@
 //! ## Quick Start
 //!
 //! ```rust,no_run
-//! use gemini_ox::{Gemini, Model, generate_content::Content};
+//! use gemini_ox::{Gemini, Model, content::Content};
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -46,7 +46,7 @@
 //! Task types optimize embeddings for specific use cases:
 //!
 //! ```rust,no_run
-//! use gemini_ox::{Gemini, Model, generate_content::Content, embedding::TaskType};
+//! use gemini_ox::{Gemini, Model, content::Content, embedding::TaskType};
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -81,7 +81,7 @@
 //! Reduce embedding size for storage efficiency:
 //!
 //! ```rust,no_run
-//! use gemini_ox::{Gemini, Model, generate_content::Content};
+//! use gemini_ox::{Gemini, Model, content::Content};
 //!
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -179,7 +179,7 @@ impl EmbedContentRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Gemini, Model, generate_content::content::Content};
+    use crate::{Gemini, Model, content::Content};
 
     #[tokio::test]
     #[ignore = "Requires GOOGLE_AI_API_KEY environment variable and makes actual API calls"]

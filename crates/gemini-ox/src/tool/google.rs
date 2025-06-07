@@ -2,19 +2,19 @@ use serde::{Deserialize, Serialize};
 
 use super::Tool;
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct GoogleSearchRetrieval {
     pub dynamic_retrieval_config: DynamicRetrievalConfig,
 }
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq)]
 pub struct DynamicRetrievalConfig {
     pub mode: Mode,
     pub dynamic_threshold: Option<f64>,
 }
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum Mode {
     /// Always trigger retrieval.
@@ -32,7 +32,7 @@ impl From<GoogleSearchRetrieval> for Tool {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GoogleSearch {}
 
 impl From<GoogleSearch> for Tool {

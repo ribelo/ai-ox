@@ -8,8 +8,8 @@
 // use serde::{Deserialize, Serialize};
 // use serde_json::Value;
 
-// use crate::generate_content::content::{self, Content};
-// use crate::generate_content::part::FunctionCall;
+// use crate::content::{self, Content};
+// use crate::content::FunctionCall;
 // use crate::generate_content::response::GenerateContentResponse;
 // use crate::generate_content::usage::UsageMetadata;
 // use crate::tool::config::ToolConfig;

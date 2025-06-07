@@ -2,9 +2,8 @@ use std::pin::Pin;
 
 use async_stream::try_stream;
 use bon::Builder;
-use content::{Content, Role};
 use futures_util::{Stream, StreamExt};
-use part::Part;
+use crate::content::{Content, Part, Role};
 use request::GenerateContentRequest;
 use response::GenerateContentResponse;
 use serde::{Deserialize, Serialize};
@@ -12,8 +11,6 @@ use serde_json::Value;
 
 use crate::{BASE_URL, GeminiRequestError, parse_error_response};
 
-pub mod content;
-pub mod part;
 pub mod request;
 pub mod response;
 pub mod usage;
@@ -57,16 +54,6 @@ impl GenerateContentRequest {
 
         // Read the response body once
         let body_bytes = res.bytes().await?;
-        // Try to pretty-print the response body as JSON, falling back to raw debug format if not valid JSON
-        if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(&body_bytes) {
-            println!(
-                "Response body: {}",
-                serde_json::to_string_pretty(&json_value)
-                    .unwrap_or_else(|_| format!("{:?}", body_bytes))
-            );
-        } else {
-            println!("Response body: {:?}", body_bytes);
-        }
 
         match status.as_u16() {
             // Success responses
@@ -1088,7 +1075,6 @@ pub struct GenerationConfig {
 //                           ).expect("Failed to create simulated response"));
 //                       }
 //                   }
-
 
 //                 // Check if we've achieved the success condition by checking the atomic flags
 //                 if finish_tool_called_handle.load(Ordering::Relaxed)

@@ -1,7 +1,22 @@
 use bon::Builder;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::path::PathBuf;
+use tokio::fs::File;
 
 use crate::{BASE_URL, Gemini, GeminiRequestError};
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FileInfo {
+    pub file: FileData,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct FileData {
+    pub uri: String,
+    #[serde(rename = "displayName")]
+    pub display_name: String,
+}
 
 #[derive(Debug, Clone, Builder)]
 pub struct FileUploadRequest {
@@ -14,8 +29,17 @@ pub struct FileUploadRequest {
     gemini: Gemini,
 }
 
+#[derive(Debug, Clone, Builder)]
+pub struct FileStreamUploadRequest {
+    #[builder(into)]
+    file_path: PathBuf,
+    #[builder(into)]
+    mime_type: String,
+    gemini: Gemini,
+}
+
 impl FileUploadRequest {
-    pub async fn send(&self) -> Result<String, GeminiRequestError> {
+    pub async fn send(self) -> Result<String, GeminiRequestError> {
         let num_bytes = self.data.len();
 
         let init_url = format!(
@@ -58,28 +82,95 @@ impl FileUploadRequest {
             .header("Content-Length", num_bytes.to_string())
             .header("X-Goog-Upload-Offset", "0")
             .header("X-Goog-Upload-Command", "upload, finalize")
-            .body(self.data.to_vec())
+            .body(self.data)
             .send()
             .await?;
 
-        let file_info: serde_json::Value = upload_response.json().await?;
-        let file_uri = file_info["file"]["uri"]
-            .as_str()
+        let file_info: FileInfo = upload_response.json().await?;
+        Ok(file_info.file.uri)
+    }
+}
+
+impl FileStreamUploadRequest {
+    pub async fn send(self) -> Result<String, GeminiRequestError> {
+        let file = File::open(&self.file_path).await
+            .map_err(|e| GeminiRequestError::InvalidRequestError {
+                code: None,
+                details: json!({}),
+                message: format!("Failed to open file: {}", e),
+                status: None,
+            })?;
+
+        let metadata = file.metadata().await
+            .map_err(|e| GeminiRequestError::InvalidRequestError {
+                code: None,
+                details: json!({}),
+                message: format!("Failed to read file metadata: {}", e),
+                status: None,
+            })?;
+
+        let num_bytes = metadata.len();
+        let file_name = self.file_path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unnamed_file");
+
+        let init_url = format!(
+            "{}/upload/{}/files?key={}",
+            BASE_URL, self.gemini.api_version, self.gemini.api_key
+        );
+
+        let init_response = self
+            .gemini
+            .client
+            .post(&init_url)
+            .header("X-Goog-Upload-Protocol", "resumable")
+            .header("X-Goog-Upload-Command", "start")
+            .header("X-Goog-Upload-Header-Content-Length", num_bytes.to_string())
+            .header("X-Goog-Upload-Header-Content-Type", &self.mime_type)
+            .json(&json!({
+                "file": {
+                    "display_name": file_name
+                }
+            }))
+            .send()
+            .await?;
+
+        let upload_url = init_response
+            .headers()
+            .get("X-Goog-Upload-URL")
+            .and_then(|h| h.to_str().ok())
             .ok_or_else(|| GeminiRequestError::InvalidRequestError {
                 code: None,
                 details: json!({}),
-                message: "Missing file URI in response".to_string(),
+                message: "Missing upload URL in response".to_string(),
                 status: None,
             })?
             .to_string();
 
-        Ok(file_uri)
+        let upload_response = self
+            .gemini
+            .client
+            .post(&upload_url)
+            .header("Content-Length", num_bytes.to_string())
+            .header("X-Goog-Upload-Offset", "0")
+            .header("X-Goog-Upload-Command", "upload, finalize")
+            .body(reqwest::Body::from(file))
+            .send()
+            .await?;
+
+        let file_info: FileInfo = upload_response.json().await?;
+        Ok(file_info.file.uri)
     }
 }
 
 impl Gemini {
     pub fn upload_file(&self) -> FileUploadRequestBuilder<file_upload_request_builder::SetGemini> {
         FileUploadRequest::builder().gemini(self.clone())
+    }
+
+    pub fn upload_file_stream(&self) -> FileStreamUploadRequestBuilder<file_stream_upload_request_builder::SetGemini> {
+        FileStreamUploadRequest::builder().gemini(self.clone())
     }
 }
 

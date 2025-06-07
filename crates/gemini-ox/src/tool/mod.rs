@@ -6,7 +6,7 @@ pub mod google;
 // #[cfg(test)]
 // mod macros_integration_test;
 
-use crate::generate_content::part::{FunctionCall, FunctionResponse};
+use crate::content::{FunctionCall, FunctionResponse};
 use crate::tool::error::FunctionCallError;
 
 use futures_util::future::BoxFuture;
@@ -19,7 +19,7 @@ use std::fmt::Debug;
 
 // Re-export commonly used types
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct FunctionMetadata {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -27,7 +27,7 @@ pub struct FunctionMetadata {
     pub parameters: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum Tool {
     FunctionDeclarations(Vec<FunctionMetadata>),

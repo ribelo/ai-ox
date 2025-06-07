@@ -24,10 +24,8 @@
 //! ```
 
 use clap::Parser;
-use gemini_ox::generate_content::{
-    GenerationConfig,
-    content::{Content, Role},
-};
+use gemini_ox::generate_content::GenerationConfig;
+use gemini_ox::content::{Content, Role};
 use gemini_ox::live::{
     ActiveLiveSession, LiveApiResponseChunk, message_types::ClientContentPayload,
 };
@@ -208,7 +206,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Setup audio communication channel
     let (audio_tx, mut audio_rx) =
-        tokio::sync::mpsc::unbounded_channel::<gemini_ox::live::message_types::MediaChunk>();
+        tokio::sync::mpsc::unbounded_channel::<gemini_ox::content::Blob>();
 
     // Setup speech activity detection channel
     let (speech_activity_tx, mut speech_activity_rx) =
@@ -243,7 +241,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                 if verbose {
                     if chunk_count == 1 {
-                        let data_len = audio_chunk.data.as_ref().map_or(0, |d| d.len());
+                        let data_len = audio_chunk.data.len();
                         println!(
                             "🎤 DEBUG: First audio chunk - mime_type={:?}, data_len={}",
                             audio_chunk.mime_type, data_len
@@ -256,8 +254,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
 
                 // Check audio level and detect speech activity
-                if let Some(data) = &audio_chunk.data {
-                    if let Ok(decoded) =
+                let data = &audio_chunk.data;
+                if let Ok(decoded) =
                         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
                     {
                         // Calculate RMS level to see if there's actually audio
@@ -374,8 +372,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         if args.verbose {
                             println!("🎯 DEBUG: Ending turn - speech finished");
                         }
-                        let content = gemini_ox::generate_content::content::Content::new(
-                            gemini_ox::generate_content::content::Role::User,
+                        let content = Content::new(
+                            Role::User,
                             vec![""]
                         );
                         let payload = gemini_ox::live::message_types::ClientContentPayload {
@@ -398,7 +396,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     last_audio_time = std::time::Instant::now();
 
                     // Check if it's audio or video chunk based on mime type
-                    if chunk.mime_type.as_deref() == Some("audio/pcm;rate=16000") {
+                    if chunk.mime_type == "audio/pcm;rate=16000" {
                         #[cfg(feature = "audio")]
                         {
                             if let Err(e) = send_audio_chunk(&mut session, chunk, args.verbose).await {
@@ -407,7 +405,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                                 println!("🔍 DEBUG: Sent {} audio chunks so far", audio_chunk_count);
                             }
                         }
-                    } else if chunk.mime_type.as_deref() == Some("image/jpeg") {
+                    } else if chunk.mime_type == "image/jpeg" {
                         #[cfg(feature = "video")]
                         {
                             if let Err(e) = send_video_chunk(&mut session, chunk).await {
@@ -519,7 +517,7 @@ async fn send_text_message(
 #[cfg(feature = "audio")]
 async fn send_audio_chunk(
     session: &mut ActiveLiveSession,
-    chunk: gemini_ox::live::message_types::MediaChunk,
+    chunk: gemini_ox::content::Blob,
     verbose: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use gemini_ox::live::message_types::RealtimeInputPayload;
@@ -540,7 +538,7 @@ async fn send_audio_chunk(
 #[cfg(feature = "video")]
 async fn send_video_chunk(
     session: &mut ActiveLiveSession,
-    chunk: gemini_ox::live::message_types::MediaChunk,
+    chunk: gemini_ox::content::Blob,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use gemini_ox::live::message_types::RealtimeInputPayload;
 
@@ -591,24 +589,23 @@ async fn handle_response_chunk(
                                 "🤖 DEBUG: Inline data part {} - mime_type: {:?}, data length: {}",
                                 i,
                                 inline_data.mime_type,
-                                inline_data.data.as_ref().map_or(0, |d| d.len())
+                                inline_data.data.len()
                             );
                         }
 
-                        if inline_data.mime_type.as_deref() == Some("audio/pcm;rate=24000") {
-                            if let Some(audio_data) = &inline_data.data {
-                                if let Some(output) = audio_output {
-                                    play_audio_data(output, audio_data)?;
+                        if inline_data.mime_type == "audio/pcm;rate=24000" {
+                            let audio_data = &inline_data.data;
+                            if let Some(output) = audio_output {
+                                play_audio_data(output, audio_data)?;
 
-                                    if verbose {
-                                        println!(
-                                            "🔊 DEBUG: Audio chunk queued (length: {})",
-                                            audio_data.len()
-                                        );
-                                    }
-                                } else if verbose {
-                                    println!("⚠️  DEBUG: Audio output not available");
+                                if verbose {
+                                    println!(
+                                        "🔊 DEBUG: Audio chunk queued (length: {})",
+                                        audio_data.len()
+                                    );
                                 }
+                            } else if verbose {
+                                println!("⚠️  DEBUG: Audio output not available");
                             }
                         }
                     }

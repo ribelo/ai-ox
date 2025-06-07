@@ -35,7 +35,7 @@ impl ActiveLiveSession {
     ///
     /// ```rust,no_run
     /// use gemini_ox::live::message_types::{ClientContentPayload};
-    /// use gemini_ox::generate_content::content::{Content, Role};
+    /// use gemini_ox::content::{Content, Role};
     ///
     /// # async fn example(session: &mut gemini_ox::live::ActiveLiveSession) -> Result<(), gemini_ox::GeminiRequestError> {
     /// let content = Content::new(Role::User, vec!["Hello!"]);
@@ -78,13 +78,11 @@ impl ActiveLiveSession {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use gemini_ox::live::message_types::{RealtimeInputPayload, MediaChunk};
+    /// use gemini_ox::live::message_types::RealtimeInputPayload;
+    /// use gemini_ox::content::Blob;
     ///
     /// # async fn example(session: &mut gemini_ox::live::ActiveLiveSession) -> Result<(), gemini_ox::GeminiRequestError> {
-    /// let audio_chunk = MediaChunk {
-    ///     mime_type: Some("audio/pcm".to_string()),
-    ///     data: Some("base64_encoded_audio_data".to_string()),
-    /// };
+    /// let audio_chunk = Blob::new("audio/pcm", "base64_encoded_audio_data");
     /// let payload = RealtimeInputPayload {
     ///     media_chunks: Some(vec![audio_chunk]),
     /// };
@@ -124,7 +122,7 @@ impl ActiveLiveSession {
     ///
     /// ```rust,no_run
     /// use gemini_ox::live::message_types::ToolResponsePayload;
-    /// use gemini_ox::generate_content::part::FunctionResponse;
+    /// use gemini_ox::content::FunctionResponse;
     ///
     /// # async fn example(session: &mut gemini_ox::live::ActiveLiveSession) -> Result<(), gemini_ox::GeminiRequestError> {
     /// let response = FunctionResponse::new("calculator", 42);
@@ -354,7 +352,7 @@ impl ActiveLiveSession {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generate_content::content::{Content, Role};
+    use crate::content::{Content, Role};
     use serde_json;
 
     #[test]

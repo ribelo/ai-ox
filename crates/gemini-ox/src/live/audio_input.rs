@@ -1,6 +1,6 @@
 #![cfg(feature = "audio")]
 
-use crate::live::message_types::MediaChunk;
+use crate::content::{mime_types, Blob};
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -10,7 +10,6 @@ use tokio::sync::mpsc;
 const TARGET_SAMPLE_RATE: u32 = 16000;
 const TARGET_CHANNELS: u16 = 1;
 const TARGET_SAMPLE_FORMAT: SampleFormat = SampleFormat::I16;
-const MIME_TYPE_PCM: &str = "audio/pcm;rate=16000";
 
 pub struct AudioRecorder {
     _stream: cpal::Stream, // Keep stream alive
@@ -18,8 +17,8 @@ pub struct AudioRecorder {
 
 impl AudioRecorder {
     /// Start capturing audio from the default input device
-    /// Returns a receiver that yields MediaChunk objects containing base64-encoded PCM audio
-    pub fn start_capturing() -> Result<(Self, mpsc::Receiver<MediaChunk>)> {
+    /// Returns a receiver that yields Blob objects containing base64-encoded PCM audio
+    pub fn start_capturing() -> Result<(Self, mpsc::Receiver<Blob>)> {
         let (tx, rx) = mpsc::channel(10); // Modest buffer
 
         let host = cpal::default_host();
@@ -64,10 +63,7 @@ impl AudioRecorder {
                 }
 
                 let b64_encoded_data = BASE64_STANDARD.encode(&byte_data);
-                let chunk = MediaChunk {
-                    mime_type: Some(MIME_TYPE_PCM.to_string()),
-                    data: Some(b64_encoded_data),
-                };
+                let chunk = Blob::new(mime_types::AUDIO_PCM_16KHZ, b64_encoded_data);
                 if let Err(_) = tx.try_send(chunk) {
                     // Silently drop audio chunks when channel is full
                     // This is expected when audio input is faster than consumption
@@ -125,13 +121,10 @@ mod tests {
         // Capture for a short duration
         let timeout = tokio::time::timeout(Duration::from_secs(2), async {
             if let Some(chunk) = rx.recv().await {
-                assert!(chunk.mime_type.is_some());
-                assert!(chunk.data.is_some());
-                assert_eq!(chunk.mime_type.as_ref().unwrap(), MIME_TYPE_PCM);
+                assert_eq!(chunk.mime_type, mime_types::AUDIO_PCM_16KHZ);
 
                 // Verify base64 data can be decoded
-                let data = chunk.data.unwrap();
-                let decoded = BASE64_STANDARD.decode(data)?;
+                let decoded = BASE64_STANDARD.decode(&chunk.data)?;
                 assert!(!decoded.is_empty());
                 // Should be even number of bytes (i16 samples)
                 assert_eq!(decoded.len() % 2, 0);

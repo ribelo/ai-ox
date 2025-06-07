@@ -1,5 +1,4 @@
-use crate::generate_content::content::Content;
-use crate::generate_content::part::{FunctionCall, FunctionResponse};
+use crate::content::{Blob, Content, FunctionCall, FunctionResponse};
 use serde::{Deserialize, Serialize};
 
 // Client-to-Server Messages
@@ -24,17 +23,9 @@ pub struct ClientContentPayload {
 #[serde(rename_all = "camelCase")]
 pub struct RealtimeInputPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub media_chunks: Option<Vec<MediaChunk>>,
+    pub media_chunks: Option<Vec<Blob>>,
 }
 
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct MediaChunk {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mime_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<String>, // Base64 encoded
-}
 
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -130,7 +121,7 @@ pub struct ModelTurnPart {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub inline_data: Option<InlineData>,
+    pub inline_data: Option<Blob>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub function_call: Option<FunctionCall>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -139,14 +130,6 @@ pub struct ModelTurnPart {
     pub code_execution_result: Option<CodeExecutionResult>,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct InlineData {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mime_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub data: Option<String>, // Base64 encoded
-}
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]

@@ -22,17 +22,14 @@ pub use video_input::VideoCapturer;
 mod tests {
     use super::*;
     use crate::generate_content::GenerationConfig;
-    use crate::generate_content::content::{Content, Role};
+    use crate::content::{Content, Role};
     use crate::{Gemini, Model};
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use cpal::{SampleFormat, StreamConfig};
-    use message_types::ClientContentPayload;
+    use message_types::{ClientContentPayload, RealtimeInputPayload};
     use ringbuf::HeapRb; // Using HeapRb for simplicity in an async context, producer will be moved.
     use std::time::Duration;
-
-    #[cfg(feature = "audio")]
-    use message_types::{MediaChunk, RealtimeInputPayload};
 
     /// Test audio input functionality
     #[cfg(feature = "audio")]
@@ -581,11 +578,11 @@ mod tests {
                         if let Some(parts) = server_content.model_turn.parts {
                             for part in parts {
                                 if let Some(inline_data) = part.inline_data {
-                                    if inline_data.mime_type.as_deref()
-                                        == Some("audio/pcm;rate=24000")
+                                    if inline_data.mime_type
+                                        == "audio/pcm;rate=24000"
                                     {
-                                        if let Some(b64_data) = inline_data.data {
-                                            match BASE64_STANDARD.decode(b64_data) {
+                                        let b64_data = &inline_data.data;
+                                        match BASE64_STANDARD.decode(b64_data) {
                                                 Ok(pcm_bytes) => {
                                                     // Assuming PCM data is 16-bit little-endian
                                                     for chunk_bytes in pcm_bytes.chunks_exact(2) {
@@ -608,7 +605,6 @@ mod tests {
                                                     );
                                                 }
                                             }
-                                        }
                                     }
                                 }
                             }

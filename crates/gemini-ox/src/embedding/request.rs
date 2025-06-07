@@ -1,4 +1,4 @@
-use crate::generate_content::content::Content;
+use crate::content::Content;
 use bon::Builder;
 use serde::Serialize;
 
@@ -55,7 +55,7 @@ pub enum TaskType {
 ///
 /// Basic usage:
 /// ```rust,no_run
-/// # use gemini_ox::{Gemini, Model, generate_content::Content};
+/// # use gemini_ox::{Gemini, Model, content::Content};
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let gemini = Gemini::new("your-api-key");
@@ -71,7 +71,7 @@ pub enum TaskType {
 ///
 /// With task type and configuration:
 /// ```rust,no_run
-/// # use gemini_ox::{Gemini, Model, generate_content::Content, embedding::TaskType};
+/// # use gemini_ox::{Gemini, Model, content::Content, embedding::TaskType};
 /// # #[tokio::main]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let gemini = Gemini::new("your-api-key");
@@ -139,7 +139,7 @@ impl crate::Gemini {
     /// # Example
     ///
     /// ```rust,no_run
-    /// # use gemini_ox::{Gemini, Model, generate_content::Content};
+    /// # use gemini_ox::{Gemini, Model, content::Content};
     /// # #[tokio::main]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let gemini = Gemini::new("your-api-key");
