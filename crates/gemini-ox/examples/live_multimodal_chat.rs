@@ -302,7 +302,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             }
                         }
                     }
-                }
 
                 // Send audio chunk to main loop via channel
                 if let Err(_) = audio_tx_clone.send(audio_chunk) {

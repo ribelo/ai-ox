@@ -1,9 +1,9 @@
 use std::pin::Pin;
 
+use crate::{content::{Content, Part, Role}, Gemini};
 use async_stream::try_stream;
 use bon::Builder;
 use futures_util::{Stream, StreamExt};
-use crate::content::{Content, Part, Role};
 use request::GenerateContentRequest;
 use response::GenerateContentResponse;
 use serde::{Deserialize, Serialize};
@@ -32,7 +32,10 @@ impl GenerateContentRequest {
     /// - `GeminiRequestError::InvalidRequestError` - if the API returns a 4xx/5xx error with structured error data
     /// - `GeminiRequestError::JsonDeserializationError` - if the API response cannot be parsed as JSON
     /// - `GeminiRequestError::UnexpectedResponse` - if the API returns an unexpected response format or error
-    pub async fn send(&self) -> Result<GenerateContentResponse, GeminiRequestError> {
+    pub async fn send(
+        &self,
+        gemini: &Gemini,
+    ) -> Result<GenerateContentResponse, GeminiRequestError> {
         // Construct the API URL properly using reqwest::Url
         let mut url = reqwest::Url::parse(BASE_URL)
             .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
@@ -40,16 +43,16 @@ impl GenerateContentRequest {
         // Join the path elements properly
         url.path_segments_mut()
             .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
-            .push(&self.gemini.api_version)
+            .push(&gemini.api_version)
             .push("models")
             .push(&format!("{}:generateContent", self.model));
 
         // Add the API key as a query parameter
         url.query_pairs_mut()
-            .append_pair("key", &self.gemini.api_key);
+            .append_pair("key", &gemini.api_key);
 
         // Send the HTTP request
-        let res = self.gemini.client.post(url).json(self).send().await?;
+        let res = gemini.client.post(url).json(self).send().await?;
         let status = res.status();
 
         // Read the response body once
@@ -93,10 +96,11 @@ impl GenerateContentRequest {
     #[must_use] // Indicate that the returned stream should be consumed
     pub fn stream<'a>(
         &'a self,
+        gemini: &'a Gemini,
     ) -> Pin<Box<dyn Stream<Item = Result<GenerateContentResponse, GeminiRequestError>> + Send + 'a>>
     {
         // Use reqwest::Url for proper URL construction
-        let client = self.gemini.client.clone();
+        let client = gemini.client.clone();
 
         // NOTE: This implementation buffers data to handle lines split across network chunks
         // and ensures proper UTF-8 decoding.
@@ -110,14 +114,14 @@ impl GenerateContentRequest {
                 .map_err(|_| {
                     GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string())
                 })?
-                .push(&self.gemini.api_version)
+                .push(&gemini.api_version)
                 .push("models")
                 .push(&format!("{}:streamGenerateContent", self.model));
 
             // Add query parameters
             url.query_pairs_mut()
                 .append_pair("alt", "sse")
-                .append_pair("key", &self.gemini.api_key);
+                .append_pair("key", &gemini.api_key);
 
             Ok::<_, GeminiRequestError>(url)
         };
@@ -198,8 +202,8 @@ impl GenerateContentRequest {
                      // (handles cases where the last line doesn't end with a newline)
                      if !line_buffer.is_empty() {
                         let line = line_buffer.trim();
-                        if !line.is_empty() {
-                            if let Some(json_data) = line.strip_prefix("data:") {
+                        if !line.is_empty()
+                            && let Some(json_data) = line.strip_prefix("data:") {
                                 let trimmed_json_data = json_data.trim_start();
                                 if !trimmed_json_data.is_empty() {
                                      match serde_json::from_str::<GenerateContentResponse>(trimmed_json_data) {
@@ -212,7 +216,6 @@ impl GenerateContentRequest {
                                 }
                             }
                             // Ignore other line types in the final fragment
-                        }
                      }
                  }, // OK, stream processed
                  429 => Err(GeminiRequestError::RateLimit)?,

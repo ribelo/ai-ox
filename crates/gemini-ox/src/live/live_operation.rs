@@ -77,8 +77,8 @@ impl LiveOperation {
     ///     // Receive responses
     ///     while let Some(result) = session.receive().await {
     ///         match result? {
-    ///             gemini_ox::live::LiveApiResponseChunk::ModelTurn(turn) => {
-    ///                 if let Some(parts) = turn.parts {
+    ///             gemini_ox::live::LiveApiResponseChunk::ModelTurn { server_content } => {
+    ///                 if let Some(parts) = server_content.model_turn.parts {
     ///                     for part in parts {
     ///                         if let Some(text) = part.text {
     ///                             println!("Model: {}", text);
@@ -86,7 +86,7 @@ impl LiveOperation {
     ///                     }
     ///                 }
     ///             }
-    ///             gemini_ox::live::LiveApiResponseChunk::TurnComplete => {
+    ///             gemini_ox::live::LiveApiResponseChunk::TurnComplete { server_content } => {
     ///                 break;
     ///             }
     ///             _ => {} // Handle other message types as needed

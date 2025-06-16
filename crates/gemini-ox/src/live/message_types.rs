@@ -26,7 +26,6 @@ pub struct RealtimeInputPayload {
     pub media_chunks: Option<Vec<Blob>>,
 }
 
-
 #[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolResponsePayload {
@@ -129,7 +128,6 @@ pub struct ModelTurnPart {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub code_execution_result: Option<CodeExecutionResult>,
 }
-
 
 #[derive(Debug, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]

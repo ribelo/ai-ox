@@ -40,7 +40,7 @@ pub struct ContentEmbedding {
 ///
 /// ```rust,no_run
 /// # use gemini_ox::{Gemini, Model, content::Content};
-/// # #[tokio::main]
+/// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let gemini = Gemini::new("your-api-key");
 /// let response = gemini.embed_content()

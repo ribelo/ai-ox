@@ -1,6 +1,6 @@
 #![cfg(feature = "video")]
 
-use crate::content::{mime_types, Blob};
+use crate::content::{Blob, mime_types};
 use anyhow::{Context, Result, anyhow};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use image::{DynamicImage, ImageBuffer, ImageOutputFormat, Rgb};

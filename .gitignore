@@ -6,7 +6,7 @@ Cargo.lock
 criterion/
 
 # Todo and notes
-todo/
+#todo/
 
 # AI
 .rules

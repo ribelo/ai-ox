@@ -1,10 +1,8 @@
 use bon::Builder;
 use serde::Serialize;
+use serde_json::Value;
 
-use crate::{
-    Gemini,
-    tool::{Tool, config::ToolConfig},
-};
+use crate::tool::{Tool, config::ToolConfig};
 
 use super::{GenerationConfig, SafetySettings};
 use crate::content::Content;
@@ -15,21 +13,20 @@ pub struct GenerateContentRequest {
     #[builder(field)]
     pub contents: Vec<Content>,
     #[builder(field)]
-    tools: Vec<Tool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<Value>>,
     #[builder(into)]
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tool_config: Option<ToolConfig>,
+    pub tool_config: Option<ToolConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    safety_settings: Option<SafetySettings>,
+    pub safety_settings: Option<SafetySettings>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    system_instruction: Option<Content>,
+    pub system_instruction: Option<Content>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    generation_config: Option<GenerationConfig>,
+    pub generation_config: Option<GenerationConfig>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    cached_content: Option<String>,
-    #[serde(skip)]
-    pub(crate) gemini: Gemini,
+    pub cached_content: Option<String>,
 }
 
 impl<S: generate_content_request_builder::State> GenerateContentRequestBuilder<S> {
@@ -42,19 +39,25 @@ impl<S: generate_content_request_builder::State> GenerateContentRequestBuilder<S
         self
     }
     pub fn tool(mut self, tool: impl Into<Tool>) -> Self {
-        self.tools.push(tool.into());
+        self.tools
+            .get_or_insert_default()
+            .push(serde_json::to_value(tool.into()).unwrap());
         self
     }
     pub fn tools(mut self, tools: impl IntoIterator<Item = impl Into<Tool>>) -> Self {
-        self.tools.extend(tools.into_iter().map(Into::into));
+        self.tools.get_or_insert_default().extend(
+            tools
+                .into_iter()
+                .map(|tool| serde_json::to_value(tool.into()).unwrap()),
+        );
         self
     }
 }
 
-impl Gemini {
-    pub fn generate_content(
-        &self,
-    ) -> GenerateContentRequestBuilder<generate_content_request_builder::SetGemini> {
-        GenerateContentRequest::builder().gemini(self.clone())
-    }
-}
+// impl Gemini {
+//     pub fn generate_content(
+//         &self,
+//     ) -> GenerateContentRequestBuilder<generate_content_request_builder::SetGemini> {
+//         GenerateContentRequest::builder().gemini(self.clone())
+//     }
+// }

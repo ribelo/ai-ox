@@ -56,7 +56,7 @@ pub enum TaskType {
 /// Basic usage:
 /// ```rust,no_run
 /// # use gemini_ox::{Gemini, Model, content::Content};
-/// # #[tokio::main]
+/// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let gemini = Gemini::new("your-api-key");
 /// let response = gemini.embed_content()
@@ -72,7 +72,7 @@ pub enum TaskType {
 /// With task type and configuration:
 /// ```rust,no_run
 /// # use gemini_ox::{Gemini, Model, content::Content, embedding::TaskType};
-/// # #[tokio::main]
+/// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let gemini = Gemini::new("your-api-key");
 /// let response = gemini.embed_content()
@@ -140,7 +140,7 @@ impl crate::Gemini {
     ///
     /// ```rust,no_run
     /// # use gemini_ox::{Gemini, Model, content::Content};
-    /// # #[tokio::main]
+    /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let gemini = Gemini::new("your-api-key");
     /// let response = gemini.embed_content()

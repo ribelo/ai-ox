@@ -15,7 +15,7 @@ impl Gemini {
     /// # Example
     /// ```rust,no_run
     /// # use gemini_ox::Gemini;
-    /// # #[tokio::main]
+    /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = Gemini::new("your-api-key");
     /// let model = client.get_model("gemini-1.5-flash-latest").await?;
@@ -55,7 +55,7 @@ impl Gemini {
     /// # Example
     /// ```rust,no_run
     /// # use gemini_ox::Gemini;
-    /// # #[tokio::main]
+    /// # #[tokio::main(flavor = "current_thread")]
     /// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let client = Gemini::new("your-api-key");
     /// let response = client.list_models(Some(10), None).await?;

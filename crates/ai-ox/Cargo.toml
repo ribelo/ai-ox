@@ -1,0 +1,23 @@
+[package]
+name = "ai-ox"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true }
+base64 = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+futures-util = { workspace = true }
+schemars = { workspace = true }
+gemini-ox = { path = "../gemini-ox" }
+tokio = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
+bon = { workspace = true }
+ai-ox-macros = { path = "../ai-ox-macros" }
+
+[dev-dependencies]
+ai-ox-macros = { path = "../ai-ox-macros" }
+schemars = { workspace = true }
+chrono = { version = "0.4", features = ["serde"] }
+futures-util = { workspace = true }

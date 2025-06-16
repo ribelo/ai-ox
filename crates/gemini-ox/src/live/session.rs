@@ -174,14 +174,14 @@ impl ActiveLiveSession {
     /// # async fn example(session: &mut gemini_ox::live::ActiveLiveSession) -> Result<(), Box<dyn std::error::Error>> {
     /// while let Some(result) = session.receive().await {
     ///     match result? {
-    ///         LiveApiResponseChunk::ModelTurn(turn) => {
+    ///         LiveApiResponseChunk::ModelTurn { server_content } => {
     ///             println!("Received model response");
     ///         }
-    ///         LiveApiResponseChunk::TurnComplete => {
+    ///         LiveApiResponseChunk::TurnComplete { server_content } => {
     ///             println!("Turn completed");
     ///             break;
     ///         }
-    ///         LiveApiResponseChunk::SetupComplete => {
+    ///         LiveApiResponseChunk::SetupComplete { _setup } => {
     ///             println!("Session setup complete");
     ///         }
     ///         _ => {} // Handle other message types

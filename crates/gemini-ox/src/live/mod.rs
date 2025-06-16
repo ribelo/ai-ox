@@ -21,8 +21,8 @@ pub use video_input::VideoCapturer;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::generate_content::GenerationConfig;
     use crate::content::{Content, Role};
+    use crate::generate_content::GenerationConfig;
     use crate::{Gemini, Model};
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -578,33 +578,31 @@ mod tests {
                         if let Some(parts) = server_content.model_turn.parts {
                             for part in parts {
                                 if let Some(inline_data) = part.inline_data {
-                                    if inline_data.mime_type
-                                        == "audio/pcm;rate=24000"
-                                    {
+                                    if inline_data.mime_type == "audio/pcm;rate=24000" {
                                         let b64_data = &inline_data.data;
                                         match BASE64_STANDARD.decode(b64_data) {
-                                                Ok(pcm_bytes) => {
-                                                    // Assuming PCM data is 16-bit little-endian
-                                                    for chunk_bytes in pcm_bytes.chunks_exact(2) {
-                                                        let sample = i16::from_le_bytes([
-                                                            chunk_bytes[0],
-                                                            chunk_bytes[1],
-                                                        ]);
-                                                        if producer.push(sample).is_ok() {
-                                                            samples_written_to_buffer_count += 1;
-                                                        } else {
-                                                            // Optionally log if buffer is full and samples are dropped
-                                                            // eprintln!("Audio ring buffer full, dropping sample.");
-                                                        }
+                                            Ok(pcm_bytes) => {
+                                                // Assuming PCM data is 16-bit little-endian
+                                                for chunk_bytes in pcm_bytes.chunks_exact(2) {
+                                                    let sample = i16::from_le_bytes([
+                                                        chunk_bytes[0],
+                                                        chunk_bytes[1],
+                                                    ]);
+                                                    if producer.push(sample).is_ok() {
+                                                        samples_written_to_buffer_count += 1;
+                                                    } else {
+                                                        // Optionally log if buffer is full and samples are dropped
+                                                        // eprintln!("Audio ring buffer full, dropping sample.");
                                                     }
                                                 }
-                                                Err(e) => {
-                                                    eprintln!(
-                                                        "Base64 decode error for audio data: {}",
-                                                        e
-                                                    );
-                                                }
                                             }
+                                            Err(e) => {
+                                                eprintln!(
+                                                    "Base64 decode error for audio data: {}",
+                                                    e
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                             }

@@ -177,7 +177,7 @@ impl From<Model> for String {
     }
 }
 
-#[derive(Clone, Builder)]
+#[derive(Clone, Default, Builder)]
 pub struct Gemini {
     #[builder(into)]
     pub(crate) api_key: String,
@@ -190,6 +190,11 @@ pub struct Gemini {
 }
 
 impl Gemini {
+    pub fn new_from_env() -> Self {
+        let api_key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
+        Gemini::new(api_key)
+    }
+
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
