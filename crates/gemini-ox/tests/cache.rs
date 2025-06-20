@@ -1,8 +1,13 @@
-use gemini_ox::{Gemini, content::{Content, Role}};
+use gemini_ox::{
+    Gemini,
+    content::{Content, Role},
+};
 use std::time::Duration;
 
 fn get_api_key() -> String {
-    std::env::var("GOOGLE_AI_API_KEY").expect("GOOGLE_AI_API_KEY must be set")
+    std::env::var("GEMINI_API_KEY")
+        .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        .expect("GEMINI_API_KEY or GOOGLE_AI_API_KEY must be set")
 }
 
 // #[tokio::test]

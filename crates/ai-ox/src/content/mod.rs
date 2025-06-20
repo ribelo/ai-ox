@@ -7,7 +7,7 @@ pub mod response;
 
 // Re-export commonly used types
 pub use message::{Message, MessageRole};
-pub use part::{Part, FileData, ImageSource};
+pub use part::{FileData, ImageSource, Part};
 
 #[cfg(test)]
 mod tests {
@@ -32,8 +32,6 @@ mod tests {
         assert_eq!(json["timestamp"], "2024-01-15T10:30:00Z");
     }
 
-
-
     #[test]
     fn test_message_timestamp_deserialization() {
         let json = json!({
@@ -48,6 +46,4 @@ mod tests {
             Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap()
         );
     }
-
-
 }

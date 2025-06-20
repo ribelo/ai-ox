@@ -6,14 +6,13 @@ use serde::Deserialize;
 pub struct Model {
     /// The unique name identifier for the model
     pub name: String,
-    /// The base model this model is built upon
-    pub base_model_id: String,
     /// The version string of the model
     pub version: String,
     /// Human-readable display name for the model
     pub display_name: String,
     /// Description of the model's capabilities
-    pub description: String,
+    #[serde(default)]
+    pub description: Option<String>,
     /// Maximum number of input tokens the model can process
     pub input_token_limit: u32,
     /// Maximum number of output tokens the model can generate
@@ -23,6 +22,9 @@ pub struct Model {
     /// Default temperature setting for the model, if available
     #[serde(default)]
     pub temperature: Option<f32>,
+    /// Maximum temperature setting for the model, if available
+    #[serde(default)]
+    pub max_temperature: Option<f32>,
     /// Default top-p setting for the model, if available
     #[serde(default)]
     pub top_p: Option<f32>,

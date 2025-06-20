@@ -350,7 +350,7 @@ fn process_method(method: &ImplItemFn) -> syn::Result<Option<ToolMethodInfo>> {
     match receiver {
         FnArg::Receiver(_) => {} // Standard receiver `&self`, `self`, etc. - Good
         FnArg::Typed(pt) if is_self_type(&pt.ty) => {} // Explicit type `Self`, `&Self` - Also Good
-        _ => {
+        FnArg::Typed(_) => {
             // First argument is typed but not 'Self' or is missing.
             // This is likely not intended as a tool method, so ignore silently.
             return Ok(None);

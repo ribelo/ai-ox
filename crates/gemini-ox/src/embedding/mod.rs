@@ -185,10 +185,10 @@ mod tests {
     #[ignore = "Requires GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
     async fn test_single_embedding_success() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     {
-        let api_key = match std::env::var("GOOGLE_AI_API_KEY") {
+        let api_key = match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
             Ok(key) => key,
             Err(_) => {
-                println!("GOOGLE_AI_API_KEY not set, skipping test_single_embedding_success");
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_single_embedding_success");
                 return Ok(());
             }
         };
@@ -229,10 +229,10 @@ mod tests {
     #[ignore = "Requires GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
     async fn test_embedding_with_task_type() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     {
-        let api_key = match std::env::var("GOOGLE_AI_API_KEY") {
+        let api_key = match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
             Ok(key) => key,
             Err(_) => {
-                println!("GOOGLE_AI_API_KEY not set, skipping test_embedding_with_task_type");
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_embedding_with_task_type");
                 return Ok(());
             }
         };
@@ -265,11 +265,11 @@ mod tests {
     #[ignore = "Requires GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
     async fn test_embedding_with_output_dimensionality()
     -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let api_key = match std::env::var("GOOGLE_AI_API_KEY") {
+        let api_key = match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
             Ok(key) => key,
             Err(_) => {
                 println!(
-                    "GOOGLE_AI_API_KEY not set, skipping test_embedding_with_output_dimensionality"
+                    "GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_embedding_with_output_dimensionality"
                 );
                 return Ok(());
             }

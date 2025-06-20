@@ -1,6 +1,6 @@
+use ai_ox::content::part::Part;
 use ai_ox::tool::{Tool, ToolBox, ToolCall, ToolError};
 use ai_ox::toolbox;
-use ai_ox::content::part::Part;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -649,11 +649,7 @@ async fn test_toolbox_concurrent_invocations() {
 async fn test_toolbox_infallible_tool() {
     let service = TestToolService::new("InfallibleTest");
 
-    let call = ToolCall::new(
-        "infallible_call",
-        "infailable_tool",
-        json!({}),
-    );
+    let call = ToolCall::new("infallible_call", "infailable_tool", json!({}));
 
     let result = service.invoke(call).await;
     assert!(result.is_ok(), "Infallible tool invocation should succeed");
@@ -680,11 +676,7 @@ async fn test_toolbox_infallible_tool() {
 async fn test_toolbox_side_effect_tool() {
     let service = TestToolService::new("SideEffectTest");
 
-    let call = ToolCall::new(
-        "side_effect_call",
-        "side_effect_tool",
-        json!({}),
-    );
+    let call = ToolCall::new("side_effect_call", "side_effect_tool", json!({}));
 
     let result = service.invoke(call).await;
     assert!(result.is_ok(), "Side effect tool invocation should succeed");

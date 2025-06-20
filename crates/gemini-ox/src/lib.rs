@@ -191,7 +191,8 @@ pub struct Gemini {
 
 impl Gemini {
     pub fn new_from_env() -> Self {
-        let api_key = std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
+        let api_key =
+            std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
         Gemini::new(api_key)
     }
 

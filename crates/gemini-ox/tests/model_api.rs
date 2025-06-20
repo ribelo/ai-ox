@@ -2,7 +2,9 @@ use gemini_ox::{Gemini, GeminiRequestError};
 use std::env;
 
 fn get_api_key() -> Option<String> {
-    env::var("GOOGLE_AI_API_KEY").ok()
+    env::var("GEMINI_API_KEY")
+        .or_else(|_| env::var("GOOGLE_AI_API_KEY"))
+        .ok()
 }
 
 fn setup_client() -> Option<Gemini> {
@@ -10,39 +12,51 @@ fn setup_client() -> Option<Gemini> {
 }
 
 #[tokio::test]
-#[ignore = "requires GOOGLE_AI_API_KEY"]
+#[ignore = "requires GEMINI_API_KEY or GOOGLE_AI_API_KEY"]
 async fn test_list_models_succeeds() {
-    let client = setup_client().expect("GOOGLE_AI_API_KEY not set");
+    let client = setup_client().expect("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set");
 
     let response = client.list_models(None, None).await;
 
-    assert!(response.is_ok(), "list_models should succeed");
-    let models_response = response.unwrap();
-    assert!(
-        !models_response.models.is_empty(),
-        "models list should not be empty"
-    );
+    match response {
+        Ok(models_response) => {
+            assert!(
+                !models_response.models.is_empty(),
+                "models list should not be empty"
+            );
+        },
+        Err(e) => {
+            println!("list_models failed with error: {:?}", e);
+            panic!("list_models should succeed, but got error: {}", e);
+        }
+    }
 }
 
 #[tokio::test]
-#[ignore = "requires GOOGLE_AI_API_KEY"]
+#[ignore = "requires GEMINI_API_KEY or GOOGLE_AI_API_KEY"]
 async fn test_get_model_succeeds() {
-    let client = setup_client().expect("GOOGLE_AI_API_KEY not set");
+    let client = setup_client().expect("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set");
 
     let response = client.get_model("gemini-1.5-flash-latest").await;
 
-    assert!(response.is_ok(), "get_model should succeed for valid model");
-    let model = response.unwrap();
-    assert!(
-        model.name.contains("gemini-1.5-flash"),
-        "model name should contain gemini-1.5-flash"
-    );
+    match response {
+        Ok(model) => {
+            assert!(
+                model.name.contains("gemini-1.5-flash"),
+                "model name should contain gemini-1.5-flash"
+            );
+        },
+        Err(e) => {
+            println!("get_model failed with error: {:?}", e);
+            panic!("get_model should succeed, but got error: {}", e);
+        }
+    }
 }
 
 #[tokio::test]
-#[ignore = "requires GOOGLE_AI_API_KEY"]
+#[ignore = "requires GEMINI_API_KEY or GOOGLE_AI_API_KEY"]
 async fn test_get_model_fails_on_unknown_model() {
-    let client = setup_client().expect("GOOGLE_AI_API_KEY not set");
+    let client = setup_client().expect("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set");
 
     let response = client.get_model("non-existent-model-12345").await;
 
@@ -62,23 +76,26 @@ async fn test_get_model_fails_on_unknown_model() {
 }
 
 #[tokio::test]
-#[ignore = "requires GOOGLE_AI_API_KEY"]
+#[ignore = "requires GEMINI_API_KEY or GOOGLE_AI_API_KEY"]
 async fn test_list_models_with_pagination() {
-    let client = setup_client().expect("GOOGLE_AI_API_KEY not set");
+    let client = setup_client().expect("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set");
 
     let response = client.list_models(Some(5), None).await;
 
-    assert!(
-        response.is_ok(),
-        "list_models with page_size should succeed"
-    );
-    let models_response = response.unwrap();
-    assert!(
-        !models_response.models.is_empty(),
-        "models list should not be empty"
-    );
-    assert!(
-        models_response.models.len() <= 5,
-        "should respect page_size limit"
-    );
+    match response {
+        Ok(models_response) => {
+            assert!(
+                !models_response.models.is_empty(),
+                "models list should not be empty"
+            );
+            assert!(
+                models_response.models.len() <= 5,
+                "should respect page_size limit"
+            );
+        },
+        Err(e) => {
+            println!("list_models with page_size failed with error: {:?}", e);
+            panic!("list_models with page_size should succeed, but got error: {}", e);
+        }
+    }
 }

@@ -1,6 +1,9 @@
 use std::pin::Pin;
 
-use crate::{content::{Content, Part, Role}, Gemini};
+use crate::{
+    Gemini,
+    content::{Content, Part, Role},
+};
 use async_stream::try_stream;
 use bon::Builder;
 use futures_util::{Stream, StreamExt};
@@ -48,8 +51,7 @@ impl GenerateContentRequest {
             .push(&format!("{}:generateContent", self.model));
 
         // Add the API key as a query parameter
-        url.query_pairs_mut()
-            .append_pair("key", &gemini.api_key);
+        url.query_pairs_mut().append_pair("key", &gemini.api_key);
 
         // Send the HTTP request
         let res = gemini.client.post(url).json(self).send().await?;

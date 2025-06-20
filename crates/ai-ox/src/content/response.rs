@@ -17,3 +17,26 @@ pub struct GenerateContentResponse {
     /// The name of the vendor that provides the model (e.g., "google").
     pub vendor_name: String,
 }
+
+/// Represents a structured response from a model after generating typed content.
+///
+/// This response type contains the parsed structured data of type `O` along with
+/// metadata about the generation process.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerateContentStructuredResponse<O> {
+    /// The parsed structured data returned by the model.
+    pub data: O,
+
+    /// The name of the model that generated the response.
+    pub model_name: String,
+
+    /// Token usage statistics for the request.
+    pub usage: Usage,
+
+    /// The name of the vendor that provides the model (e.g., "google").
+    pub vendor_name: String,
+
+    /// Raw JSON text for debugging purposes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_json: Option<String>,
+}

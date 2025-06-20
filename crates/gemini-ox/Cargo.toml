@@ -4,13 +4,22 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-# Default features include the procedural macros
+# Default features - minimal build without media dependencies
 default = []
 leaky-bucket = ["dep:leaky-bucket"]
+
 # Feature to enable the procedural macros (like #[toolbox])
 # macros = ["dep:gemini-ox-macros"]
-# Feature to enable audio input using cpal
+
+# Audio features (require ALSA libraries on Linux)
+# Feature to enable audio input from microphone using cpal
+# Requires: libasound2-dev on Ubuntu/Debian, alsa-lib-devel on RHEL/CentOS
 audio = ["dep:cpal"]
+# Feature to enable audio output playback (separate from input)
+# Requires: same ALSA dependencies as audio feature
+audio-output = ["dep:cpal", "dep:ringbuf"]
+
+# Video features
 # Feature to enable video input using nokhwa and image processing
 video = ["dep:nokhwa", "dep:image"]
 
@@ -40,15 +49,14 @@ http = { workspace = true }
 anyhow = { workspace = true }
 
 # Optional dependencies for audio and video features
-cpal = { workspace = true, optional = true }
-nokhwa = { workspace = true, optional = true }
+cpal = { version = "0.15", optional = true }
+ringbuf = { version = "0.3", optional = true }
+nokhwa = { version = "0.10.7", features = ["input-native"], optional = true }
 image = { workspace = true, optional = true }
 
 [dev-dependencies]
 # Use workspace tokio
 tokio = { workspace = true }
-cpal = { workspace = true }
-ringbuf = { workspace = true }
 clap = { workspace = true }
 
 # [lints.clippy]

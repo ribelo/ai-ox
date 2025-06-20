@@ -5,9 +5,8 @@ resolver = "2"
 
 # Define shared workspace dependencies
 [workspace.dependencies]
-futures = "0.3.31"
 futures-util = "0.3.31"
-schemars = "1.0.0-alpha.20"
+schemars = "0.9"
 leaky-bucket = { version = "1.1" }
 mime = "0.3.17"
 strum = { version = "0.27", features = ["derive"] }
@@ -37,14 +36,11 @@ reqwest = { version = "0.12", default-features = false, features = [
 bytes = "1.10"
 mime_guess = "2.0"
 async-stream = "0.3.6"
-tokio-tungstenite = { version = "0.26.2", features = ["rustls-tls-native-roots"] }
+tokio-tungstenite = { version = "0.26.2", features = [
+    "rustls-tls-native-roots",
+] }
 tungstenite = "0.26.2"
 anyhow = "1.0"
-cpal = "0.15"
-nokhwa = { version = "0.10.7", features = ["input-native"] }
-ringbuf = "0.3"
 tokio = { version = "1.45.1", features = ["rt", "macros", "sync", "io-std"] }
 clap = { version = "4.5.39", features = ["derive"] }
 
-[workspace.dev-dependencies]
-tokio = { version = "1.45.1", features = ["full"] }

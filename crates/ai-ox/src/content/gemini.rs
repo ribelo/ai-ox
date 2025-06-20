@@ -2,10 +2,7 @@ use crate::content::{
     message::{Message, MessageRole},
     part::{ImageSource, Part},
 };
-use gemini_ox::{
-    content::{Content as GeminiContent, Part as GeminiPart, Role as GeminiRole},
-};
-
+use gemini_ox::content::{Content as GeminiContent, Part as GeminiPart, Role as GeminiRole};
 
 /// Converts an `ai-ox` `Message` to a `gemini-ox` `Content`.
 impl From<Message> for GeminiContent {
@@ -24,7 +21,7 @@ impl From<Message> for GeminiContent {
 /// Converts an `ai-ox` `Part` to a `gemini-ox` `Part`.
 impl From<Part> for GeminiPart {
     fn from(part: Part) -> Self {
-        use gemini_ox::content::{Blob, FileData as GeminiFileData, Text, PartData};
+        use gemini_ox::content::{Blob, FileData as GeminiFileData, PartData, Text};
 
         let data = match part {
             Part::Text { text } => PartData::Text(Text::new(text)),
@@ -45,12 +42,14 @@ impl From<Part> for GeminiPart {
                 };
                 PartData::FileData(gemini_file_data)
             }
-            Part::ToolResult { call_id, name, content } => {
+            Part::ToolResult {
+                call_id,
+                name,
+                content,
+            } => {
                 // Convert tool result to text representation for Gemini
-                let text_content = format!(
-                    "Tool '{}' (call_id: {}) result: {}",
-                    name, call_id, content
-                );
+                let text_content =
+                    format!("Tool '{}' (call_id: {}) result: {}", name, call_id, content);
                 PartData::Text(Text::new(text_content))
             }
         };
@@ -142,5 +141,4 @@ mod tests {
             Some("document.pdf".to_string())
         );
     }
-
 }

@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-
 /// Represents file data with URI and metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FileData {

@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 pub struct ToolResult {
     /// The original tool call ID
     pub id: String,
-    
+
     /// Name of the function that was called
     pub name: String,
-    
+
     /// Response messages from the tool execution
     /// This allows tools to return conversational responses
     pub response: Vec<Message>,
@@ -26,9 +26,13 @@ impl ToolResult {
             response,
         }
     }
-    
+
     /// Creates a ToolResult with a single message response.
-    pub fn single_message(id: impl Into<String>, name: impl Into<String>, message: Message) -> Self {
+    pub fn single_message(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        message: Message,
+    ) -> Self {
         Self::new(id, name, vec![message])
     }
 }

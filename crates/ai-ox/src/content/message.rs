@@ -35,10 +35,14 @@ impl Message {
             timestamp: Utc::now(),
         }
     }
-    
+
     /// Creates a Message containing a tool response.
     /// This is used to represent the result of a tool execution.
-    pub fn from_tool_response(tool_call_id: String, tool_name: String, response_data: Value) -> Self {
+    pub fn from_tool_response(
+        tool_call_id: String,
+        tool_name: String,
+        response_data: Value,
+    ) -> Self {
         Self {
             role: MessageRole::Assistant,
             content: vec![Part::ToolResult {

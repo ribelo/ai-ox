@@ -5,27 +5,30 @@
 //! Features:
 //! - Text input/output (always available)
 //! - Audio input from microphone (requires `audio` feature)
+//! - Audio output playback (requires `audio-output` feature)
 //! - Video input from camera (requires `video` feature)
-//! - Audio output playback (when server sends audio)
 //!
 //! Usage:
 //! ```bash
 //! # Text only
 //! cargo run --example live_multimodal_chat
 //!
-//! # With audio support
+//! # With audio input support
 //! cargo run --example live_multimodal_chat --features audio
+//!
+//! # With audio output support
+//! cargo run --example live_multimodal_chat --features audio-output
 //!
 //! # With video support
 //! cargo run --example live_multimodal_chat --features video
 //!
-//! # With both audio and video
-//! cargo run --example live_multimodal_chat --features audio,video
+//! # With full audio and video support
+//! cargo run --example live_multimodal_chat --features audio,audio-output,video
 //! ```
 
 use clap::Parser;
-use gemini_ox::generate_content::GenerationConfig;
 use gemini_ox::content::{Content, Role};
+use gemini_ox::generate_content::GenerationConfig;
 use gemini_ox::live::{
     ActiveLiveSession, LiveApiResponseChunk, message_types::ClientContentPayload,
 };
@@ -38,10 +41,12 @@ use gemini_ox::live::AudioRecorder;
 #[cfg(feature = "video")]
 use gemini_ox::live::VideoCapturer;
 
-// Audio output support using cpal (available even without audio feature for playback)
+// Audio output support using cpal (requires audio-output feature)
+#[cfg(feature = "audio-output")]
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 
-// Audio playback dependencies for server audio responses
+// Audio playback dependencies for server audio responses (conditional)
+#[cfg(feature = "audio-output")]
 use {
     cpal::traits::{DeviceTrait, HostTrait, StreamTrait},
     cpal::{SampleFormat, StreamConfig},
@@ -76,6 +81,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("  ✅ Audio input (microphone)");
     #[cfg(not(feature = "audio"))]
     println!("  ❌ Audio input (disabled - use --features audio)");
+
+    #[cfg(feature = "audio-output")]
+    println!("  ✅ Audio output (speakers)");
+    #[cfg(not(feature = "audio-output"))]
+    println!("  ❌ Audio output (disabled - use --features audio-output)");
 
     #[cfg(feature = "video")]
     println!("  ✅ Video input (camera)");
@@ -160,7 +170,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("✅ Connected! Starting multimodal session...");
 
     // Setup audio output for server responses
+    #[cfg(feature = "audio-output")]
     let audio_output = setup_audio_output(args.verbose).ok();
+    #[cfg(not(feature = "audio-output"))]
+    let audio_output: Option<()> = None;
 
     // Start audio input streaming if available
     #[cfg(feature = "audio")]
@@ -198,17 +211,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("💡 Tips:");
     #[cfg(feature = "audio")]
     println!("  - Audio input is streaming continuously");
+    #[cfg(feature = "audio-output")]
+    println!("  - Audio output is enabled for speech responses");
     #[cfg(feature = "video")]
     println!("  - Camera frames are being sent every second");
     println!("  - The AI can respond with both text and audio");
     println!("  - Type 'hello' to test text responses");
     println!("  - Type 'status' to check audio chunk count");
 
-    // Setup audio communication channel
+    // Setup audio communication channel (used by audio and video features)
+    #[cfg(any(feature = "audio", feature = "video"))]
     let (audio_tx, mut audio_rx) =
         tokio::sync::mpsc::unbounded_channel::<gemini_ox::content::Blob>();
 
-    // Setup speech activity detection channel
+    // Setup speech activity detection channel (used by audio feature)
+    #[cfg(feature = "audio")]
     let (speech_activity_tx, mut speech_activity_rx) =
         tokio::sync::mpsc::unbounded_channel::<bool>(); // true = speech started, false = speech ended
 
@@ -256,52 +273,51 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // Check audio level and detect speech activity
                 let data = &audio_chunk.data;
                 if let Ok(decoded) =
-                        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
-                    {
-                        // Calculate RMS level to see if there's actually audio
-                        let mut sum_squares = 0.0_f64;
-                        let samples = decoded.chunks_exact(2).count();
+                    base64::Engine::decode(&base64::engine::general_purpose::STANDARD, data)
+                {
+                    // Calculate RMS level to see if there's actually audio
+                    let mut sum_squares = 0.0_f64;
+                    let samples = decoded.chunks_exact(2).count();
 
-                        for chunk_bytes in decoded.chunks_exact(2) {
-                            let sample =
-                                i16::from_le_bytes([chunk_bytes[0], chunk_bytes[1]]) as f64;
-                            sum_squares += sample * sample;
+                    for chunk_bytes in decoded.chunks_exact(2) {
+                        let sample = i16::from_le_bytes([chunk_bytes[0], chunk_bytes[1]]) as f64;
+                        sum_squares += sample * sample;
+                    }
+
+                    if samples > 0 {
+                        let rms = (sum_squares / samples as f64).sqrt();
+                        if verbose && chunk_count % 50 == 0 {
+                            println!(
+                                "🔊 DEBUG: Audio level RMS: {:.1} (samples: {})",
+                                rms, samples
+                            );
                         }
 
-                        if samples > 0 {
-                            let rms = (sum_squares / samples as f64).sqrt();
-                            if verbose && chunk_count % 50 == 0 {
-                                println!(
-                                    "🔊 DEBUG: Audio level RMS: {:.1} (samples: {})",
-                                    rms, samples
-                                );
-                            }
-
-                            // Speech activity detection
-                            if rms > SPEECH_THRESHOLD {
-                                silence_chunks = 0;
-                                if !is_speaking {
-                                    is_speaking = true;
-                                    let _ = speech_activity_tx_clone.send(true);
-                                    if verbose {
-                                        println!("🗣️  DEBUG: Speech started! RMS: {:.1}", rms);
-                                    }
+                        // Speech activity detection
+                        if rms > SPEECH_THRESHOLD {
+                            silence_chunks = 0;
+                            if !is_speaking {
+                                is_speaking = true;
+                                let _ = speech_activity_tx_clone.send(true);
+                                if verbose {
+                                    println!("🗣️  DEBUG: Speech started! RMS: {:.1}", rms);
                                 }
-                            } else {
-                                if is_speaking {
-                                    silence_chunks += 1;
-                                    if silence_chunks >= SILENCE_CHUNKS_REQUIRED {
-                                        is_speaking = false;
-                                        silence_chunks = 0;
-                                        let _ = speech_activity_tx_clone.send(false);
-                                        if verbose {
-                                            println!("🤫 DEBUG: Speech ended - silence detected");
-                                        }
+                            }
+                        } else {
+                            if is_speaking {
+                                silence_chunks += 1;
+                                if silence_chunks >= SILENCE_CHUNKS_REQUIRED {
+                                    is_speaking = false;
+                                    silence_chunks = 0;
+                                    let _ = speech_activity_tx_clone.send(false);
+                                    if verbose {
+                                        println!("🤫 DEBUG: Speech ended - silence detected");
                                     }
                                 }
                             }
                         }
                     }
+                }
 
                 // Send audio chunk to main loop via channel
                 if let Err(_) = audio_tx_clone.send(audio_chunk) {
@@ -354,134 +370,205 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         None
     };
 
+    #[cfg(any(feature = "audio", feature = "video"))]
     let mut audio_chunk_count = 0;
+    #[cfg(any(feature = "audio", feature = "video"))]
     let mut last_audio_time = std::time::Instant::now();
 
-    loop {
-        tokio::select! {
-            // Handle speech activity detection
-            speech_activity = speech_activity_rx.recv() => {
-                if let Some(is_speech_active) = speech_activity {
-                    if is_speech_active {
-                        if args.verbose {
-                            println!("🎯 DEBUG: Starting turn - speech detected");
-                        }
-                    } else {
-                        // Send turn complete when speech ends
-                        if args.verbose {
-                            println!("🎯 DEBUG: Ending turn - speech finished");
-                        }
-                        let content = Content::new(
-                            Role::User,
-                            vec![""]
-                        );
-                        let payload = gemini_ox::live::message_types::ClientContentPayload {
-                            turns: vec![content],
-                            turn_complete: Some(true),
-                        };
-                        if let Err(e) = session.send_client_content(payload).await {
-                            eprintln!("❌ Error sending turn complete: {}", e);
-                        } else if args.verbose {
-                            println!("✅ DEBUG: Turn complete sent");
-                        }
-                    }
-                }
-            }
-
-            // Handle audio chunks from microphone
-            audio_chunk = audio_rx.recv() => {
-                if let Some(chunk) = audio_chunk {
-                    audio_chunk_count += 1;
-                    last_audio_time = std::time::Instant::now();
-
-                    // Check if it's audio or video chunk based on mime type
-                    if chunk.mime_type == "audio/pcm;rate=16000" {
-                        #[cfg(feature = "audio")]
-                        {
-                            if let Err(e) = send_audio_chunk(&mut session, chunk, args.verbose).await {
-                                eprintln!("❌ Error sending audio chunk: {}", e);
-                            } else if args.verbose && audio_chunk_count % 100 == 0 {
-                                println!("🔍 DEBUG: Sent {} audio chunks so far", audio_chunk_count);
+    // Main event loop - simplified approach
+    #[cfg(any(feature = "audio", feature = "video", feature = "audio-output"))]
+    {
+        loop {
+            tokio::select! {
+                // Handle speech activity detection
+                speech_activity = speech_activity_rx.recv(), if cfg!(feature = "audio") => {
+                    if let Some(is_speech_active) = speech_activity {
+                        if is_speech_active {
+                            if args.verbose {
+                                println!("🎯 DEBUG: Starting turn - speech detected");
                             }
-                        }
-                    } else if chunk.mime_type == "image/jpeg" {
-                        #[cfg(feature = "video")]
-                        {
-                            if let Err(e) = send_video_chunk(&mut session, chunk).await {
-                                eprintln!("❌ Error sending video chunk: {}", e);
+                        } else {
+                            // Send turn complete when speech ends
+                            if args.verbose {
+                                println!("🎯 DEBUG: Ending turn - speech finished");
+                            }
+                            let content = Content::new(
+                                Role::User,
+                                vec![""]
+                            );
+                            let payload = gemini_ox::live::message_types::ClientContentPayload {
+                                turns: vec![content],
+                                turn_complete: Some(true),
+                            };
+                            if let Err(e) = session.send_client_content(payload).await {
+                                eprintln!("❌ Error sending turn complete: {}", e);
+                            } else if args.verbose {
+                                println!("✅ DEBUG: Turn complete sent");
                             }
                         }
                     }
                 }
-            }
 
-            // Handle responses from the API
-            response = session.receive() => {
-                match response {
-                    Some(Ok(chunk)) => {
-                        if args.verbose {
-                            println!("📥 DEBUG: Received response chunk: {:?}", std::mem::discriminant(&chunk));
+                // Handle audio chunks from microphone
+                audio_chunk = audio_rx.recv(), if cfg!(any(feature = "audio", feature = "video")) => {
+                    if let Some(chunk) = audio_chunk {
+                        audio_chunk_count += 1;
+                        last_audio_time = std::time::Instant::now();
+
+                        // Check if it's audio or video chunk based on mime type
+                        if chunk.mime_type == "audio/pcm;rate=16000" {
+                            #[cfg(feature = "audio")]
+                            {
+                                if let Err(e) = send_audio_chunk(&mut session, chunk, args.verbose).await {
+                                    eprintln!("❌ Error sending audio chunk: {}", e);
+                                } else if args.verbose && audio_chunk_count % 100 == 0 {
+                                    println!("🔍 DEBUG: Sent {} audio chunks so far", audio_chunk_count);
+                                }
+                            }
+                        } else if chunk.mime_type == "image/jpeg" {
+                            #[cfg(feature = "video")]
+                            {
+                                if let Err(e) = send_video_chunk(&mut session, chunk).await {
+                                    eprintln!("❌ Error sending video chunk: {}", e);
+                                }
+                            }
                         }
-                        if let Err(e) = handle_response_chunk(chunk, &audio_output, args.verbose).await {
-                            eprintln!("❌ Error handling response: {}", e);
-                        }
-                    }
-                    Some(Err(e)) => {
-                        eprintln!("❌ Error receiving response: {}", e);
-                        break;
-                    }
-                    None => {
-                        if args.verbose {
-                            println!("🔌 DEBUG: Connection closed by server");
-                        }
-                        break;
                     }
                 }
-            }
 
-            // Handle text input
-            result = reader.read_line(&mut line) => {
-                match result {
-                    Ok(0) => break, // EOF
-                    Ok(_) => {
-                        let input = line.trim();
-                        if input.eq_ignore_ascii_case("quit") {
+                // Handle responses from the API
+                response = session.receive() => {
+                    match response {
+                        Some(Ok(chunk)) => {
+                            if args.verbose {
+                                println!("📥 DEBUG: Received response chunk: {:?}", std::mem::discriminant(&chunk));
+                            }
+                            if let Err(e) = handle_response_chunk(chunk, &audio_output, args.verbose).await {
+                                eprintln!("❌ Error handling response: {}", e);
+                            }
+                        }
+                        Some(Err(e)) => {
+                            eprintln!("❌ Error receiving response: {}", e);
                             break;
                         }
-                        if input.eq_ignore_ascii_case("status") {
-                            println!("📊 DEBUG: Status - sent {} audio chunks, last audio: {:?} ago",
-                                   audio_chunk_count, last_audio_time.elapsed());
-                            print!("> ");
-                            io::stdout().flush()?;
-                            line.clear();
-                            continue;
-                        }
-                        if !input.is_empty() {
-                            send_text_message(&mut session, input, args.verbose).await?;
+                        None => {
                             if args.verbose {
-                                println!("⏳ DEBUG: Text message sent, waiting for response...");
+                                println!("🔌 DEBUG: Connection closed by server");
                             }
+                            break;
                         }
-                        line.clear();
-                        print!("\n> ");
-                        io::stdout().flush()?;
                     }
-                    Err(e) => {
-                        eprintln!("Error reading input: {}", e);
-                        break;
+                }
+
+                // Handle text input
+                result = reader.read_line(&mut line) => {
+                    match result {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            let input = line.trim();
+                            if input.eq_ignore_ascii_case("quit") {
+                                break;
+                            }
+                            if input.eq_ignore_ascii_case("status") {
+                                println!("📊 DEBUG: Status - sent {} audio chunks, last audio: {:?} ago",
+                                       audio_chunk_count, last_audio_time.elapsed());
+                                print!("> ");
+                                io::stdout().flush()?;
+                                line.clear();
+                                continue;
+                            }
+                            if !input.is_empty() {
+                                send_text_message(&mut session, input, args.verbose).await?;
+                                if args.verbose {
+                                    println!("⏳ DEBUG: Text message sent, waiting for response...");
+                                }
+                            }
+                            line.clear();
+                            print!("\n> ");
+                            io::stdout().flush()?;
+                        }
+                        Err(e) => {
+                            eprintln!("Error reading input: {}", e);
+                            break;
+                        }
+                    }
+                }
+
+                // Timeout check - if no audio for a while, suggest testing
+                _ = tokio::time::sleep(tokio::time::Duration::from_secs(15)) => {
+                    if last_audio_time.elapsed() > tokio::time::Duration::from_secs(15) {
+                        println!("⏰ DEBUG: No recent audio activity. Try:");
+                        println!("  - Type 'hello' to test text responses");
+                        println!("  - Speak into your microphone");
+                        println!("  - Type 'status' to check audio stats");
+                        print!("> ");
+                        let _ = io::stdout().flush();
                     }
                 }
             }
+        }
+    }
+    
+    // Text-only loop when no media features are enabled
+    #[cfg(not(any(feature = "audio", feature = "video", feature = "audio-output")))]
+    {
+        loop {
+            tokio::select! {
+                // Handle responses from the API
+                response = session.receive() => {
+                    match response {
+                        Some(Ok(chunk)) => {
+                            if args.verbose {
+                                println!("📥 DEBUG: Received response chunk: {:?}", std::mem::discriminant(&chunk));
+                            }
+                            if let Err(e) = handle_response_chunk(chunk, &audio_output, args.verbose).await {
+                                eprintln!("❌ Error handling response: {}", e);
+                            }
+                        }
+                        Some(Err(e)) => {
+                            eprintln!("❌ Error receiving response: {}", e);
+                            break;
+                        }
+                        None => {
+                            if args.verbose {
+                                println!("🔌 DEBUG: Connection closed by server");
+                            }
+                            break;
+                        }
+                    }
+                }
 
-            // Timeout check - if no audio for a while, suggest testing
-            _ = tokio::time::sleep(tokio::time::Duration::from_secs(15)) => {
-                if last_audio_time.elapsed() > tokio::time::Duration::from_secs(15) {
-                    println!("⏰ DEBUG: No recent audio activity. Try:");
-                    println!("  - Type 'hello' to test text responses");
-                    println!("  - Speak into your microphone");
-                    println!("  - Type 'status' to check audio stats");
-                    print!("> ");
-                    let _ = io::stdout().flush();
+                // Handle text input
+                result = reader.read_line(&mut line) => {
+                    match result {
+                        Ok(0) => break, // EOF
+                        Ok(_) => {
+                            let input = line.trim();
+                            if input.eq_ignore_ascii_case("quit") {
+                                break;
+                            }
+                            if input.eq_ignore_ascii_case("status") {
+                                println!("📊 DEBUG: Status - audio/video features disabled");
+                                print!("> ");
+                                io::stdout().flush()?;
+                                line.clear();
+                                continue;
+                            }
+                            if !input.is_empty() {
+                                send_text_message(&mut session, input, args.verbose).await?;
+                                if args.verbose {
+                                    println!("⏳ DEBUG: Text message sent, waiting for response...");
+                                }
+                            }
+                            line.clear();
+                            print!("\n> ");
+                            io::stdout().flush()?;
+                        }
+                        Err(e) => {
+                            eprintln!("Error reading input: {}", e);
+                            break;
+                        }
+                    }
                 }
             }
         }
@@ -563,6 +650,7 @@ async fn send_video_chunk(
     }
 }
 
+#[cfg(feature = "audio-output")]
 async fn handle_response_chunk(
     chunk: LiveApiResponseChunk,
     audio_output: &Option<AudioOutputHandler>,
@@ -594,6 +682,7 @@ async fn handle_response_chunk(
 
                         if inline_data.mime_type == "audio/pcm;rate=24000" {
                             let audio_data = &inline_data.data;
+                            #[cfg(feature = "audio-output")]
                             if let Some(output) = audio_output {
                                 play_audio_data(output, audio_data)?;
 
@@ -603,8 +692,14 @@ async fn handle_response_chunk(
                                         audio_data.len()
                                     );
                                 }
-                            } else if verbose {
+                            }
+                            #[cfg(feature = "audio-output")]
+                            if audio_output.is_none() && verbose {
                                 println!("⚠️  DEBUG: Audio output not available");
+                            }
+                            #[cfg(not(feature = "audio-output"))]
+                            if verbose {
+                                println!("⚠️  DEBUG: Audio output disabled (missing audio-output feature)");
                             }
                         }
                     }
@@ -618,6 +713,7 @@ async fn handle_response_chunk(
                 println!("✅ DEBUG: Turn complete - clearing audio queue");
             }
             // Clear audio queue when turn completes to prevent overlapping responses
+            #[cfg(feature = "audio-output")]
             if let Some(output) = audio_output {
                 let _ = output.clear_signal.send(());
             }
@@ -627,6 +723,7 @@ async fn handle_response_chunk(
                 println!("🏁 DEBUG: Generation complete - clearing audio queue");
             }
             // Clear audio queue when generation completes
+            #[cfg(feature = "audio-output")]
             if let Some(output) = audio_output {
                 let _ = output.clear_signal.send(());
             }
@@ -636,6 +733,7 @@ async fn handle_response_chunk(
                 println!("⚠️  DEBUG: Interrupted - clearing audio");
             }
             // Clear audio queue on interruption - this is key to preventing overlaps
+            #[cfg(feature = "audio-output")]
             if let Some(output) = audio_output {
                 let _ = output.clear_signal.send(());
             }
@@ -660,12 +758,14 @@ async fn handle_response_chunk(
 }
 
 // Audio output handling for receiving server audio responses
+#[cfg(feature = "audio-output")]
 struct AudioOutputHandler {
     _stream: cpal::Stream,
     audio_sender: mpsc::UnboundedSender<Vec<i16>>,
     clear_signal: mpsc::UnboundedSender<()>,
 }
 
+#[cfg(feature = "audio-output")]
 fn setup_audio_output(
     verbose: bool,
 ) -> Result<AudioOutputHandler, Box<dyn std::error::Error + Send + Sync>> {
@@ -808,6 +908,7 @@ fn setup_audio_output(
     })
 }
 
+#[cfg(feature = "audio-output")]
 fn play_audio_data(
     output: &AudioOutputHandler,
     base64_data: &str,
@@ -827,5 +928,80 @@ fn play_audio_data(
         return Ok(());
     }
 
+    Ok(())
+}
+
+#[cfg(not(feature = "audio-output"))]
+async fn handle_response_chunk(
+    chunk: LiveApiResponseChunk,
+    _audio_output: &Option<()>,
+    verbose: bool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    match chunk {
+        LiveApiResponseChunk::ModelTurn { server_content } => {
+            if verbose {
+                println!("🤖 DEBUG: ModelTurn received");
+            }
+            if let Some(parts) = server_content.model_turn.parts {
+                if verbose {
+                    println!("🤖 DEBUG: Processing {} parts", parts.len());
+                }
+                for (i, part) in parts.iter().enumerate() {
+                    if let Some(text) = &part.text {
+                        println!("🤖 {}", text);
+                    }
+
+                    if let Some(inline_data) = &part.inline_data {
+                        if verbose {
+                            println!(
+                                "🤖 DEBUG: Inline data part {} - mime_type: {:?}, data length: {}",
+                                i,
+                                inline_data.mime_type,
+                                inline_data.data.len()
+                            );
+                        }
+
+                        if inline_data.mime_type == "audio/pcm;rate=24000" {
+                            if verbose {
+                                println!("⚠️  DEBUG: Audio output disabled (missing audio-output feature)");
+                            }
+                        }
+                    }
+                }
+            } else if verbose {
+                println!("🤖 DEBUG: ModelTurn has no parts");
+            }
+        }
+        LiveApiResponseChunk::TurnComplete { .. } => {
+            if verbose {
+                println!("✅ DEBUG: Turn complete");
+            }
+        }
+        LiveApiResponseChunk::GenerationComplete { .. } => {
+            if verbose {
+                println!("🏁 DEBUG: Generation complete");
+            }
+        }
+        LiveApiResponseChunk::Interrupted { .. } => {
+            if verbose {
+                println!("⚠️  DEBUG: Interrupted");
+            }
+        }
+        LiveApiResponseChunk::SetupComplete { .. } => {
+            if verbose {
+                println!("🔧 DEBUG: Setup complete");
+            }
+        }
+        LiveApiResponseChunk::ToolCall { .. } => {
+            if verbose {
+                println!("🔧 DEBUG: Tool call received");
+            }
+        }
+        LiveApiResponseChunk::ToolCallCancellation { .. } => {
+            if verbose {
+                println!("🚫 DEBUG: Tool call cancelled");
+            }
+        }
+    }
     Ok(())
 }
