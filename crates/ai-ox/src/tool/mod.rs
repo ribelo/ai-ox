@@ -1,5 +1,6 @@
 pub mod call;
 pub mod error;
+pub mod gemini;
 pub mod result;
 pub mod set;
 
@@ -12,6 +13,8 @@ use futures_util::future::BoxFuture;
 use schemars::{JsonSchema, generate::SchemaSettings};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use gemini_ox::tool::Tool as GeminiTool;
 
 /// Metadata for a tool function.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -33,8 +36,8 @@ pub struct FunctionMetadata {
 pub enum Tool {
     /// Function declarations that can be called
     FunctionDeclarations(Vec<FunctionMetadata>),
-    // Other tool types can be added here in the future
-    // (e.g., GoogleSearchRetrieval, CodeExecution, etc.)
+    /// Vendor-specific tool with opaque metadata
+    GeminiTool(GeminiTool),
 }
 
 /// Trait for objects that provide tool functionality.
@@ -53,15 +56,19 @@ pub trait ToolBox: Send + Sync + std::fmt::Debug {
 
     /// Checks if this toolbox has a function with the given name.
     fn has_function(&self, name: &str) -> bool {
-        self.tools().iter().any(|tool| {
-            match tool {
-                Tool::FunctionDeclarations(functions) => {
-                    functions.iter().any(|func| func.name == name)
-                } // Add other tool types here as needed
-            }
+        self.tools().iter().any(|tool| match tool {
+            Tool::FunctionDeclarations(functions) => functions.iter().any(|func| func.name == name),
+            _ => false,
         })
     }
 }
+
+impl From<Box<dyn ToolBox>> for Vec<Tool> {
+    fn from(toolbox: Box<dyn ToolBox>) -> Self {
+        toolbox.tools()
+    }
+}
+
 
 /// Generates a JSON schema for the given type using schemars.
 ///

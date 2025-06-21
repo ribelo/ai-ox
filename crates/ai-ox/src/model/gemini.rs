@@ -7,6 +7,7 @@ use crate::{
     },
     errors::GenerateContentError,
     model::Model,
+    tool::Tool,
     usage::Usage,
 };
 use bon::Builder;
@@ -19,10 +20,11 @@ use gemini_ox::{
         request::GenerateContentRequest as GeminiGenerateContentRequest,
         response::GenerateContentResponse as GeminiResponse,
     },
-    tool::config::ToolConfig,
+    tool::{Tool as GeminiTool, config::ToolConfig},
 };
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
+use serde_json::Value;
 
 /// Represents a model from the Google Gemini family.
 #[derive(Debug, Clone, Builder)]
@@ -32,6 +34,8 @@ pub struct GeminiModel {
     client: Gemini,
     #[builder(field)]
     system_instruction: Option<GeminiContent>,
+    #[builder(field)]
+    tools: Option<Vec<Tool>>,
     /// The specific model name (e.g., "gemini-1.5-flash-latest").
     model: String,
     tool_config: Option<ToolConfig>,
@@ -53,6 +57,19 @@ impl<S: gemini_model_builder::State> GeminiModelBuilder<S> {
 
     pub fn system_instruction(mut self, system_instruction: impl Into<GeminiContent>) -> Self {
         self.system_instruction = Some(system_instruction.into());
+        self
+    }
+
+    pub fn tool(mut self, tool: impl Into<Tool>) -> Self {
+        self.tools.get_or_insert_default().push(tool.into());
+        self
+    }
+
+    pub fn tools(mut self, tools: impl Into<Vec<Tool>>) -> Self {
+        let tools = tools.into();
+        self.tools
+            .get_or_insert_default()
+            .extend(tools.into_iter().map(Into::into));
         self
     }
 }
@@ -87,9 +104,11 @@ impl GeminiModel {
                         };
                         parts.push(Part::File(file_data));
                     }
-                    _ => {
-                        // Skip other part types we don't handle yet
-                        continue;
+                    gemini_ox::content::PartData::FunctionCall(function_call) => todo!(),
+                    gemini_ox::content::PartData::FunctionResponse(function_response) => todo!(),
+                    gemini_ox::content::PartData::ExecutableCode(executable_code) => todo!(),
+                    gemini_ox::content::PartData::CodeExecutionResult(code_execution_result) => {
+                        todo!()
                     }
                 }
             }
@@ -133,17 +152,21 @@ impl Model for GeminiModel {
         messages: impl IntoIterator<Item = impl Into<Message>>,
     ) -> Result<GenerateContentResponse, GenerateContentError> {
         // Convert messages to gemini-ox Content format
-        let mut content_list = Vec::new();
+        let contents: Vec<GeminiContent> = messages.into_iter().map(|m| m.into().into()).collect();
 
-        // Convert conversation messages
-        for message in messages {
-            let content: GeminiContent = message.into().into();
-            content_list.push(content);
-        }
+        // Convert ai-ox Tools into JSON values for the gemini-ox request.
+        let tools: Option<Vec<Value>> = self.tools.as_ref().map(|tools| {
+            tools
+                .iter()
+                .cloned()
+                .map(Into::<GeminiTool>::into)
+                .filter_map(|gemini_tool| serde_json::to_value(gemini_tool).ok())
+                .collect()
+        });
 
         let gemini_request = GeminiGenerateContentRequest {
-            contents: content_list,
-            tools: None, // TODO: Convert tools when tool support is added
+            contents,
+            tools,
             model: self.model.clone(),
             tool_config: self.tool_config.clone(),
             safety_settings: self.safety_settings.clone(),
@@ -167,6 +190,7 @@ impl Model for GeminiModel {
         &'a self,
         _messages: impl IntoIterator<Item = impl Into<Message>>,
     ) -> BoxStream<'a, Result<MessageStreamEvent, GenerateContentError>> {
+        // TODO;
         unimplemented!("GeminiModel::request_stream is not yet implemented.");
     }
 
@@ -181,25 +205,28 @@ impl Model for GeminiModel {
     where
         O: DeserializeOwned + JsonSchema + Send,
     {
-        // Generate the JSON schema for the target type
-        let response_schema = ResponseSchema::from::<O>();
-
-        // Configure generation for structured output
+        // Configure generation for structured output (JSON mode)
         let generation_config = GenerationConfig::builder()
             .response_mime_type("application/json")
-            .response_schema(response_schema)
+            .response_schema(ResponseSchema::from::<O>())
             .build();
 
         // Convert messages to gemini-ox Content format
-        let mut content_list = Vec::new();
-        for message in messages {
-            let content: GeminiContent = message.into().into();
-            content_list.push(content);
-        }
+        let contents: Vec<GeminiContent> = messages.into_iter().map(|m| m.into().into()).collect();
+
+        // Convert ai-ox Tools into JSON values for the gemini-ox request.
+        let tools: Option<Vec<Value>> = self.tools.as_ref().map(|tools| {
+            tools
+                .iter()
+                .cloned()
+                .map(Into::<GeminiTool>::into)
+                .filter_map(|gemini_tool| serde_json::to_value(gemini_tool).ok())
+                .collect()
+        });
 
         let gemini_request = GeminiGenerateContentRequest {
-            contents: content_list,
-            tools: None,
+            contents,
+            tools,
             model: self.model.clone(),
             tool_config: self.tool_config.clone(),
             safety_settings: self.safety_settings.clone(),
@@ -214,12 +241,12 @@ impl Model for GeminiModel {
         let text = response
             .candidates
             .first()
-            .ok_or_else(|| GenerateContentError::NoResponse)?
+            .ok_or(GenerateContentError::NoResponse)?
             .content
             .parts()
             .first()
             .and_then(|part| part.as_text())
-            .ok_or_else(|| GenerateContentError::NoResponse)?
+            .ok_or(GenerateContentError::NoResponse)?
             .to_string();
 
         // Parse the JSON response into the target type
@@ -281,8 +308,8 @@ mod tests {
 
     #[test]
     fn test_json_schema_generation() {
-        use schemars::schema_for;
         use gemini_ox::ResponseSchema;
+        use schemars::schema_for;
 
         // Test that we can generate schemas for our types
         let _cat_schema = schema_for!(Cat);
@@ -310,7 +337,9 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request() {
-        let api_key = match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+        let api_key = match std::env::var("GEMINI_API_KEY")
+            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        {
             Ok(key) => key,
             Err(_) => {
                 println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
@@ -352,7 +381,9 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_structured_simple() {
-        let api_key = match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+        let api_key = match std::env::var("GEMINI_API_KEY")
+            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        {
             Ok(key) => key,
             Err(_) => {
                 println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
@@ -393,7 +424,9 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_structured_complex() {
-        let api_key = match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+        let api_key = match std::env::var("GEMINI_API_KEY")
+            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        {
             Ok(key) => key,
             Err(_) => {
                 println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
@@ -436,7 +469,9 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_multiple_messages() {
-        let api_key = match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+        let api_key = match std::env::var("GEMINI_API_KEY")
+            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        {
             Ok(key) => key,
             Err(_) => {
                 println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
