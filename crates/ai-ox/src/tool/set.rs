@@ -4,9 +4,18 @@ use std::sync::Arc;
 
 /// A container that holds multiple toolboxes and provides a unified interface
 /// for tool discovery and invocation.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ToolSet {
     toolboxes: Vec<Arc<dyn ToolBox>>,
+}
+
+impl std::fmt::Debug for ToolSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ToolSet")
+            .field("toolboxes_count", &self.toolboxes.len())
+            .field("tools", &self.get_all_tools())
+            .finish()
+    }
 }
 
 impl ToolSet {
@@ -18,12 +27,16 @@ impl ToolSet {
     }
 
     /// Adds a toolbox to this set.
-    pub fn add_toolbox(&mut self, toolbox: Arc<dyn ToolBox>) {
-        self.toolboxes.push(toolbox);
+    ///
+    /// The provided toolbox will be wrapped in an `Arc` internally, so the caller
+    /// does not need to manage the `Arc` themselves. If you need to share a toolbox
+    /// instance across multiple sets, wrap it in an `Arc` before adding it.
+    pub fn add_toolbox(&mut self, toolbox: impl ToolBox + Send + Sync + 'static) {
+        self.toolboxes.push(Arc::new(toolbox));
     }
 
     /// Adds a toolbox to this set using a builder pattern.
-    pub fn with_toolbox(mut self, toolbox: Arc<dyn ToolBox>) -> Self {
+    pub fn with_toolbox(mut self, toolbox: impl ToolBox + Send + Sync + 'static) -> Self {
         self.add_toolbox(toolbox);
         self
     }
@@ -138,8 +151,7 @@ mod tests {
     #[tokio::test]
     async fn test_single_toolbox() {
         let mut toolset = ToolSet::new();
-        let mock_toolbox = Arc::new(MockToolBox::new("test_function"));
-        toolset.add_toolbox(mock_toolbox);
+        toolset.add_toolbox(MockToolBox::new("test_function"));
 
         assert!(toolset.has_function("test_function"));
         assert!(!toolset.has_function("missing_function"));
@@ -161,8 +173,8 @@ mod tests {
     #[tokio::test]
     async fn test_multiple_toolboxes() {
         let toolset = ToolSet::new()
-            .with_toolbox(Arc::new(MockToolBox::new("function_a")))
-            .with_toolbox(Arc::new(MockToolBox::new("function_b")));
+            .with_toolbox(MockToolBox::new("function_a"))
+            .with_toolbox(MockToolBox::new("function_b"));
 
         assert!(toolset.has_function("function_a"));
         assert!(toolset.has_function("function_b"));
@@ -180,5 +192,25 @@ mod tests {
         let call = ToolCall::new("2", "function_b", json!({}));
         let result = toolset.invoke(call).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_shared_toolbox_with_arc() {
+        let shared_toolbox = Arc::new(MockToolBox::new("shared_function"));
+        let mut set1 = ToolSet::new();
+        set1.add_toolbox(shared_toolbox.clone());
+
+        let mut set2 = ToolSet::new();
+        set2.add_toolbox(shared_toolbox); // Move the last Arc
+
+        assert!(set1.has_function("shared_function"));
+        assert!(set2.has_function("shared_function"));
+
+        // Both toolsets should be able to invoke the shared function
+        let call1 = ToolCall::new("1", "shared_function", json!({}));
+        assert!(set1.invoke(call1).await.is_ok());
+
+        let call2 = ToolCall::new("2", "shared_function", json!({}));
+        assert!(set2.invoke(call2).await.is_ok());
     }
 }

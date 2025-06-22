@@ -13,6 +13,7 @@ use futures_util::future::BoxFuture;
 use schemars::{JsonSchema, generate::SchemaSettings};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::sync::Arc;
 
 use gemini_ox::tool::Tool as GeminiTool;
 
@@ -44,7 +45,7 @@ pub enum Tool {
 ///
 /// This trait allows objects to expose their available tools and handle
 /// tool invocations in a standardized way.
-pub trait ToolBox: Send + Sync + std::fmt::Debug {
+pub trait ToolBox: Send + Sync + 'static {
     /// Returns the list of tools provided by this toolbox.
     fn tools(&self) -> Vec<Tool>;
 
@@ -63,12 +64,25 @@ pub trait ToolBox: Send + Sync + std::fmt::Debug {
     }
 }
 
+impl<T: ToolBox + ?Sized> ToolBox for Arc<T> {
+    fn tools(&self) -> Vec<Tool> {
+        self.as_ref().tools()
+    }
+
+    fn invoke(&self, call: ToolCall) -> BoxFuture<Result<ToolResult, ToolError>> {
+        self.as_ref().invoke(call)
+    }
+
+    fn has_function(&self, name: &str) -> bool {
+        self.as_ref().has_function(name)
+    }
+}
+
 impl From<Box<dyn ToolBox>> for Vec<Tool> {
     fn from(toolbox: Box<dyn ToolBox>) -> Self {
         toolbox.tools()
     }
 }
-
 
 /// Generates a JSON schema for the given type using schemars.
 ///

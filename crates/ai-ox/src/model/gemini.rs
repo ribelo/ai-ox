@@ -1,19 +1,18 @@
 use crate::{
+    ModelResponse,
     content::{
         delta::MessageStreamEvent,
         message::{Message, MessageRole},
-        part::{FileData, ImageSource, Part},
-        response::{GenerateContentResponse, GenerateContentStructuredResponse},
+        part::Part,
     },
     errors::GenerateContentError,
-    model::Model,
-    tool::Tool,
+    model::{Model, ModelRequest, response::RawStructuredResponse},
     usage::Usage,
 };
 use bon::Builder;
-use futures_util::stream::BoxStream;
+use futures_util::{FutureExt, future::BoxFuture, stream::BoxStream};
 use gemini_ox::{
-    Gemini, ResponseSchema,
+    Gemini,
     content::Content as GeminiContent,
     generate_content::{
         GenerationConfig, SafetySettings,
@@ -22,9 +21,6 @@ use gemini_ox::{
     },
     tool::{Tool as GeminiTool, config::ToolConfig},
 };
-use schemars::JsonSchema;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 
 /// Represents a model from the Google Gemini family.
 #[derive(Debug, Clone, Builder)]
@@ -34,8 +30,6 @@ pub struct GeminiModel {
     client: Gemini,
     #[builder(field)]
     system_instruction: Option<GeminiContent>,
-    #[builder(field)]
-    tools: Option<Vec<Tool>>,
     /// The specific model name (e.g., "gemini-1.5-flash-latest").
     model: String,
     tool_config: Option<ToolConfig>,
@@ -59,60 +53,26 @@ impl<S: gemini_model_builder::State> GeminiModelBuilder<S> {
         self.system_instruction = Some(system_instruction.into());
         self
     }
-
-    pub fn tool(mut self, tool: impl Into<Tool>) -> Self {
-        self.tools.get_or_insert_default().push(tool.into());
-        self
-    }
-
-    pub fn tools(mut self, tools: impl Into<Vec<Tool>>) -> Self {
-        let tools = tools.into();
-        self.tools
-            .get_or_insert_default()
-            .extend(tools.into_iter().map(Into::into));
-        self
-    }
 }
 
 impl GeminiModel {
-    /// Converts a `gemini-ox` `GenerateContentResponse` to an `ai-ox` `GenerateContentResponse`.
-    fn convert_response(&self, response: GeminiResponse) -> GenerateContentResponse {
-        let mut parts = Vec::new();
-
-        // Get the first candidate's content, if it exists.
-        if let Some(candidate) = response.candidates.first() {
-            for part in &candidate.content.parts {
-                match &part.data {
-                    gemini_ox::content::PartData::Text(text) => {
-                        parts.push(Part::Text {
-                            text: text.to_string(),
-                        });
-                    }
-                    gemini_ox::content::PartData::InlineData(blob) => {
-                        parts.push(Part::Image {
-                            source: ImageSource::Base64 {
-                                media_type: blob.mime_type.clone(),
-                                data: blob.data.clone(),
-                            },
-                        });
-                    }
-                    gemini_ox::content::PartData::FileData(file_data) => {
-                        let file_data = FileData {
-                            file_uri: file_data.file_uri.clone(),
-                            mime_type: file_data.mime_type.clone(),
-                            display_name: file_data.display_name.clone(),
-                        };
-                        parts.push(Part::File(file_data));
-                    }
-                    gemini_ox::content::PartData::FunctionCall(function_call) => todo!(),
-                    gemini_ox::content::PartData::FunctionResponse(function_response) => todo!(),
-                    gemini_ox::content::PartData::ExecutableCode(executable_code) => todo!(),
-                    gemini_ox::content::PartData::CodeExecutionResult(code_execution_result) => {
-                        todo!()
-                    }
-                }
-            }
-        }
+    /// Converts a `gemini-ox` `GenerateContentResponse` to an `ai-ox` `ModelResponse`.
+    fn convert_response(&self, response: GeminiResponse) -> ModelResponse {
+        // Take the first candidate from the response, consuming it to avoid cloning parts.
+        let parts = if let Some(candidate) = response.candidates.into_iter().next() {
+            candidate
+                .content
+                .parts
+                .into_iter()
+                .map(Into::<Part>::into) // Convert each gemini part into our Part
+                .filter(|part| {
+                    // Skip empty text parts, which can be a side-effect of FunctionCall conversion.
+                    !matches!(part, Part::Text { text } if text.is_empty())
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
         let message = Message {
             role: MessageRole::Assistant,
@@ -120,14 +80,13 @@ impl GeminiModel {
             timestamp: chrono::Utc::now(),
         };
 
-        // Convert usage data from Gemini response
-        let usage = if let Some(usage_metadata) = response.usage_metadata {
-            Usage::from(usage_metadata)
-        } else {
-            Usage::new()
-        };
+        // Convert usage data from the response, if present.
+        let usage = response
+            .usage_metadata
+            .map(Usage::from)
+            .unwrap_or_else(Usage::new);
 
-        GenerateContentResponse {
+        ModelResponse {
             message,
             model_name: self.model.clone(),
             usage,
@@ -137,7 +96,6 @@ impl GeminiModel {
 }
 
 impl Model for GeminiModel {
-    /// Returns the model name/identifier.
     fn model(&self) -> &str {
         &self.model
     }
@@ -147,135 +105,146 @@ impl Model for GeminiModel {
     /// This implementation will handle the conversion from the generic `GenerateContentRequest`
     /// to the specific format required by the `gemini-ox` client, including handling
     /// system instructions and message history.
-    async fn request(
+    fn request(
         &self,
-        messages: impl IntoIterator<Item = impl Into<Message>>,
-    ) -> Result<GenerateContentResponse, GenerateContentError> {
-        // Convert messages to gemini-ox Content format
-        let contents: Vec<GeminiContent> = messages.into_iter().map(|m| m.into().into()).collect();
+        request: ModelRequest,
+    ) -> BoxFuture<'_, Result<ModelResponse, GenerateContentError>> {
+        let system_instruction = request
+            .system_message
+            .map(Into::into)
+            .or_else(|| self.system_instruction.clone());
 
-        // Convert ai-ox Tools into JSON values for the gemini-ox request.
-        let tools: Option<Vec<Value>> = self.tools.as_ref().map(|tools| {
-            tools
-                .iter()
-                .cloned()
-                .map(Into::<GeminiTool>::into)
-                .filter_map(|gemini_tool| serde_json::to_value(gemini_tool).ok())
-                .collect()
-        });
+        let contents: Vec<GeminiContent> = request.messages.into_iter().map(Into::into).collect();
+
+        let tools = request
+            .tools
+            .map(|tools| {
+                tools
+                    .into_iter()
+                    .map(Into::<GeminiTool>::into)
+                    .filter_map(|tool| serde_json::to_value(tool).ok())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty());
 
         let gemini_request = GeminiGenerateContentRequest {
             contents,
             tools,
+            system_instruction,
             model: self.model.clone(),
             tool_config: self.tool_config.clone(),
             safety_settings: self.safety_settings.clone(),
-            system_instruction: self.system_instruction.clone(),
             generation_config: self.generation_config.clone(),
             cached_content: self.cached_content.clone(),
         };
 
-        let response = gemini_request.send(&self.client).await?;
-
-        // Convert the response using our private conversion method
-        let ai_response = self.convert_response(response);
-
-        Ok(ai_response)
+        async move {
+            let response = gemini_request.send(&self.client).await?;
+            Ok(self.convert_response(response))
+        }
+        .boxed()
     }
 
     /// Returns a stream of events for a streaming request.
     ///
-    /// This feature is not yet implemented for the `GeminiModel`.
-    fn request_stream<'a>(
-        &'a self,
-        _messages: impl IntoIterator<Item = impl Into<Message>>,
-    ) -> BoxStream<'a, Result<MessageStreamEvent, GenerateContentError>> {
+    /// This method is currently not implemented for the Gemini model.
+    fn request_stream(
+        &self,
+        _request: ModelRequest,
+    ) -> BoxStream<'_, Result<MessageStreamEvent, GenerateContentError>> {
         // TODO;
         unimplemented!("GeminiModel::request_stream is not yet implemented.");
     }
 
-    /// Generates structured content that conforms to a specific schema.
-    ///
-    /// This implementation leverages Gemini's `response_schema` facility to guide the model
-    /// to produce JSON output that matches the provided type's schema.
-    async fn request_structured<O>(
+    fn request_structured_internal(
         &self,
-        messages: impl IntoIterator<Item = impl Into<Message>>,
-    ) -> Result<GenerateContentStructuredResponse<O>, GenerateContentError>
-    where
-        O: DeserializeOwned + JsonSchema + Send,
-    {
+        request: ModelRequest,
+        schema: String,
+    ) -> BoxFuture<'_, Result<RawStructuredResponse, GenerateContentError>> {
+        // Convert the ModelRequest into separate components for building the GeminiGenerateContentRequest
         // Configure generation for structured output (JSON mode)
+        // Parse the schema and remove the $schema field if present (Gemini API doesn't accept it)
+        let mut schema_json: serde_json::Value = serde_json::from_str(&schema).unwrap_or_default();
+        if let Some(obj) = schema_json.as_object_mut() {
+            obj.remove("$schema");
+        }
+
         let generation_config = GenerationConfig::builder()
             .response_mime_type("application/json")
-            .response_schema(ResponseSchema::from::<O>())
+            .response_schema(schema_json)
             .build();
 
-        // Convert messages to gemini-ox Content format
-        let contents: Vec<GeminiContent> = messages.into_iter().map(|m| m.into().into()).collect();
+        // Use system instruction from request if available, otherwise use the model's default
+        let system_instruction = request
+            .system_message
+            .map(Into::into)
+            .or_else(|| self.system_instruction.clone());
 
-        // Convert ai-ox Tools into JSON values for the gemini-ox request.
-        let tools: Option<Vec<Value>> = self.tools.as_ref().map(|tools| {
-            tools
-                .iter()
-                .cloned()
-                .map(Into::<GeminiTool>::into)
-                .filter_map(|gemini_tool| serde_json::to_value(gemini_tool).ok())
-                .collect()
-        });
+        let contents: Vec<GeminiContent> = request.messages.into_iter().map(Into::into).collect();
+
+        // Use tools from request if available
+        let tools = request
+            .tools
+            .map(|tools| {
+                tools
+                    .into_iter()
+                    .map(Into::<GeminiTool>::into)
+                    .filter_map(|tool| serde_json::to_value(tool).ok())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty());
 
         let gemini_request = GeminiGenerateContentRequest {
             contents,
             tools,
+            system_instruction,
             model: self.model.clone(),
             tool_config: self.tool_config.clone(),
             safety_settings: self.safety_settings.clone(),
-            system_instruction: self.system_instruction.clone(),
             generation_config: Some(generation_config),
             cached_content: self.cached_content.clone(),
         };
 
-        let response = gemini_request.send(&self.client).await?;
+        async move {
+            let response = gemini_request.send(&self.client).await?;
 
-        // Extract the text content from the first candidate
-        let text = response
-            .candidates
-            .first()
-            .ok_or(GenerateContentError::NoResponse)?
-            .content
-            .parts()
-            .first()
-            .and_then(|part| part.as_text())
-            .ok_or(GenerateContentError::NoResponse)?
-            .to_string();
+            // Extract the text content from the first part of the first candidate.
+            let text = response
+                .candidates
+                .first()
+                .and_then(|candidate| candidate.content.parts().first())
+                .and_then(|part| part.as_text())
+                .ok_or(GenerateContentError::NoResponse)?;
 
-        // Parse the JSON response into the target type
-        let data: O = serde_json::from_str(&text)
-            .map_err(|e| GenerateContentError::response_parsing(e.to_string()))?;
+            // Parse the text as JSON.
+            let json = serde_json::from_str(text)
+                .map_err(|e| GenerateContentError::response_parsing(e.to_string()))?;
 
-        // Convert usage data from Gemini response
-        let usage = if let Some(usage_metadata) = response.usage_metadata {
-            Usage::from(usage_metadata)
-        } else {
-            Usage::new()
-        };
+            let usage = response
+                .usage_metadata
+                .map(Into::into)
+                .unwrap_or_else(Usage::new);
 
-        Ok(GenerateContentStructuredResponse {
-            data,
-            model_name: self.model.clone(),
-            usage,
-            vendor_name: "google".to_string(),
-            raw_json: Some(text),
-        })
+            Ok(RawStructuredResponse {
+                json,
+                usage,
+                model_name: self.model.clone(),
+                vendor_name: "google".to_string(),
+            })
+        }
+        .boxed()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::content::{
-        message::{Message, MessageRole},
-        part::Part,
+    use crate::{
+        content::{
+            message::{Message, MessageRole},
+            part::Part,
+        },
+        model::response::StructuredResponse,
     };
     use schemars::JsonSchema;
     use serde::{Deserialize, Serialize};
@@ -360,7 +329,13 @@ mod tests {
             timestamp: chrono::Utc::now(),
         }];
 
-        let result = model.request(messages).await;
+        let result = model
+            .request(ModelRequest {
+                messages,
+                system_message: None,
+                tools: None,
+            })
+            .await;
 
         assert!(result.is_ok(), "Model request failed: {:?}", result.err());
         let response = result.unwrap();
@@ -404,7 +379,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let result: Result<GenerateContentStructuredResponse<Cat>, _> =
+        let result: Result<StructuredResponse<Cat>, _> =
             model.request_structured(vec![message]).await;
 
         match result {
@@ -412,7 +387,7 @@ mod tests {
                 assert!(!response.data.name.is_empty());
                 assert_eq!(response.vendor_name, "google");
                 assert_eq!(response.model_name, "gemini-1.5-flash");
-                assert!(response.raw_json.is_some());
+
                 println!("Generated cat: {:?}", response.data);
             }
             Err(e) => {
@@ -447,7 +422,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let result: Result<GenerateContentStructuredResponse<ComplexData>, _> =
+        let result: Result<StructuredResponse<ComplexData>, _> =
             model.request_structured(vec![message]).await;
 
         match result {
@@ -457,7 +432,7 @@ mod tests {
                 assert!(response.data.active);
                 assert_eq!(response.vendor_name, "google");
                 assert_eq!(response.model_name, "gemini-1.5-flash");
-                assert!(response.raw_json.is_some());
+
                 println!("Generated complex data: {:?}", response.data);
             }
             Err(e) => {
@@ -508,7 +483,13 @@ mod tests {
             },
         ];
 
-        let result = model.request(messages).await;
+        let result = model
+            .request(ModelRequest {
+                messages,
+                system_message: None,
+                tools: None,
+            })
+            .await;
 
         assert!(result.is_ok(), "Model request failed: {:?}", result.err());
         let response = result.unwrap();

@@ -2,8 +2,6 @@ pub mod delta;
 pub mod gemini;
 pub mod message;
 pub mod part;
-pub mod requests;
-pub mod response;
 
 // Re-export commonly used types
 pub use message::{Message, MessageRole};

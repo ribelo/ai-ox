@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use crate::tool::ToolCall;
 
 /// Represents file data with URI and metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -51,7 +52,7 @@ pub enum ImageSource {
 }
 
 /// Represents a single piece of content that can be part of a message.
-/// Supports text, images, files, and tool results.
+/// Supports text, images, files, tool calls, and tool results.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Part {
@@ -67,6 +68,15 @@ pub enum Part {
     },
     /// File content referenced by URI.
     File(FileData),
+    /// Request to call a tool function.
+    ToolCall {
+        /// Unique identifier for this tool call.
+        id: String,
+        /// Name of the function to call.
+        name: String,
+        /// Arguments to pass to the function.
+        args: Value,
+    },
     /// Result from a tool execution.
     ToolResult {
         /// ID of the tool call this is responding to.
@@ -76,4 +86,40 @@ pub enum Part {
         /// The result data from the tool execution.
         content: Value,
     },
+}
+
+impl From<ToolCall> for Part {
+    fn from(tool_call: ToolCall) -> Self {
+        Part::ToolCall {
+            id: tool_call.id,
+            name: tool_call.name,
+            args: tool_call.args,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_tool_call_to_part_conversion() {
+        let tool_call = ToolCall::new(
+            "call_123",
+            "search_function",
+            json!({"query": "test"})
+        );
+
+        let part: Part = tool_call.into();
+
+        match part {
+            Part::ToolCall { id, name, args } => {
+                assert_eq!(id, "call_123");
+                assert_eq!(name, "search_function");
+                assert_eq!(args, json!({"query": "test"}));
+            }
+            _ => panic!("Expected ToolCall part"),
+        }
+    }
 }

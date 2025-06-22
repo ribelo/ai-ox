@@ -1,52 +1,60 @@
+//! Defines the events and deltas used for streaming model responses.
+
+use crate::usage::Usage;
 use serde::{Deserialize, Serialize};
 
-/// Represents partial updates to a tool function call during streaming.
+/// Represents a delta for a single content block within a message.
+///
+/// A content block can be a piece of text or a tool call.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ToolFunctionDelta {
-    /// The function name (sent once at the beginning).
-    pub name: Option<String>,
-    /// Incremental arguments as a JSON string fragment.
-    pub arguments: Option<String>,
-}
-
-/// Represents a partial update to a content part during streaming.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum PartDelta {
-    /// Incremental text content.
-    Text {
-        /// The text fragment to append.
-        text: String,
-    },
-    /// Incremental tool call updates.
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum ContentBlockDelta {
+    /// A delta for a text block.
+    Text { text: String },
+    /// A delta for a tool call block.
     ToolCall {
-        /// Index of the tool call being updated in the message's tool call list.
-        index: usize,
-        /// Tool call ID (sent once at the beginning).
+        /// The unique ID for the tool call. Sent once per tool call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         id: Option<String>,
-        /// Function details being updated.
-        function: Option<ToolFunctionDelta>,
+        /// The name of the function being called. Sent once per tool call.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        /// A delta of the JSON arguments for the function.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        args_delta: Option<String>,
     },
-    // Note: Image and ToolResult parts are not typically streamed as deltas,
-    // they appear fully formed in the final message.
 }
 
-/// Represents a partial update to a message during streaming.
+/// Represents an event in the message stream from the model.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct MessageDelta {
-    /// The message role (typically sent once at the start of the message).
-    pub role: Option<String>,
-    /// Content part deltas for this message.
-    pub content: Option<Vec<PartDelta>>,
-}
-
-/// Represents events in a message stream.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum MessageStreamEvent {
-    /// A partial message delta update.
-    Delta(MessageDelta),
-    /// Indicates the end of the message stream.
-    End,
+    /// Occurs when a new message is created. This is the first event in a stream.
+    MessageStart,
+
+    /// Occurs when a new content block is started.
+    ContentBlockStart {
+        /// The index of the content block.
+        index: usize,
+    },
+
+    /// A delta for a content block.
+    ContentBlockDelta {
+        /// The index of the content block being updated.
+        index: usize,
+        /// The delta for the content block.
+        delta: ContentBlockDelta,
+    },
+
+    /// Occurs when a content block is finished.
+    ContentBlockStop {
+        /// The index of the content block.
+        index: usize,
+    },
+
+    /// Occurs when the message is complete. This is the final event in a stream.
+    MessageStop {
+        /// The token usage statistics for the request.
+        usage: Usage,
+    },
 }

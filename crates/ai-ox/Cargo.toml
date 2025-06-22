@@ -15,6 +15,7 @@ tokio = { workspace = true }
 chrono = { version = "0.4", features = ["serde"] }
 bon = { workspace = true }
 ai-ox-macros = { path = "../ai-ox-macros" }
+async-stream = "0.3"
 
 [dev-dependencies]
 ai-ox-macros = { path = "../ai-ox-macros" }
