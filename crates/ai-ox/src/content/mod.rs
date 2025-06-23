@@ -1,5 +1,4 @@
 pub mod delta;
-pub mod gemini;
 pub mod message;
 pub mod part;
 

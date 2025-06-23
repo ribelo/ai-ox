@@ -1,3 +1,5 @@
+mod conversion;
+
 use crate::{
     ModelResponse,
     content::{
