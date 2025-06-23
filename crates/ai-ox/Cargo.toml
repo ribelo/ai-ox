@@ -3,6 +3,11 @@ name = "ai-ox"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["gemini"]
+gemini = ["dep:gemini-ox"]
+openrouter = ["dep:openrouter-ox"]
+
 [dependencies]
 serde = { workspace = true }
 base64 = { workspace = true }
@@ -10,7 +15,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 futures-util = { workspace = true }
 schemars = { workspace = true }
-gemini-ox = { path = "../gemini-ox" }
+gemini-ox = { path = "../gemini-ox", optional = true }
+openrouter-ox = { path = "../openrouter-ox", optional = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
 bon = { workspace = true }

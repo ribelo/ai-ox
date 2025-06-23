@@ -1,0 +1,27 @@
+[package]
+name = "openrouter-ox"
+version = "0.3.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = ["leaky-bucket"]
+leaky-bucket = ["dep:leaky-bucket"]
+
+[dependencies]
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+leaky-bucket = { workspace = true, optional = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+bon = { workspace = true }
+derive_more = { workspace = true }
+schemars = { workspace = true }
+async-stream = { workspace = true }
+futures-util = { workspace = true }
+
+[dev-dependencies]
+base64 = { workspace = true }

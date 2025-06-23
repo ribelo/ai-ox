@@ -12,3 +12,10 @@ pub use ai_ox_macros::toolbox;
 // Re-export commonly used types
 pub use errors::GenerateContentError;
 pub use model::response::{ModelResponse, StructuredResponse};
+
+// Re-export model implementations based on features
+#[cfg(feature = "gemini")]
+pub use model::gemini::GeminiModel;
+
+#[cfg(feature = "openrouter")]
+pub use model::openrouter::OpenRouterModel;

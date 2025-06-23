@@ -1,5 +1,6 @@
 pub mod call;
 pub mod error;
+#[cfg(feature = "gemini")]
 pub mod gemini;
 pub mod result;
 pub mod set;
@@ -15,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
+#[cfg(feature = "gemini")]
 use gemini_ox::tool::Tool as GeminiTool;
 
 /// Metadata for a tool function.
@@ -38,6 +40,7 @@ pub enum Tool {
     /// Function declarations that can be called
     FunctionDeclarations(Vec<FunctionMetadata>),
     /// Vendor-specific tool with opaque metadata
+    #[cfg(feature = "gemini")]
     GeminiTool(GeminiTool),
 }
 
@@ -59,7 +62,8 @@ pub trait ToolBox: Send + Sync + 'static {
     fn has_function(&self, name: &str) -> bool {
         self.tools().iter().any(|tool| match tool {
             Tool::FunctionDeclarations(functions) => functions.iter().any(|func| func.name == name),
-            _ => false,
+            #[cfg(feature = "gemini")]
+            Tool::GeminiTool(_) => false,
         })
     }
 }

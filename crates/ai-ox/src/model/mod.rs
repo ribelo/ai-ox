@@ -1,4 +1,7 @@
+#[cfg(feature = "gemini")]
 pub mod gemini;
+#[cfg(feature = "openrouter")]
+pub mod openrouter;
 pub mod request;
 pub mod response;
 
