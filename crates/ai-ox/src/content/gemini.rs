@@ -244,7 +244,10 @@ mod tests {
         let function_call = gemini_part.data.as_function_call().unwrap();
         assert_eq!(function_call.id, Some("call_456".to_string()));
         assert_eq!(function_call.name, "search_web");
-        assert_eq!(function_call.args, Some(json!({"query": "rust programming"})));
+        assert_eq!(
+            function_call.args,
+            Some(json!({"query": "rust programming"}))
+        );
     }
 
     #[test]

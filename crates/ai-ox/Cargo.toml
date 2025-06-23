@@ -12,13 +12,13 @@ futures-util = { workspace = true }
 schemars = { workspace = true }
 gemini-ox = { path = "../gemini-ox" }
 tokio = { workspace = true }
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 bon = { workspace = true }
 ai-ox-macros = { path = "../ai-ox-macros" }
-async-stream = "0.3"
+async-stream = { workspace = true }
+dyn-clone = { workspace = true }
 
 [dev-dependencies]
 ai-ox-macros = { path = "../ai-ox-macros" }
 schemars = { workspace = true }
-chrono = { version = "0.4", features = ["serde"] }
 futures-util = { workspace = true }

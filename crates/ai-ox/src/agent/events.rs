@@ -1,6 +1,6 @@
 use crate::{
-    content::delta::MessageStreamEvent,
     ModelResponse,
+    content::delta::MessageStreamEvent,
     tool::{ToolCall, ToolResult},
 };
 

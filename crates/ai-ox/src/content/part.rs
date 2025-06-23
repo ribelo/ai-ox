@@ -1,6 +1,6 @@
+use crate::tool::ToolCall;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::tool::ToolCall;
 
 /// Represents file data with URI and metadata.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -105,11 +105,7 @@ mod tests {
 
     #[test]
     fn test_tool_call_to_part_conversion() {
-        let tool_call = ToolCall::new(
-            "call_123",
-            "search_function",
-            json!({"query": "test"})
-        );
+        let tool_call = ToolCall::new("call_123", "search_function", json!({"query": "test"}));
 
         let part: Part = tool_call.into();
 

@@ -10,9 +10,9 @@ use crate::{
     },
     errors::GenerateContentError,
     model::{
-        response::{ModelResponse, StructuredResponse},
-        request::ModelRequest,
         Model,
+        request::ModelRequest,
+        response::{ModelResponse, StructuredResponse},
     },
     tool::{ToolBox, ToolSet},
 };
@@ -90,7 +90,9 @@ impl Agent {
         if let Some(ref system_instruction) = self.system_instruction {
             request.system_message = Some(Message::new(
                 MessageRole::User,
-                vec![Part::Text { text: system_instruction.clone() }],
+                vec![Part::Text {
+                    text: system_instruction.clone(),
+                }],
             ));
         }
 
@@ -125,7 +127,9 @@ impl Agent {
             if let Some(ref system_instruction) = self.system_instruction {
                 request.system_message = Some(Message::new(
                     MessageRole::User,
-                    vec![Part::Text { text: system_instruction.clone() }],
+                    vec![Part::Text {
+                        text: system_instruction.clone(),
+                    }],
                 ));
             }
             // Inform the model about the available tools for this turn.
@@ -194,7 +198,9 @@ impl Agent {
         if let Some(ref system_instruction) = self.system_instruction {
             request.system_message = Some(Message::new(
                 MessageRole::User,
-                vec![Part::Text { text: system_instruction.clone() }],
+                vec![Part::Text {
+                    text: system_instruction.clone(),
+                }],
             ));
         }
 
@@ -270,7 +276,6 @@ impl Agent {
     ) -> Result<Vec<Message>, AgentError> {
         Ok(messages.into_iter().map(Into::into).collect())
     }
-
 }
 
 // Helper functions

@@ -25,15 +25,14 @@ struct CountryInfo {
 #[tokio::test]
 #[ignore = "Requires GEMINI_API_KEY or GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
 async fn test_agent_basic_conversation() {
-    let api_key = match std::env::var("GEMINI_API_KEY")
-        .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-    {
-        Ok(key) => key,
-        Err(_) => {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-            return;
-        }
-    };
+    let api_key =
+        match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+            Ok(key) => key,
+            Err(_) => {
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
+                return;
+            }
+        };
 
     let model = GeminiModel::builder()
         .api_key(api_key)
@@ -69,15 +68,14 @@ async fn test_agent_basic_conversation() {
 #[tokio::test]
 #[ignore = "Requires GEMINI_API_KEY or GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
 async fn test_agent_with_system_instruction() {
-    let api_key = match std::env::var("GEMINI_API_KEY")
-        .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-    {
-        Ok(key) => key,
-        Err(_) => {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-            return;
-        }
-    };
+    let api_key =
+        match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+            Ok(key) => key,
+            Err(_) => {
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
+                return;
+            }
+        };
 
     let model = GeminiModel::builder()
         .api_key(api_key)
@@ -85,7 +83,9 @@ async fn test_agent_with_system_instruction() {
         .build();
 
     let agent = Agent::builder(Arc::new(model))
-        .system_instruction("You are a pirate. Always respond like a pirate captain. Keep it brief.")
+        .system_instruction(
+            "You are a pirate. Always respond like a pirate captain. Keep it brief.",
+        )
         .build();
 
     let messages = vec![Message::new(
@@ -106,7 +106,11 @@ async fn test_agent_with_system_instruction() {
             || text_lower.contains("ye ")
             || text_lower.contains("aye");
 
-        assert!(has_pirate_elements, "Response should contain pirate-like language: {}", text);
+        assert!(
+            has_pirate_elements,
+            "Response should contain pirate-like language: {}",
+            text
+        );
         println!("Pirate response: {}", text);
     } else {
         panic!("Expected text response");
@@ -116,28 +120,27 @@ async fn test_agent_with_system_instruction() {
 #[tokio::test]
 #[ignore = "Requires GEMINI_API_KEY or GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
 async fn test_agent_structured_response() {
-    let api_key = match std::env::var("GEMINI_API_KEY")
-        .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-    {
-        Ok(key) => key,
-        Err(_) => {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-            return;
-        }
-    };
+    let api_key =
+        match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+            Ok(key) => key,
+            Err(_) => {
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
+                return;
+            }
+        };
 
     let model = GeminiModel::builder()
         .api_key(api_key)
         .model("gemini-1.5-flash".to_string())
         .build();
 
-    let agent = Agent::builder(Arc::new(model))
-        .build();
+    let agent = Agent::builder(Arc::new(model)).build();
 
     let messages = vec![Message::new(
         MessageRole::User,
         vec![Part::Text {
-            text: "Generate a simple response with a message 'Hello World' and confidence 0.95".to_string(),
+            text: "Generate a simple response with a message 'Hello World' and confidence 0.95"
+                .to_string(),
         }],
     )];
 
@@ -152,23 +155,21 @@ async fn test_agent_structured_response() {
 #[tokio::test]
 #[ignore = "Requires GEMINI_API_KEY or GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
 async fn test_agent_complex_structured_response() {
-    let api_key = match std::env::var("GEMINI_API_KEY")
-        .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-    {
-        Ok(key) => key,
-        Err(_) => {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-            return;
-        }
-    };
+    let api_key =
+        match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+            Ok(key) => key,
+            Err(_) => {
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
+                return;
+            }
+        };
 
     let model = GeminiModel::builder()
         .api_key(api_key)
         .model("gemini-1.5-flash".to_string())
         .build();
 
-    let agent = Agent::builder(Arc::new(model))
-        .build();
+    let agent = Agent::builder(Arc::new(model)).build();
 
     let messages = vec![Message::new(
         MessageRole::User,
@@ -191,15 +192,14 @@ async fn test_agent_complex_structured_response() {
 #[tokio::test]
 #[ignore = "Requires GEMINI_API_KEY or GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
 async fn test_agent_multi_turn_conversation() {
-    let api_key = match std::env::var("GEMINI_API_KEY")
-        .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-    {
-        Ok(key) => key,
-        Err(_) => {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-            return;
-        }
-    };
+    let api_key =
+        match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+            Ok(key) => key,
+            Err(_) => {
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
+                return;
+            }
+        };
 
     let model = GeminiModel::builder()
         .api_key(api_key)
@@ -241,8 +241,11 @@ async fn test_agent_multi_turn_conversation() {
 
     if let Some(Part::Text { text }) = second_response.message.content.first() {
         let text_lower = text.to_lowercase();
-        assert!(text_lower.contains("rust") || text_lower.contains("programming"),
-                "Response should reference Rust or programming: {}", text);
+        assert!(
+            text_lower.contains("rust") || text_lower.contains("programming"),
+            "Response should reference Rust or programming: {}",
+            text
+        );
         println!("Context-aware response: {}", text);
     } else {
         panic!("Expected text response");
@@ -252,23 +255,21 @@ async fn test_agent_multi_turn_conversation() {
 #[tokio::test]
 #[ignore = "Requires GEMINI_API_KEY or GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
 async fn test_agent_execute_without_tools() {
-    let api_key = match std::env::var("GEMINI_API_KEY")
-        .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-    {
-        Ok(key) => key,
-        Err(_) => {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-            return;
-        }
-    };
+    let api_key =
+        match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+            Ok(key) => key,
+            Err(_) => {
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
+                return;
+            }
+        };
 
     let model = GeminiModel::builder()
         .api_key(api_key)
         .model("gemini-1.5-flash".to_string())
         .build();
 
-    let agent = Agent::builder(Arc::new(model))
-        .build();
+    let agent = Agent::builder(Arc::new(model)).build();
 
     let messages = vec![Message::new(
         MessageRole::User,
@@ -280,7 +281,11 @@ async fn test_agent_execute_without_tools() {
     let response = agent.generate(messages).await.unwrap();
 
     if let Some(Part::Text { text }) = response.message.content.first() {
-        assert!(text.contains("4"), "Response should contain the answer 4: {}", text);
+        assert!(
+            text.contains("4"),
+            "Response should contain the answer 4: {}",
+            text
+        );
         println!("Execute response: {}", text);
     } else {
         panic!("Expected text response");

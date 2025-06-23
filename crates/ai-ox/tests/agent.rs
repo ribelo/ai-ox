@@ -9,7 +9,7 @@ use ai_ox::{
     tool::{ToolBox, ToolCall, ToolError, ToolResult},
     usage::Usage,
 };
-use futures_util::{stream::BoxStream, future::BoxFuture};
+use futures_util::{future::BoxFuture, stream::BoxStream};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -230,9 +230,7 @@ async fn test_agent_execute_without_tools() {
 async fn test_agent_execute_with_tools() {
     let model = MockModel::with_text_response("Hello, world!");
     let toolbox = MockToolBox::new();
-    let agent = Agent::builder(Arc::new(model))
-        .toolbox(toolbox)
-        .build();
+    let agent = Agent::builder(Arc::new(model)).toolbox(toolbox).build();
 
     let messages = vec![Message::new(
         MessageRole::User,
@@ -309,7 +307,8 @@ async fn test_agent_generate_typed_unsupported() {
         }],
     )];
 
-    let result: Result<ai_ox::model::response::StructuredResponse<TestResponse>, _> = agent.generate_typed(messages).await;
+    let result: Result<ai_ox::model::response::StructuredResponse<TestResponse>, _> =
+        agent.generate_typed(messages).await;
 
     // Should succeed with fallback parsing
     let response: ai_ox::model::response::StructuredResponse<TestResponse> = result.unwrap();
@@ -329,7 +328,8 @@ async fn test_agent_generate_typed_invalid_json() {
         }],
     )];
 
-    let result: Result<ai_ox::model::response::StructuredResponse<TestResponse>, _> = agent.generate_typed(messages).await;
+    let result: Result<ai_ox::model::response::StructuredResponse<TestResponse>, _> =
+        agent.generate_typed(messages).await;
 
     assert!(matches!(
         result,
