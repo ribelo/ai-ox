@@ -320,6 +320,7 @@ impl From<Content> for Vec<Content> {
 /// 2. Within each Content item, adjacent Text parts are merged
 /// 3. Empty Content items are skipped
 ///
+#[allow(dead_code)]
 pub(crate) fn combine_content_list(
     content_list: impl IntoIterator<Item = Content>,
 ) -> Vec<Content> {

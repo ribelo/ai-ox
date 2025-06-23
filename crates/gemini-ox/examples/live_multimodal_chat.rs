@@ -508,7 +508,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
         }
     }
-    
+
     // Text-only loop when no media features are enabled
     #[cfg(not(any(feature = "audio", feature = "video", feature = "audio-output")))]
     {
@@ -699,7 +699,9 @@ async fn handle_response_chunk(
                             }
                             #[cfg(not(feature = "audio-output"))]
                             if verbose {
-                                println!("⚠️  DEBUG: Audio output disabled (missing audio-output feature)");
+                                println!(
+                                    "⚠️  DEBUG: Audio output disabled (missing audio-output feature)"
+                                );
                             }
                         }
                     }
@@ -963,7 +965,9 @@ async fn handle_response_chunk(
 
                         if inline_data.mime_type == "audio/pcm;rate=24000" {
                             if verbose {
-                                println!("⚠️  DEBUG: Audio output disabled (missing audio-output feature)");
+                                println!(
+                                    "⚠️  DEBUG: Audio output disabled (missing audio-output feature)"
+                                );
                             }
                         }
                     }

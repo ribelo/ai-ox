@@ -24,13 +24,13 @@ mod tests {
     use crate::content::{Content, Role};
     use crate::generate_content::GenerationConfig;
     use crate::{Gemini, Model};
-    use message_types::{ClientContentPayload};
-    
+    use message_types::ClientContentPayload;
+
     #[cfg(feature = "audio")]
     use message_types::RealtimeInputPayload;
     #[cfg(feature = "audio")]
     use std::time::Duration;
-    
+
     #[cfg(feature = "audio-output")]
     use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
     #[cfg(feature = "audio-output")]
@@ -48,8 +48,12 @@ mod tests {
     {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let Ok(api_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) else {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_with_audio_input");
+        let Ok(api_key) =
+            std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        else {
+            println!(
+                "GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_with_audio_input"
+            );
             return Ok(());
         };
 
@@ -141,8 +145,12 @@ mod tests {
     {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let Ok(api_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) else {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_with_video_input");
+        let Ok(api_key) =
+            std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        else {
+            println!(
+                "GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_with_video_input"
+            );
             return Ok(());
         };
 
@@ -236,8 +244,12 @@ mod tests {
     async fn test_live_api_multimodal() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let Ok(api_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) else {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_multimodal");
+        let Ok(api_key) =
+            std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        else {
+            println!(
+                "GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_multimodal"
+            );
             return Ok(());
         };
 
@@ -382,7 +394,9 @@ mod tests {
         let _ = rustls::crypto::ring::default_provider().install_default();
 
         dbg!(1);
-        let Ok(api_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) else {
+        let Ok(api_key) =
+            std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        else {
             // Skip test if API key isn't set instead of failing
             println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_session");
             return Ok(());
@@ -504,8 +518,12 @@ mod tests {
         // Initialize rustls crypto provider for TLS support
         let _ = rustls::crypto::ring::default_provider().install_default();
 
-        let Ok(api_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) else {
-            println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_session_audio");
+        let Ok(api_key) =
+            std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        else {
+            println!(
+                "GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping test_live_api_session_audio"
+            );
             return Ok(());
         };
 

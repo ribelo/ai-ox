@@ -24,7 +24,7 @@ async fn test_list_models_succeeds() {
                 !models_response.models.is_empty(),
                 "models list should not be empty"
             );
-        },
+        }
         Err(e) => {
             println!("list_models failed with error: {:?}", e);
             panic!("list_models should succeed, but got error: {}", e);
@@ -45,7 +45,7 @@ async fn test_get_model_succeeds() {
                 model.name.contains("gemini-1.5-flash"),
                 "model name should contain gemini-1.5-flash"
             );
-        },
+        }
         Err(e) => {
             println!("get_model failed with error: {:?}", e);
             panic!("get_model should succeed, but got error: {}", e);
@@ -92,10 +92,13 @@ async fn test_list_models_with_pagination() {
                 models_response.models.len() <= 5,
                 "should respect page_size limit"
             );
-        },
+        }
         Err(e) => {
             println!("list_models with page_size failed with error: {:?}", e);
-            panic!("list_models with page_size should succeed, but got error: {}", e);
+            panic!(
+                "list_models with page_size should succeed, but got error: {}",
+                e
+            );
         }
     }
 }
