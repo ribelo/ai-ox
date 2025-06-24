@@ -9,7 +9,7 @@ use crate::{
     message::{Message, Messages},
     provider_preference::ProviderPreferences,
     response::{ChatCompletionChunk, ChatCompletionResponse},
-    tool::{ToolChoice, ToolSchema},
+    tool::{ToolChoice, Tool},
     ApiRequestError, ErrorResponse, OpenRouter, BASE_URL,
 };
 
@@ -45,7 +45,7 @@ pub struct Request {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<ToolSchema>>,
+    pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -80,8 +80,6 @@ pub struct Request {
     pub provider: Option<ProviderPreferences>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_reasoning: Option<bool>,
-    #[serde(skip)]
-    pub open_router: OpenRouter,
 }
 
 impl<S: request_builder::State> RequestBuilder<S> {
@@ -112,15 +110,14 @@ impl Request {
     pub fn push_message(&mut self, message: impl Into<Message>) {
         self.messages.push(message.into());
     }
-    pub async fn send(&self) -> Result<ChatCompletionResponse, ApiRequestError> {
-        let url = format!("{}/{}", BASE_URL, API_URL);
+    pub async fn send(&self, open_router: &OpenRouter) -> Result<ChatCompletionResponse, ApiRequestError> {
+        let url = format!("{BASE_URL}/{API_URL}");
 
         // Use bearer_auth instead of manually constructing the Authorization header
-        let res = self
-            .open_router
+        let res = open_router
             .client
             .post(&url)
-            .bearer_auth(&self.open_router.api_key)
+            .bearer_auth(&open_router.api_key)
             .json(self)
             .send()
             .await?;
@@ -134,10 +131,10 @@ impl Request {
     }
 
     // pub fn stream(&self) -> Pin<Box<dyn Stream<Item = Result<ChatCompletionChunk, ApiRequestError>> + Send>> {
-    pub fn stream(&self) -> BoxStream<'static, Result<ChatCompletionChunk, ApiRequestError>> {
-        let client = self.open_router.client.clone();
-        let api_key = self.open_router.api_key.clone();
-        let url = format!("{}/{}", BASE_URL, API_URL);
+    pub fn stream(&self, open_router: &OpenRouter) -> BoxStream<'static, Result<ChatCompletionChunk, ApiRequestError>> {
+        let client = open_router.client.clone();
+        let api_key = open_router.api_key.clone();
+        let url = format!("{BASE_URL}/{API_URL}");
         let request_data = self.clone();
 
         Box::pin(try_stream! {
@@ -175,7 +172,7 @@ impl Request {
                 while let Some(chunk_result) = byte_stream.next().await {
                     let chunk = chunk_result?;
                     let chunk_str = String::from_utf8(chunk.to_vec())
-                        .map_err(|e| ApiRequestError::Stream(format!("UTF-8 decode error: {}", e)))?;
+                        .map_err(|e| ApiRequestError::Stream(format!("UTF-8 decode error: {e}")))?;
 
                     for parse_result in ChatCompletionChunk::from_streaming_data(&chunk_str) {
                         yield parse_result?;
@@ -187,8 +184,7 @@ impl Request {
 }
 
 impl OpenRouter {
-    pub fn chat_completion(&self) -> RequestBuilder<request_builder::SetOpenRouter> {
-        Request::builder().open_router(self.clone())
+    pub fn chat_completion(&self) -> RequestBuilder<request_builder::Empty> {
+        Request::builder()
     }
 }
-

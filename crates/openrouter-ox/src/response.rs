@@ -30,21 +30,6 @@ pub struct ChatCompletionResponse {
     pub usage: Usage,
 }
 
-impl ChatCompletionResponse {
-    pub fn tool_calls(&self) -> Option<Vec<ToolCall>> {
-        let calls: Vec<ToolCall> = self
-            .choices
-            .iter()
-            .flat_map(|choice| choice.message.tool_calls.clone().unwrap_or_default())
-            .collect();
-        if calls.is_empty() {
-            None
-        } else {
-            Some(calls)
-        }
-    }
-}
-
 impl From<ChatCompletionResponse> for Message {
     fn from(resp: ChatCompletionResponse) -> Self {
         // Convert ChatCompletionResponse into a Message by selecting the first choice's message.
@@ -233,12 +218,6 @@ impl ChatCompletionChunk {
     ) -> Vec<Result<ChatCompletionChunk, ApiRequestError>> {
         let mut results = Vec::new();
         for line in lines_str.lines() {
-            // The original debug prints are removed for cleaner code.
-            // If needed, they could be added back, potentially using a logging framework.
-            // println!("lines {}", line.lines().count()); // This would always be 1 here.
-            // println!("Processing line: {}", line);
-            // println!();
-            // println!();
             let trimmed = line.trim();
             if trimmed.is_empty() {
                 continue; // Skip empty lines

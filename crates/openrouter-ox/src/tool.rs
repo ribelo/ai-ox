@@ -31,7 +31,7 @@ pub struct FunctionName {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ToolSchema {
+pub struct Tool {
     #[serde(rename = "type")]
     pub tool_type: String,
     pub function: FunctionMetadata,
