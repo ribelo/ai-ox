@@ -300,8 +300,7 @@ mod tests {
         assert_eq!(
             response.embedding.values.len(),
             target_dimension as usize,
-            "Embedding should have exactly {} dimensions",
-            target_dimension
+            "Embedding should have exactly {target_dimension} dimensions"
         );
 
         Ok(())

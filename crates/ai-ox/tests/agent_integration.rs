@@ -59,7 +59,7 @@ async fn test_agent_basic_conversation() {
 
     if let Some(Part::Text { text }) = response.message.content.first() {
         assert!(!text.is_empty());
-        println!("Agent response: {}", text);
+        println!("Agent response: {text}");
     } else {
         panic!("Expected text response");
     }
@@ -108,10 +108,9 @@ async fn test_agent_with_system_instruction() {
 
         assert!(
             has_pirate_elements,
-            "Response should contain pirate-like language: {}",
-            text
+            "Response should contain pirate-like language: {text}"
         );
-        println!("Pirate response: {}", text);
+        println!("Pirate response: {text}");
     } else {
         panic!("Expected text response");
     }
@@ -149,7 +148,7 @@ async fn test_agent_structured_response() {
 
     assert!(!result.message.is_empty());
     assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
-    println!("Structured response: {:?}", result);
+    println!("Structured response: {result:?}");
 }
 
 #[tokio::test]
@@ -186,7 +185,7 @@ async fn test_agent_complex_structured_response() {
     assert!(result.population > 60_000_000); // France has over 60M people
     assert_eq!(result.continent.to_lowercase(), "europe");
 
-    println!("Country info: {:?}", result);
+    println!("Country info: {result:?}");
 }
 
 #[tokio::test]
@@ -243,10 +242,9 @@ async fn test_agent_multi_turn_conversation() {
         let text_lower = text.to_lowercase();
         assert!(
             text_lower.contains("rust") || text_lower.contains("programming"),
-            "Response should reference Rust or programming: {}",
-            text
+            "Response should reference Rust or programming: {text}"
         );
-        println!("Context-aware response: {}", text);
+        println!("Context-aware response: {text}");
     } else {
         panic!("Expected text response");
     }
@@ -283,10 +281,9 @@ async fn test_agent_execute_without_tools() {
     if let Some(Part::Text { text }) = response.message.content.first() {
         assert!(
             text.contains("4"),
-            "Response should contain the answer 4: {}",
-            text
+            "Response should contain the answer 4: {text}"
         );
-        println!("Execute response: {}", text);
+        println!("Execute response: {text}");
     } else {
         panic!("Expected text response");
     }

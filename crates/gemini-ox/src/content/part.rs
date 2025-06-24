@@ -590,7 +590,7 @@ impl FileData {
 }
 
 /// Programming language for executable code.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, strum::Display)]
 pub enum Language {
     /// Unspecified language. This value should not be used.
     #[serde(rename = "LANGUAGE_UNSPECIFIED")]
@@ -623,7 +623,7 @@ impl ExecutableCode {
 }
 
 /// Enumeration of possible outcomes of the code execution.
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, strum::Display)]
 pub enum Outcome {
     /// Unspecified status. This value should not be used.
     #[serde(rename = "OUTCOME_UNSPECIFIED")]

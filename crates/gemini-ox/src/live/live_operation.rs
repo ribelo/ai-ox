@@ -198,8 +198,7 @@ impl LiveOperation {
                         ws_receiver,
                     }),
                     other => Err(GeminiRequestError::UnexpectedResponse(format!(
-                        "Expected SetupComplete message after config, got: {:?}",
-                        other
+                        "Expected SetupComplete message after config, got: {other:?}"
                     ))),
                 }
             }
@@ -220,8 +219,7 @@ impl LiveOperation {
                         ws_receiver,
                     }),
                     other => Err(GeminiRequestError::UnexpectedResponse(format!(
-                        "Expected SetupComplete message after config, got: {:?}",
-                        other
+                        "Expected SetupComplete message after config, got: {other:?}"
                     ))),
                 }
             }
@@ -282,7 +280,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&config).unwrap();
-        println!("Generated JSON: {}", json);
+        println!("Generated JSON: {json}");
         // Check for a field within 'setup' (which is how setup_args is serialized)
         assert!(
             json.contains("\"setup\":{\"model\":\"models/gemini-2.0-flash-exp\"")

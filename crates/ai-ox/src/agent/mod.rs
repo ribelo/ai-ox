@@ -5,6 +5,7 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     content::{
+        delta::StreamEvent,
         message::{Message, MessageRole},
         part::Part,
     },
@@ -266,6 +267,163 @@ impl Agent {
             usage: final_response.usage,
             vendor_name: final_response.vendor_name,
         })
+    }
+
+    /// Streams agent execution events for real-time processing.
+    ///
+    /// This method provides a stream of `AgentEvent`s that implements the full
+    /// multi-turn conversation loop with tool execution, streaming each step
+    /// of the agentic process in real-time.
+    pub fn stream(
+        &self,
+        messages: impl IntoIterator<Item = impl Into<Message>> + Send,
+    ) -> futures_util::stream::BoxStream<'_, Result<events::AgentEvent, AgentError>> {
+        use futures_util::StreamExt;
+        use async_stream::try_stream;
+
+        let conversation = match self.build_messages(messages) {
+            Ok(msgs) => msgs,
+            Err(e) => return Box::pin(futures_util::stream::once(async move { Err(e) })),
+        };
+
+        let stream = try_stream! {
+            yield events::AgentEvent::Started;
+
+            let mut conversation = conversation;
+            let mut iteration = 0;
+
+            loop {
+                if iteration >= self.max_iterations {
+                    yield events::AgentEvent::Failed(format!("Agent reached maximum iterations ({})", self.max_iterations));
+                    break;
+                }
+
+                // Create a request with the current conversation history
+                let mut request = ModelRequest {
+                    messages: conversation.clone(),
+                    system_message: None,
+                    tools: None,
+                };
+
+                if let Some(ref system_instruction) = self.system_instruction {
+                    request.system_message = Some(Message::new(
+                        MessageRole::User,
+                        vec![Part::Text {
+                            text: system_instruction.clone(),
+                        }],
+                    ));
+                }
+
+                // Add available tools to the request
+                let available_tools = self.tools.get_all_tools();
+                if !available_tools.is_empty() {
+                    request.tools = Some(available_tools);
+                }
+
+                // Stream the model response
+                let mut model_stream = self.model.request_stream(request);
+                let mut accumulated_text = String::new();
+                let mut tool_calls = Vec::new();
+                let mut final_usage = None;
+                let mut response_complete = false;
+
+                // Process the model's streaming response
+                while let Some(stream_event_result) = model_stream.next().await {
+                    let stream_event = stream_event_result.map_err(AgentError::Api)?;
+
+                    match &stream_event {
+                        StreamEvent::TextDelta(text) => {
+                            accumulated_text.push_str(text);
+                            yield events::AgentEvent::Delta(stream_event);
+                        }
+                        StreamEvent::ToolCall(tool_call) => {
+                            tool_calls.push(tool_call.clone());
+                            // Don't yield ToolExecution here - we'll do it after the stream ends
+                        }
+                        StreamEvent::Usage(usage) => {
+                            final_usage = Some(usage.clone());
+                        }
+                        StreamEvent::StreamStop(_) => {
+                            response_complete = true;
+                            break;
+                        }
+                        _ => {
+                            // Forward other events as deltas
+                            yield events::AgentEvent::Delta(stream_event);
+                        }
+                    }
+                }
+
+                if !response_complete {
+                    yield events::AgentEvent::Failed("Model stream ended without completion".to_string());
+                    break;
+                }
+
+                // Build the assistant's response message
+                let mut assistant_content = vec![];
+                if !accumulated_text.is_empty() {
+                    assistant_content.push(Part::Text { text: accumulated_text });
+                }
+                for tool_call in &tool_calls {
+                    assistant_content.push(Part::ToolCall {
+                        id: tool_call.id.clone(),
+                        name: tool_call.name.clone(),
+                        args: tool_call.args.clone(),
+                    });
+                }
+
+                let assistant_message = Message::new(MessageRole::Assistant, assistant_content);
+                conversation.push(assistant_message.clone());
+
+                // Check if we have tool calls to execute
+                if !tool_calls.is_empty() {
+                    if self.tools.get_all_tools().is_empty() {
+                        // Model is hallucinating tool calls but we have no tools
+                        let final_response = ModelResponse {
+                            message: assistant_message,
+                            model_name: self.model.model().to_string(),
+                            vendor_name: "streaming".to_string(),
+                            usage: final_usage.unwrap_or_default(),
+                        };
+                        yield events::AgentEvent::Completed(final_response);
+                        break;
+                    }
+
+                    // Execute each tool call
+                    for tool_call in tool_calls {
+                        yield events::AgentEvent::ToolExecution(tool_call.clone());
+
+                        match self.tools.invoke(tool_call.clone()).await {
+                            Ok(tool_result) => {
+                                yield events::AgentEvent::ToolResult(tool_result.clone());
+                                // Add tool result messages to conversation
+                                conversation.extend(tool_result.response);
+                            }
+                            Err(tool_error) => {
+                                yield events::AgentEvent::Failed(format!("Tool execution failed: {tool_error}"));
+                                return;
+                            }
+                        }
+                    }
+
+                    // Continue to next iteration for the model to respond to tool results
+                    iteration += 1;
+                    continue;
+                } else {
+                    // No tool calls, conversation is complete
+                    let final_response = ModelResponse {
+                        message: assistant_message,
+                        model_name: self.model.model().to_string(),
+                        vendor_name: "streaming".to_string(),
+                        usage: final_usage.unwrap_or_default(),
+                    };
+                    yield events::AgentEvent::Completed(final_response);
+                    break;
+                }
+            }
+        };
+
+        Box::pin(stream)
     }
 
     // Helper methods

@@ -620,7 +620,7 @@ async fn test_toolbox_concurrent_invocations() {
         let service_clone = Arc::clone(&service);
         let handle = tokio::spawn(async move {
             let call = ToolCall::new(
-                format!("concurrent_call_{}", i),
+                format!("concurrent_call_{i}"),
                 "simple_async_tool",
                 json!({
                     "value": i,
@@ -660,8 +660,8 @@ async fn test_toolbox_infallible_tool() {
     assert_eq!(tool_result.response.len(), 1);
 
     // Check that the response contains the expected success message
-    if let Some(message) = tool_result.response.first() {
-        if let Some(content) = message.content.first() {
+    if let Some(message) = tool_result.response.first()
+        && let Some(content) = message.content.first() {
             match content {
                 Part::ToolResult { content, .. } => {
                     assert_eq!(*content, json!("Success"));
@@ -669,7 +669,6 @@ async fn test_toolbox_infallible_tool() {
                 _ => panic!("Expected tool result content"),
             }
         }
-    }
 }
 
 #[tokio::test]
@@ -687,8 +686,8 @@ async fn test_toolbox_side_effect_tool() {
     assert_eq!(tool_result.response.len(), 1);
 
     // Check that the response contains null (since it's a side-effect tool)
-    if let Some(message) = tool_result.response.first() {
-        if let Some(content) = message.content.first() {
+    if let Some(message) = tool_result.response.first()
+        && let Some(content) = message.content.first() {
             match content {
                 Part::ToolResult { content, .. } => {
                     assert_eq!(*content, serde_json::Value::Null);
@@ -696,5 +695,4 @@ async fn test_toolbox_side_effect_tool() {
                 _ => panic!("Expected tool result content"),
             }
         }
-    }
 }

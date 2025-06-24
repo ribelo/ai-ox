@@ -1,9 +1,5 @@
-use gemini_ox::{
-    Gemini,
-    content::{Content, Role},
-};
-use std::time::Duration;
 
+#[allow(dead_code)]
 fn get_api_key() -> String {
     std::env::var("GEMINI_API_KEY")
         .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))

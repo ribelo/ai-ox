@@ -8,7 +8,7 @@ fn get_api_key() -> Option<String> {
 }
 
 fn setup_client() -> Option<Gemini> {
-    get_api_key().map(|key| Gemini::new(key))
+    get_api_key().map(Gemini::new)
 }
 
 #[tokio::test]
@@ -26,8 +26,8 @@ async fn test_list_models_succeeds() {
             );
         }
         Err(e) => {
-            println!("list_models failed with error: {:?}", e);
-            panic!("list_models should succeed, but got error: {}", e);
+            println!("list_models failed with error: {e:?}");
+            panic!("list_models should succeed, but got error: {e}");
         }
     }
 }
@@ -47,8 +47,8 @@ async fn test_get_model_succeeds() {
             );
         }
         Err(e) => {
-            println!("get_model failed with error: {:?}", e);
-            panic!("get_model should succeed, but got error: {}", e);
+            println!("get_model failed with error: {e:?}");
+            panic!("get_model should succeed, but got error: {e}");
         }
     }
 }
@@ -71,7 +71,7 @@ async fn test_get_model_fails_on_unknown_model() {
         GeminiRequestError::UnexpectedResponse(_) => {
             // This is also acceptable for 404 responses
         }
-        other => panic!("Unexpected error type: {:?}", other),
+        other => panic!("Unexpected error type: {other:?}"),
     }
 }
 
@@ -94,10 +94,9 @@ async fn test_list_models_with_pagination() {
             );
         }
         Err(e) => {
-            println!("list_models with page_size failed with error: {:?}", e);
+            println!("list_models with page_size failed with error: {e:?}");
             panic!(
-                "list_models with page_size should succeed, but got error: {}",
-                e
+                "list_models with page_size should succeed, but got error: {e}"
             );
         }
     }

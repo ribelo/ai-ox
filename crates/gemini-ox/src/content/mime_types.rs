@@ -11,5 +11,5 @@ pub const AUDIO_PCM_24KHZ: &str = "audio/pcm;rate=24000";
 
 /// Helper function to create audio PCM MIME type string with custom sample rate
 pub fn audio_pcm_with_rate(sample_rate: u32) -> String {
-    format!("audio/pcm;rate={}", sample_rate)
+    format!("audio/pcm;rate={sample_rate}")
 }

@@ -146,8 +146,7 @@ impl Node<CounterState, String> for CheckNode {
             match &self.continue_node {
                 Some(next) => Ok(NextNode::Continue(dyn_clone::clone_box(&**next))),
                 None => Ok(NextNode::End(format!(
-                    "Counter is within bounds: {}",
-                    current_value
+                    "Counter is within bounds: {current_value}"
                 ))),
             }
         })
@@ -215,7 +214,7 @@ impl Node<CounterState, String> for ConditionalNode {
 }
 
 #[cfg(test)]
-mod tests {
+mod workflow_tests {
     use super::*;
 
     #[tokio::test]

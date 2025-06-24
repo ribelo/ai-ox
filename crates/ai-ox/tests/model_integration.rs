@@ -1,12 +1,13 @@
 use ai_ox::{
     GenerateContentError,
     content::{
+        delta::StreamEvent,
         message::{Message, MessageRole},
         part::Part,
     },
     model::{Model, request::ModelRequest},
 };
-// use futures_util::StreamExt; // TODO: Re-enable when streaming is implemented
+use futures_util::StreamExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -43,11 +44,8 @@ fn setup_gemini() -> Option<ai_ox::GeminiModel> {
 
 #[cfg(feature = "openrouter")]
 fn setup_openrouter() -> Option<ai_ox::OpenRouterModel> {
-    env::var("OPENROUTER_API_KEY").ok().map(|key| {
-        ai_ox::OpenRouterModel::builder()
-            .api_key(key)
-            .model("anthropic/claude-3.5-sonnet".to_string())
-            .build()
+    env::var("OPENROUTER_API_KEY").ok().and_then(|_| {
+        ai_ox::OpenRouterModel::new_from_env("anthropic/claude-3.5-sonnet").ok()
     })
 }
 
@@ -73,45 +71,71 @@ async fn test_basic_request<M: Model + ?Sized>(model: &M) -> Result<(), Generate
 }
 
 async fn test_streaming_request<M: Model + ?Sized>(model: &M) -> Result<(), GenerateContentError> {
-    println!(
-        "Note: Streaming test for {} is currently skipped (not implemented)",
-        model.model()
+    let message = Message::new(
+        MessageRole::User,
+        vec![Part::Text {
+            text: "Count from 1 to 5. Be brief.".to_string(),
+        }],
     );
-    Ok(())
 
-    // TODO: Implement once streaming is available
-    // let message = Message::new(
-    //     MessageRole::User,
-    //     vec![Part::Text {
-    //         text: "Count from 1 to 5.".to_string(),
-    //     }],
-    // );
-    //
-    // let request = ModelRequest {
-    //     messages: vec![message],
-    //     system_message: None,
-    //     tools: None,
-    // };
-    //
-    // let mut stream = model.request_stream(request);
-    // let mut events_received = 0;
-    //
-    // while let Some(event_result) = stream.next().await {
-    //     let _event = event_result?;
-    //     events_received += 1;
-    //
-    //     // Break after reasonable number of events to avoid infinite streams
-    //     if events_received > 50 {
-    //         break;
-    //     }
-    // }
-    //
-    // assert!(events_received > 0, "Should receive at least one streaming event");
+    let request = ModelRequest {
+        messages: vec![message],
+        system_message: None,
+        tools: None,
+    };
+
+    let mut stream = model.request_stream(request);
+    let mut events_received = 0;
+    let mut message_deltas = 0;
+    let mut stream_stopped = false;
+
+    while let Some(event_result) = stream.next().await {
+        let event = event_result?;
+        events_received += 1;
+
+        match event {
+            StreamEvent::MessageDelta(_) => {
+                message_deltas += 1;
+            }
+            StreamEvent::TextDelta(_) => {
+                message_deltas += 1; // Count text deltas as message deltas for compatibility
+            }
+            StreamEvent::ToolCall(_) => {
+                // Tool calls are handled but don't count as message deltas
+            }
+            StreamEvent::ToolResult(_) => {
+                // Tool results are handled but don't count as message deltas
+            }
+            StreamEvent::Usage(_) => {
+                // Usage events are expected
+            }
+            StreamEvent::StreamStop(_) => {
+                stream_stopped = true;
+                break;
+            }
+        }
+
+        // Break after reasonable number of events to avoid infinite streams
+        if events_received > 100 {
+            break;
+        }
+    }
+
+    assert!(events_received > 0, "Should receive at least one streaming event");
+    assert!(message_deltas > 0, "Should receive at least one message delta");
+    assert!(stream_stopped, "Stream should end with StreamStop event");
+
+    println!(
+        "Streaming test for {} completed: {} events, {} deltas", 
+        model.model(), 
+        events_received, 
+        message_deltas
+    );
+
+    Ok(())
 }
 
-async fn test_structured_simple<M: Model + ?Sized>(model: &M) -> Result<(), GenerateContentError>
-where
-    M: Sized,
+async fn test_structured_simple<M: Model>(model: &M) -> Result<(), GenerateContentError>
 {
     let messages = vec![Message::new(
         MessageRole::User,
@@ -128,9 +152,7 @@ where
     Ok(())
 }
 
-async fn test_structured_complex<M: Model + ?Sized>(model: &M) -> Result<(), GenerateContentError>
-where
-    M: Sized,
+async fn test_structured_complex<M: Model>(model: &M) -> Result<(), GenerateContentError>
 {
     let messages = vec![Message::new(
         MessageRole::User,
@@ -278,7 +300,7 @@ async fn test_all_providers_model_names() {
 
     for model in models {
         let model_name = model.model();
-        println!("Testing model name: {}", model_name);
+        println!("Testing model name: {model_name}");
 
         // Verify model name is not empty and contains expected patterns
         assert!(!model_name.is_empty(), "Model name should not be empty");
@@ -292,8 +314,7 @@ async fn test_all_providers_model_names() {
 
         assert!(
             is_valid,
-            "Model name '{}' should contain recognizable pattern",
-            model_name
+            "Model name '{model_name}' should contain recognizable pattern"
         );
     }
 }
@@ -381,7 +402,7 @@ async fn test_very_long_message<M: Model + ?Sized>(model: &M) -> Result<(), Gene
     let message = Message::new(
         MessageRole::User,
         vec![Part::Text {
-            text: format!("Summarize this text: {}", long_text),
+            text: format!("Summarize this text: {long_text}"),
         }],
     );
 
@@ -513,5 +534,209 @@ async fn test_all_providers_tool_usage() {
         test_tool_usage(&*model)
             .await
             .expect("Tool usage test should not panic");
+    }
+}
+
+// Test specifically for OpenRouter tool streaming functionality
+#[cfg(feature = "openrouter")]
+#[tokio::test]
+#[ignore = "requires OPENROUTER_API_KEY"]
+async fn test_openrouter_tool_streaming() {
+    if let Some(model) = setup_openrouter() {
+        println!("Testing OpenRouter tool streaming");
+        
+        use ai_ox::tool::{FunctionMetadata, Tool};
+        use serde_json::json;
+
+        // Create a simple function definition
+        let function = FunctionMetadata {
+            name: "get_weather".to_string(),
+            description: Some("Get the current weather for a location".to_string()),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state or country"
+                    },
+                    "units": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"],
+                        "description": "Temperature units"
+                    }
+                },
+                "required": ["location"]
+            }),
+        };
+
+        let tools = vec![Tool::FunctionDeclarations(vec![function])];
+
+        let message = Message::new(
+            MessageRole::User,
+            vec![Part::Text {
+                text: "What's the weather like in Tokyo? Please use the get_weather function with celsius units.".to_string(),
+            }],
+        );
+
+        let request = ModelRequest {
+            messages: vec![message],
+            system_message: None,
+            tools: Some(tools),
+        };
+
+        let mut stream = model.request_stream(request);
+        let mut events_received = 0;
+        let mut tool_calls_received = 0;
+        let mut stream_stopped = false;
+
+        while let Some(event_result) = stream.next().await {
+            let event = event_result.expect("Stream should not error");
+            events_received += 1;
+
+            match &event {
+                StreamEvent::ToolCall(tool_call) => {
+                    // Assert this is a complete tool call
+                    assert!(!tool_call.name.is_empty(), "Tool call should have a name");
+                    assert!(!tool_call.args.is_null(), "Tool call should have args");
+                    
+                    if tool_call.name == "get_weather" {
+                        tool_calls_received += 1;
+                        println!("Found complete get_weather tool call: {:?}", tool_call);
+                        
+                        // Verify the location argument
+                        if let Some(location) = tool_call.args.get("location") {
+                            assert!(location.is_string(), "Location should be a string");
+                        }
+                    }
+                }
+                StreamEvent::TextDelta(text) => {
+                    // Text deltas are expected and normal
+                    if !text.is_empty() {
+                        println!("Received text delta: {}", text);
+                    }
+                }
+                StreamEvent::Usage(_) => {
+                    // Usage events are expected
+                }
+                StreamEvent::StreamStop(_) => {
+                    stream_stopped = true;
+                    break;
+                }
+                StreamEvent::MessageDelta(_) => {
+                    // MessageDelta events should not contain tool calls in the new implementation
+                }
+                StreamEvent::ToolResult(_) => {
+                    // Tool results would come from user, not the model itself
+                }
+            }
+
+            // Break after reasonable number of events to avoid infinite streams
+            if events_received > 100 {
+                break;
+            }
+        }
+
+        assert!(events_received > 0, "Should receive at least one streaming event");
+        assert!(stream_stopped, "Stream should end with StreamStop event");
+        
+        // Note: We can't always assert that tool_calls_received > 0 because
+        // the model might not always use tool calls for this specific prompt.
+        // But if it does, our streaming conversion should provide complete tool calls.
+        println!(
+            "OpenRouter tool streaming test completed: {} events, {} tool calls", 
+            events_received, 
+            tool_calls_received
+        );
+    } else {
+        println!("Skipping OpenRouter tool streaming test - no API key available");
+    }
+}
+
+// Test specifically for Gemini code interpreter streaming functionality
+#[cfg(feature = "gemini")]
+#[tokio::test]
+#[ignore = "requires GEMINI_API_KEY or GOOGLE_AI_API_KEY"]
+async fn test_gemini_code_interpreter_streaming() {
+    if let Some(model) = setup_gemini() {
+        println!("Testing Gemini code interpreter streaming");
+        
+        let message = Message::new(
+            MessageRole::User,
+            vec![Part::Text {
+                text: "Calculate the sum of the first 10 fibonacci numbers using Python code. Please show the code and run it.".to_string(),
+            }],
+        );
+
+        let request = ModelRequest {
+            messages: vec![message],
+            system_message: None,
+            tools: None,
+        };
+
+        let mut stream = model.request_stream(request);
+        let mut events_received = 0;
+        let mut code_interpreter_tool_calls = 0;
+        let mut stream_stopped = false;
+
+        while let Some(event_result) = stream.next().await {
+            let event = event_result.expect("Stream should not error");
+            events_received += 1;
+
+            match &event {
+                StreamEvent::ToolCall(tool_call) => {
+                    if tool_call.name == "code_interpreter" {
+                        // Assert this is a complete tool call
+                        assert!(!tool_call.name.is_empty(), "Tool call should have a name");
+                        assert!(!tool_call.args.is_null(), "Tool call should have args");
+                        
+                        code_interpreter_tool_calls += 1;
+                        println!("Found complete code interpreter tool call: {tool_call:?}");
+                    }
+                }
+                StreamEvent::ToolResult(tool_result) => {
+                    if tool_result.name == "code_interpreter" {
+                        // Assert this is a complete tool result
+                        assert!(!tool_result.name.is_empty(), "Tool result should have a name");
+                        assert!(!tool_result.response.is_empty(), "Tool result should have response");
+                        
+                        code_interpreter_tool_calls += 1;
+                        println!("Found complete code interpreter tool result: {tool_result:?}");
+                    }
+                }
+                StreamEvent::TextDelta(text) => {
+                    // Text deltas are expected and normal
+                    if !text.is_empty() {
+                        println!("Received text delta: {text}");
+                    }
+                }
+                StreamEvent::Usage(_) => {
+                    // Usage events are expected
+                }
+                StreamEvent::StreamStop(_) => {
+                    stream_stopped = true;
+                    break;
+                }
+                StreamEvent::MessageDelta(_) => {
+                    // MessageDelta events should not contain tool calls in the new implementation
+                }
+            }
+
+            // Break after reasonable number of events to avoid infinite streams
+            if events_received > 200 {
+                break;
+            }
+        }
+
+        assert!(events_received > 0, "Should receive at least one streaming event");
+        assert!(stream_stopped, "Stream should end with StreamStop event");
+        
+        // Note: We can't always assert that code_interpreter_tool_calls > 0 because
+        // the model might not always use code execution for this specific prompt.
+        // But if it does, our streaming conversion should provide complete tool calls.
+        println!(
+            "Gemini code interpreter streaming test completed: {events_received} events, {code_interpreter_tool_calls} code interpreter tool calls"
+        );
+    } else {
+        println!("Skipping Gemini code interpreter streaming test - no API key available");
     }
 }

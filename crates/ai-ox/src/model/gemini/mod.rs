@@ -3,7 +3,7 @@ mod conversion;
 use crate::{
     ModelResponse,
     content::{
-        delta::MessageStreamEvent,
+        delta::StreamEvent,
         message::{Message, MessageRole},
         part::Part,
     },
@@ -11,6 +11,8 @@ use crate::{
     model::{Model, ModelRequest, response::RawStructuredResponse},
     usage::Usage,
 };
+use async_stream::try_stream;
+use futures_util::StreamExt;
 use bon::Builder;
 use futures_util::{FutureExt, future::BoxFuture, stream::BoxStream};
 use gemini_ox::{
@@ -86,7 +88,7 @@ impl GeminiModel {
         let usage = response
             .usage_metadata
             .map(Usage::from)
-            .unwrap_or_else(Usage::new);
+            .unwrap_or_default();
 
         ModelResponse {
             message,
@@ -149,13 +151,54 @@ impl Model for GeminiModel {
 
     /// Returns a stream of events for a streaming request.
     ///
-    /// This method is currently not implemented for the Gemini model.
+    /// This method streams responses from the Gemini API and converts them to StreamEvents.
     fn request_stream(
         &self,
-        _request: ModelRequest,
-    ) -> BoxStream<'_, Result<MessageStreamEvent, GenerateContentError>> {
-        // TODO;
-        unimplemented!("GeminiModel::request_stream is not yet implemented.");
+        request: ModelRequest,
+    ) -> BoxStream<'_, Result<StreamEvent, GenerateContentError>> {
+        let system_instruction = request
+            .system_message
+            .map(Into::into)
+            .or_else(|| self.system_instruction.clone());
+
+        let contents: Vec<GeminiContent> = request.messages.into_iter().map(Into::into).collect();
+
+        let tools = request
+            .tools
+            .map(|tools| {
+                tools
+                    .into_iter()
+                    .map(Into::<GeminiTool>::into)
+                    .filter_map(|tool| serde_json::to_value(tool).ok())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|v| !v.is_empty());
+
+        let gemini_request = GeminiGenerateContentRequest {
+            contents,
+            tools,
+            system_instruction,
+            model: self.model.clone(),
+            tool_config: self.tool_config.clone(),
+            safety_settings: self.safety_settings.clone(),
+            generation_config: self.generation_config.clone(),
+            cached_content: self.cached_content.clone(),
+        };
+
+        let stream = try_stream! {
+            let mut response_stream = gemini_request.stream(&self.client);
+
+            while let Some(response) = response_stream.next().await {
+                let response = response?;
+                let events = conversion::convert_streaming_response(response);
+                
+                for event in events {
+                    yield event;
+                }
+            }
+        };
+
+        Box::pin(stream)
     }
 
     fn request_structured_internal(
@@ -292,16 +335,14 @@ mod tests {
     }
 
     #[test]
-    fn test_request_stream_unimplemented() {
-        // This test just verifies that the function exists and compiles correctly
-        // The actual panic behavior is expected and documented in the implementation
+    fn test_request_stream_signature() {
+        // This test verifies that the streaming method exists and has the correct signature
         let model = GeminiModel::builder()
             .api_key("test-key")
             .model("test-model".to_string())
             .build();
 
-        // We don't actually call request_stream here since it would panic
-        // This test just ensures the method exists and has the correct signature
+        // Test that the method exists (we don't actually call it to avoid needing API key)
         assert_eq!(model.model(), "test-model");
     }
 
@@ -349,7 +390,7 @@ mod tests {
         // Check that we got text content back
         if let Some(Part::Text { text }) = response.message.content.first() {
             assert!(!text.is_empty());
-            println!("Response from model: {}", text);
+            println!("Response from model: {text}");
         } else {
             panic!("Expected text response but got different content type");
         }
@@ -393,7 +434,7 @@ mod tests {
                 println!("Generated cat: {:?}", response.data);
             }
             Err(e) => {
-                panic!("Integration test failed: {:?}", e);
+                panic!("Integration test failed: {e:?}");
             }
         }
     }
@@ -438,7 +479,7 @@ mod tests {
                 println!("Generated complex data: {:?}", response.data);
             }
             Err(e) => {
-                panic!("Integration test failed: {:?}", e);
+                panic!("Integration test failed: {e:?}");
             }
         }
     }
@@ -503,9 +544,101 @@ mod tests {
         if let Some(Part::Text { text }) = response.message.content.first() {
             assert!(!text.is_empty());
             assert!(text.to_lowercase().contains("cat") || text.to_lowercase().contains("breed"));
-            println!("Response about cat breeds: {}", text);
+            println!("Response about cat breeds: {text}");
         } else {
             panic!("Expected text response but got different content type");
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
+    async fn test_gemini_model_request_stream() {
+        let api_key = match std::env::var("GEMINI_API_KEY")
+            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        {
+            Ok(key) => key,
+            Err(_) => {
+                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping streaming test");
+                return;
+            }
+        };
+
+        let model = GeminiModel::builder()
+            .api_key(api_key)
+            .model("gemini-1.5-flash".to_string())
+            .build();
+
+        let messages = vec![Message {
+            role: MessageRole::User,
+            content: vec![Part::Text {
+                text: "Tell me a short story about a robot. Make it 2-3 sentences.".to_string(),
+            }],
+            timestamp: chrono::Utc::now(),
+        }];
+
+        let request = ModelRequest {
+            messages,
+            system_message: None,
+            tools: None,
+        };
+
+        let mut stream = model.request_stream(request);
+        let mut events = Vec::new();
+        let mut content_received = false;
+        let mut message_stopped = false;
+
+        while let Some(event_result) = stream.next().await {
+            let event = match event_result {
+                Ok(event) => event,
+                Err(e) => panic!("Stream error: {e:?}"),
+            };
+
+            match &event {
+                StreamEvent::MessageDelta(delta) => {
+                    if let Some(content) = &delta.content_delta {
+                        assert!(!content.is_empty(), "Content delta should not be empty");
+                        content_received = true;
+                        print!("{content}"); // Print the streaming text
+                    }
+                }
+                StreamEvent::TextDelta(text) => {
+                    assert!(!text.is_empty(), "Text delta should not be empty");
+                    content_received = true;
+                    print!("{text}"); // Print the streaming text
+                }
+                StreamEvent::ToolCall(_) => {
+                    // Tool calls are handled but don't affect this test logic
+                }
+                StreamEvent::ToolResult(_) => {
+                    // Tool results are handled but don't affect this test logic
+                }
+                StreamEvent::Usage(_) => {
+                    // Usage events are expected
+                }
+                StreamEvent::StreamStop(stream_stop) => {
+                    assert!(stream_stop.usage.input_tokens() > 0, "Should have input token usage");
+                    message_stopped = true;
+                    println!("\nUsage: {:?}", stream_stop.usage);
+                }
+            }
+
+            events.push(event);
+        }
+
+        println!("\nReceived {} events total", events.len());
+
+        // Verify we got the expected event sequence
+        assert!(content_received, "Should have received some content");
+        assert!(message_stopped, "Should have received StreamStop");
+
+        // Verify event order - last should be StreamStop
+        assert!(
+            matches!(events.last(), Some(StreamEvent::StreamStop(_))),
+            "Last event should be StreamStop"
+        );
+        
+        // Verify we got at least one text delta event
+        let text_delta_count = events.iter().filter(|e| matches!(e, StreamEvent::TextDelta(_))).count();
+        assert!(text_delta_count > 0, "Should have received at least one TextDelta event");
     }
 }

@@ -77,7 +77,7 @@ mod tests {
         use crate::content::message::{Message, MessageRole};
         use crate::content::part::Part;
         use crate::model::{Model, gemini::GeminiModel};
-        use gemini_ox::tool::google::GoogleSearch;
+        
 
         let api_key =
             match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
@@ -116,7 +116,7 @@ mod tests {
             }
             Err(e) => {
                 // For now, just log the error - the tool integration might not trigger actual search
-                println!("GoogleSearch tool test completed with: {:?}", e);
+                println!("GoogleSearch tool test completed with: {e:?}");
             }
         }
 

@@ -197,12 +197,12 @@ impl ActiveLiveSession {
                     match message {
                         Message::Text(text) => {
                             // Debug: print raw message from API
-                            println!("📨 DEBUG: Raw API response: {}", text);
+                            println!("📨 DEBUG: Raw API response: {text}");
                             return Some(
                                 serde_json::from_str::<LiveApiResponseChunk>(&text)
                                     .map_err(|e| {
-                                        println!("❌ DEBUG: Failed to parse API response as LiveApiResponseChunk: {}", e);
-                                        println!("❌ DEBUG: Raw response was: {}", text);
+                                        println!("❌ DEBUG: Failed to parse API response as LiveApiResponseChunk: {e}");
+                                        println!("❌ DEBUG: Raw response was: {text}");
                                         GeminiRequestError::JsonDeserializationError(e)
                                     }),
                             );
@@ -214,15 +214,15 @@ impl ActiveLiveSession {
                                     return Some(
                                         serde_json::from_str::<LiveApiResponseChunk>(&text)
                                             .map_err(|e| {
-                                                println!("❌ DEBUG: Failed to parse binary API response: {}", e);
+                                                println!("❌ DEBUG: Failed to parse binary API response: {e}");
                                                 GeminiRequestError::JsonDeserializationError(e)
                                             }),
                                     );
                                 }
                                 Err(e) => {
-                                    println!("❌ DEBUG: Binary message is not valid UTF-8: {}", e);
+                                    println!("❌ DEBUG: Binary message is not valid UTF-8: {e}");
                                     return Some(Err(GeminiRequestError::UnexpectedResponse(
-                                        format!("Invalid UTF-8 in binary message: {}", e),
+                                        format!("Invalid UTF-8 in binary message: {e}"),
                                     )));
                                 }
                             }
@@ -259,8 +259,7 @@ impl ActiveLiveSession {
                 Some(Err(e)) => {
                     // More detailed logging for WebSocket errors
                     println!(
-                        "❌ ActiveLiveSession::receive encountered WebSocket error: {:#?}",
-                        e
+                        "❌ ActiveLiveSession::receive encountered WebSocket error: {e:#?}"
                     );
 
                     // Handle specific tungstenite errors
@@ -322,29 +321,29 @@ impl ActiveLiveSession {
             }
             WsError::Io(io_err) => GeminiRequestError::IoError(io_err),
             WsError::Tls(tls_err) => {
-                GeminiRequestError::UnexpectedResponse(format!("TLS error: {}", tls_err))
+                GeminiRequestError::UnexpectedResponse(format!("TLS error: {tls_err}"))
             }
             WsError::Capacity(cap_err) => {
-                GeminiRequestError::UnexpectedResponse(format!("Capacity error: {}", cap_err))
+                GeminiRequestError::UnexpectedResponse(format!("Capacity error: {cap_err}"))
             }
             WsError::Protocol(proto_err) => {
-                GeminiRequestError::UnexpectedResponse(format!("Protocol error: {}", proto_err))
+                GeminiRequestError::UnexpectedResponse(format!("Protocol error: {proto_err}"))
             }
 
             WsError::Utf8 => GeminiRequestError::UnexpectedResponse(
                 "UTF-8 encoding error in WebSocket message".to_string(),
             ),
             WsError::Url(url_err) => {
-                GeminiRequestError::UrlBuildError(format!("URL error: {}", url_err))
+                GeminiRequestError::UrlBuildError(format!("URL error: {url_err}"))
             }
             WsError::Http(response) => GeminiRequestError::UnexpectedResponse(format!(
                 "HTTP error during WebSocket handshake: {}",
                 response.status()
             )),
             WsError::HttpFormat(http_err) => {
-                GeminiRequestError::UnexpectedResponse(format!("HTTP format error: {}", http_err))
+                GeminiRequestError::UnexpectedResponse(format!("HTTP format error: {http_err}"))
             }
-            _ => GeminiRequestError::UnexpectedResponse(format!("WebSocket error: {}", error)),
+            _ => GeminiRequestError::UnexpectedResponse(format!("WebSocket error: {error}")),
         }
     }
 }
@@ -399,7 +398,7 @@ mod tests {
                 panic!("Expected ModelTurn variant");
             }
             Err(e) => {
-                panic!("Failed to deserialize: {}", e);
+                panic!("Failed to deserialize: {e}");
             }
         }
     }
@@ -413,7 +412,7 @@ mod tests {
                 assert!(matches!(chunk, LiveApiResponseChunk::SetupComplete { .. }));
             }
             Err(e) => {
-                panic!("Failed to deserialize: {}", e);
+                panic!("Failed to deserialize: {e}");
             }
         }
     }

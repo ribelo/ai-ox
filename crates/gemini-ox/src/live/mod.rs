@@ -463,7 +463,7 @@ mod tests {
                     }
                     Ok(other) => {
                         // Handle other message types
-                        println!("Received unhandled Ok message in second loop: {:?}", other);
+                        println!("Received unhandled Ok message in second loop: {other:?}");
                     }
                     Err(err) => {
                         stream_error = Some(Box::new(err));

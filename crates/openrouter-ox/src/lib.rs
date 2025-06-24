@@ -22,10 +22,12 @@ pub struct OpenRouter {
     #[builder(into)]
     api_key: String,
     #[builder(default)]
+    #[allow(dead_code)]
     headers: HashMap<String, String>,
     #[builder(default)]
     client: reqwest::Client,
     #[cfg(feature = "leaky-bucket")]
+    #[allow(dead_code)]
     leaky_bucket: Option<Arc<RateLimiter>>,
 }
 

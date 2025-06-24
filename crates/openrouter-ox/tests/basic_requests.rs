@@ -24,7 +24,7 @@ async fn test_basic_chat_completion() {
 
     let request = Request::builder()
         .messages(messages)
-        .model("openai/gpt-3.5-turbo")
+        .model("google/gemini-2.5-flash")
         .max_tokens(100)
         .temperature(0.7)
         .build();
@@ -41,8 +41,8 @@ async fn test_basic_chat_completion() {
             println!("Response: {:?}", completion.choices[0].message.content);
         }
         Err(e) => {
-            println!("Request failed with error: {:?}", e);
-            panic!("Basic chat completion should succeed, but got error: {}", e);
+            println!("Request failed with error: {e:?}");
+            panic!("Basic chat completion should succeed, but got error: {e}");
         }
     }
 }
@@ -59,7 +59,7 @@ async fn test_chat_completion_with_system_message() {
 
     let request = Request::builder()
         .messages(messages)
-        .model("openai/gpt-3.5-turbo")
+        .model("google/gemini-2.5-flash")
         .max_tokens(50)
         .temperature(0.5)
         .build();
@@ -71,10 +71,10 @@ async fn test_chat_completion_with_system_message() {
             assert!(!completion.choices.is_empty());
             let content = &completion.choices[0].message.content;
             assert!(!content.is_empty());
-            println!("System message response: {:?}", content);
+            println!("System message response: {content:?}");
         }
         Err(e) => {
-            panic!("Chat completion with system message should succeed: {}", e);
+            panic!("Chat completion with system message should succeed: {e}");
         }
     }
 }
@@ -88,7 +88,7 @@ async fn test_chat_completion_streaming() {
 
     let request = Request::builder()
         .messages(messages)
-        .model("openai/gpt-3.5-turbo")
+        .model("google/gemini-2.5-flash")
         .max_tokens(100)
         .temperature(0.7)
         .build();
@@ -108,14 +108,14 @@ async fn test_chat_completion_streaming() {
                 }
             }
             Err(e) => {
-                panic!("Stream chunk failed: {:?}", e);
+                panic!("Stream chunk failed: {e:?}");
             }
         }
     }
 
     assert!(chunk_count > 0, "Should receive at least one chunk");
     assert!(!full_content.is_empty(), "Should receive some content");
-    println!("Streamed content ({} chunks): {}", chunk_count, full_content);
+    println!("Streamed content ({chunk_count} chunks): {full_content}");
 }
 
 #[tokio::test]
@@ -123,7 +123,7 @@ async fn test_chat_completion_streaming() {
 async fn test_multiple_models() {
     let client = setup_client().expect("OPENROUTER_API_KEY not set");
 
-    let models = ["openai/gpt-3.5-turbo", "anthropic/claude-3-haiku"];
+    let models = ["google/gemini-2.5-flash", "anthropic/claude-3-haiku"];
 
     for model in &models {
         let messages = Messages::new([Message::user("What is 2+2?")]);
@@ -142,10 +142,10 @@ async fn test_multiple_models() {
                 assert!(!completion.choices.is_empty());
                 let content = &completion.choices[0].message.content;
                 assert!(!content.is_empty());
-                println!("Model {} response: {:?}", model, content);
+                println!("Model {model} response: {content:?}");
             }
             Err(e) => {
-                println!("Model {} failed: {:?}", model, e);
+                println!("Model {model} failed: {e:?}");
                 // Don't panic here as some models might not be available
             }
         }
@@ -165,7 +165,7 @@ async fn test_json_response_format() {
 
     let request = Request::builder()
         .messages(messages)
-        .model("openai/gpt-3.5-turbo")
+        .model("google/gemini-2.5-flash")
         // Note: response_format might not be supported the same way
         // .response_format(Some(response_format))
         .max_tokens(100)
@@ -180,10 +180,10 @@ async fn test_json_response_format() {
             let content = &completion.choices[0].message.content;
 
             // Content handling - just check that we got a response
-            println!("JSON response: {:?}", content);
+            println!("JSON response: {content:?}");
         }
         Err(e) => {
-            println!("JSON format request failed: {:?}", e);
+            println!("JSON format request failed: {e:?}");
             // Some models might not support JSON format, so don't panic
         }
     }
@@ -202,8 +202,8 @@ async fn test_conversation_with_multiple_messages() {
 
     let request = Request::builder()
         .messages(messages)
-        .model("openai/gpt-3.5-turbo")
-        .max_tokens(150)
+        .model("google/gemini-2.5-flash")
+        .max_tokens(500)
         .temperature(0.7)
         .build();
 
@@ -214,10 +214,10 @@ async fn test_conversation_with_multiple_messages() {
             assert!(!completion.choices.is_empty());
             let content = &completion.choices[0].message.content;
             assert!(!content.is_empty());
-            println!("Travel advice: {:?}", content);
+            println!("Travel advice: {content:?}");
         }
         Err(e) => {
-            panic!("Multi-turn conversation should succeed: {}", e);
+            panic!("Multi-turn conversation should succeed: {e}");
         }
     }
 }
@@ -231,7 +231,7 @@ async fn test_request_with_stop_sequences() {
 
     let request = Request::builder()
         .messages(messages)
-        .model("openai/gpt-3.5-turbo")
+        .model("google/gemini-2.5-flash")
         .stop(vec!["8".to_string()])
         .max_tokens(50)
         .temperature(0.0)
@@ -244,10 +244,10 @@ async fn test_request_with_stop_sequences() {
             assert!(!completion.choices.is_empty());
             let content = &completion.choices[0].message.content;
             assert!(!content.is_empty());
-            println!("Stopped response: {:?}", content);
+            println!("Stopped response: {content:?}");
         }
         Err(e) => {
-            panic!("Request with stop sequences should succeed: {}", e);
+            panic!("Request with stop sequences should succeed: {e}");
         }
     }
 }

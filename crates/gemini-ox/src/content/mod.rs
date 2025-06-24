@@ -4,12 +4,12 @@
 //! all parts of the Gemini API including content generation, live API,
 //! embeddings, and function calling.
 
-pub mod content;
+pub mod types;
 pub mod mime_types;
 pub mod part;
 
 // Re-export the main types for convenient access
-pub use content::{Content, ContentError, Role};
+pub use types::{Content, ContentError, Role};
 pub use part::{
     Blob, CodeExecutionResult, ExecutableCode, FileData, FunctionCall, FunctionResponse,
     FunctionResponseScheduling, Language, Outcome, Part, PartData, Text, VideoMetadata,

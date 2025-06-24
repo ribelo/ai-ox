@@ -421,7 +421,7 @@ fn parse_error_response(status: reqwest::StatusCode, bytes: bytes::Bytes) -> Gem
             code: payload.error.code.map(|c| c.to_string()),
             message: payload.error.message,
             status: payload.error.status,
-            details: payload.error.details.unwrap_or_else(|| Value::Null),
+            details: payload.error.details.unwrap_or(Value::Null),
         }
     } else {
         // Fall back to text

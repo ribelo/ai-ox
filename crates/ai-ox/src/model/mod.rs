@@ -11,7 +11,7 @@ use serde::de::DeserializeOwned;
 
 use crate::{
     StructuredResponse,
-    content::{delta::MessageStreamEvent, message::Message},
+    content::{delta::StreamEvent, message::Message},
     errors::GenerateContentError,
     model::{
         request::ModelRequest,
@@ -56,11 +56,11 @@ pub trait Model: Send + Sync + 'static + std::fmt::Debug {
     ///
     /// # Returns
     ///
-    /// A `BoxStream` that yields `Result<MessageStreamEvent, GenerateContentError>` items.
+    /// A `BoxStream` that yields `Result<StreamEvent, GenerateContentError>` items.
     fn request_stream(
         &self,
         request: ModelRequest,
-    ) -> BoxStream<'_, Result<MessageStreamEvent, GenerateContentError>>;
+    ) -> BoxStream<'_, Result<StreamEvent, GenerateContentError>>;
 
     /// The internal, object-safe method for handling structured content requests.
     ///

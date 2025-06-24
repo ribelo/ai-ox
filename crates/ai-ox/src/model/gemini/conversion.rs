@@ -1,11 +1,19 @@
-use crate::content::{
-    message::{Message, MessageRole},
-    part::{FileData, ImageSource, Part},
+use crate::{
+    content::{
+        delta::{FinishReason, StreamEvent, StreamStop},
+        message::{Message, MessageRole},
+        part::{FileData, ImageSource, Part},
+    },
+    tool::ToolCall,
+    usage::Usage,
 };
-use gemini_ox::content::{
-    Blob as GeminiBlob, Content as GeminiContent, FileData as GeminiFileData,
-    FunctionCall as GeminiFunctionCall, FunctionResponse as GeminiFunctionResponse,
-    Part as GeminiPart, PartData as GeminiPartData, Role as GeminiRole, Text as GeminiText,
+use gemini_ox::{
+    content::{
+        Blob as GeminiBlob, Content as GeminiContent, FileData as GeminiFileData,
+        FunctionCall as GeminiFunctionCall, FunctionResponse as GeminiFunctionResponse,
+        Part as GeminiPart, PartData as GeminiPartData, Role as GeminiRole, Text as GeminiText,
+    },
+    generate_content::response::GenerateContentResponse as GeminiResponse,
 };
 
 /// Converts an `ai-ox` `Message` to a `gemini-ox` `Content`.
@@ -123,20 +131,125 @@ impl From<GeminiPart> for Part {
                 name: function_response.name,
                 content: function_response.response,
             },
-            GeminiPartData::ExecutableCode(_executable_code) => {
-                // TODO: Handle executable code - for now convert to text
-                Part::Text {
-                    text: "Executable code not yet supported".to_string(),
+            GeminiPartData::ExecutableCode(executable_code) => Part::ToolCall {
+                // Gemini provides no ID for code execution requests. An empty string is used
+                // as a placeholder, making the `name` field essential for identification.
+                id: String::new(),
+                name: "code_interpreter".to_string(),
+                args: serde_json::json!({
+                    "language": executable_code.language.to_string(),
+                    "code": executable_code.code,
+                }),
+            },
+            GeminiPartData::CodeExecutionResult(code_execution_result) => Part::ToolResult {
+                // Gemini provides no ID for code execution results. An empty string is used
+                // as a placeholder, making the `name` field essential for identification.
+                call_id: String::new(),
+                name: "code_interpreter".to_string(),
+                content: serde_json::json!({
+                    "outcome": code_execution_result.outcome.to_string(),
+                    "output": code_execution_result.output,
+                }),
+            },
+        }
+    }
+}
+
+/// Converts a `gemini-ox` `FunctionCall` to a `ToolCall`.
+impl From<GeminiFunctionCall> for ToolCall {
+    fn from(function_call: GeminiFunctionCall) -> Self {
+        ToolCall {
+            id: function_call.id.unwrap_or_default(),
+            name: function_call.name,
+            args: function_call.args.unwrap_or_default(),
+        }
+    }
+}
+
+/// Converts a streaming Gemini response to ai-ox StreamEvents
+pub fn convert_streaming_response(response: GeminiResponse) -> Vec<StreamEvent> {
+    to_ai_ox_stream_events(response)
+}
+
+/// Converts a raw Gemini chunk to our internal StreamEvent format
+fn to_ai_ox_stream_events(gemini_chunk: GeminiResponse) -> Vec<StreamEvent> {
+    let mut events = Vec::new();
+
+    // Process candidates
+    if let Some(candidate) = gemini_chunk.candidates.first() {
+        for part in &candidate.content.parts {
+            match &part.data {
+                GeminiPartData::Text(text) => {
+                    events.push(StreamEvent::TextDelta(text.to_string()));
                 }
-            }
-            GeminiPartData::CodeExecutionResult(_code_execution_result) => {
-                // TODO: Handle code execution result - for now convert to text
-                Part::Text {
-                    text: "Code execution result not yet supported".to_string(),
+                GeminiPartData::FunctionCall(function_call) => {
+                    events.push(StreamEvent::ToolCall(ToolCall::from(function_call.clone())));
+                }
+                GeminiPartData::ExecutableCode(executable_code) => {
+                    let tool_call = crate::tool::ToolCall {
+                        id: String::new(), // Gemini doesn't provide IDs for code execution
+                        name: "code_interpreter".to_string(),
+                        args: serde_json::json!({
+                            "language": executable_code.language.to_string(),
+                            "code": executable_code.code,
+                        }),
+                    };
+                    events.push(StreamEvent::ToolCall(tool_call));
+                }
+                GeminiPartData::CodeExecutionResult(code_execution_result) => {
+                    use crate::content::{message::{Message, MessageRole}, part::Part};
+                    
+                    let content_json = serde_json::json!({
+                        "outcome": code_execution_result.outcome.to_string(),
+                        "output": code_execution_result.output,
+                    });
+                    
+                    let message = Message::new(
+                        MessageRole::Assistant,
+                        vec![Part::Text { text: content_json.to_string() }]
+                    );
+                    
+                    let tool_result = crate::tool::ToolResult {
+                        id: String::new(), // Gemini doesn't provide IDs for code execution results
+                        name: "code_interpreter".to_string(),
+                        response: vec![message],
+                    };
+                    events.push(StreamEvent::ToolResult(tool_result));
+                }
+                GeminiPartData::InlineData(_) | 
+                GeminiPartData::FileData(_) | 
+                GeminiPartData::FunctionResponse(_) => {
+                    // These part types are handled but don't generate stream events
                 }
             }
         }
     }
+
+    // Handle usage metadata
+    if let Some(usage_metadata) = &gemini_chunk.usage_metadata {
+        let usage = Usage::from(usage_metadata.clone());
+        events.push(StreamEvent::Usage(usage.clone()));
+        
+        // Determine finish reason
+        let finish_reason = gemini_chunk.candidates
+            .first()
+            .and_then(|candidate| candidate.finish_reason.as_ref())
+            .map(|reason| match reason {
+                gemini_ox::generate_content::FinishReason::Stop => FinishReason::Stop,
+                gemini_ox::generate_content::FinishReason::MaxTokens => FinishReason::Length,
+                gemini_ox::generate_content::FinishReason::Safety => FinishReason::ContentFilter,
+                gemini_ox::generate_content::FinishReason::Recitation => FinishReason::ContentFilter,
+                _ => FinishReason::Other,
+            })
+            .unwrap_or(FinishReason::Stop);
+
+        events.push(StreamEvent::StreamStop(StreamStop {
+            finish_reason,
+            usage,
+        }));
+    }
+
+    events
 }
 
 #[cfg(test)]

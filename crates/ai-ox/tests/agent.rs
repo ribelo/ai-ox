@@ -74,7 +74,7 @@ impl Model for MockModel {
     fn request_stream(
         &self,
         _request: ModelRequest,
-    ) -> BoxStream<'_, Result<ai_ox::content::delta::MessageStreamEvent, GenerateContentError>>
+    ) -> BoxStream<'_, Result<ai_ox::content::delta::StreamEvent, GenerateContentError>>
     {
         use futures_util::stream;
         Box::pin(stream::empty())
@@ -104,6 +104,7 @@ impl MockToolBox {
         Self { should_fail: false }
     }
 
+    #[allow(dead_code)]
     fn with_failure() -> Self {
         Self { should_fail: true }
     }
@@ -122,7 +123,7 @@ impl ToolBox for MockToolBox {
             if self.should_fail {
                 Err(ToolError::execution(
                     "mock_tool",
-                    std::io::Error::new(std::io::ErrorKind::Other, "Mock tool failure"),
+                    std::io::Error::other("Mock tool failure"),
                 ))
             } else {
                 Ok(ToolResult {
@@ -292,7 +293,7 @@ async fn test_agent_max_iterations() {
     // Since our mock model doesn't actually return tool calls,
     // this test verifies the structure but won't actually hit max iterations
     let response = agent.run(messages).await.unwrap();
-    assert!(response.message.content.len() > 0);
+    assert!(!response.message.content.is_empty());
 }
 
 #[tokio::test]
@@ -418,6 +419,6 @@ async fn test_agent_error_handling() {
         AgentError::Api(GenerateContentError::NoResponse) => {
             // Expected error
         }
-        other => panic!("Unexpected error: {:?}", other),
+        other => panic!("Unexpected error: {other:?}"),
     }
 }

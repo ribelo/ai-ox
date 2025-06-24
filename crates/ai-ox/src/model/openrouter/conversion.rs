@@ -23,7 +23,7 @@ impl From<Message> for OpenRouterMessage {
                 // For user messages, handle tool results and regular content
                 let mut text_parts = Vec::new();
                 let mut tool_results = Vec::new();
-                
+
                 for part in message.content {
                     match part {
                         Part::Text { text } => text_parts.push(text),
@@ -40,14 +40,14 @@ impl From<Message> for OpenRouterMessage {
                         }
                     }
                 }
-                
+
                 OpenRouterMessage::User(UserMessage::text(text_parts.join("\n")))
             }
             MessageRole::Assistant => {
                 // For assistant messages, handle tool calls and regular content
                 let mut text_parts = Vec::new();
                 let mut tool_calls = Vec::new();
-                
+
                 for part in message.content {
                     match part {
                         Part::Text { text } => text_parts.push(text),
@@ -72,17 +72,17 @@ impl From<Message> for OpenRouterMessage {
                         }
                     }
                 }
-                
+
                 let mut assistant_msg = if text_parts.is_empty() {
                     AssistantMessage::text("")
                 } else {
                     AssistantMessage::text(text_parts.join("\n"))
                 };
-                
+
                 if !tool_calls.is_empty() {
                     assistant_msg.tool_calls = Some(tool_calls);
                 }
-                
+
                 OpenRouterMessage::Assistant(assistant_msg)
             }
         }
@@ -98,7 +98,7 @@ impl From<OpenRouterMessage> for Message {
                     .filter_map(|part| part.as_text().map(|t| t.text.clone()))
                     .collect::<Vec<_>>()
                     .join(" ");
-                
+
                 let content = if text.is_empty() {
                     vec![]
                 } else {
@@ -108,29 +108,29 @@ impl From<OpenRouterMessage> for Message {
             }
             OpenRouterMessage::Assistant(assistant_msg) => {
                 let mut parts = Vec::new();
-                
+
                 // Add text content
                 let text = assistant_msg.content.0.iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.clone()))
                     .collect::<Vec<_>>()
                     .join(" ");
-                
+
                 if !text.is_empty() {
                     parts.push(Part::Text { text });
                 }
-                
+
                 // Add tool calls
                 if let Some(tool_calls) = assistant_msg.tool_calls {
                     for tool_call in tool_calls {
                         if let (Some(id), Some(name)) = (tool_call.id, tool_call.function.name) {
                             let args: Value = serde_json::from_str(&tool_call.function.arguments)
                                 .unwrap_or(Value::Object(Default::default()));
-                            
+
                             parts.push(Part::ToolCall { id, name, args });
                         }
                     }
                 }
-                
+
                 (MessageRole::Assistant, parts)
             }
             OpenRouterMessage::System(system_msg) => {
@@ -139,7 +139,7 @@ impl From<OpenRouterMessage> for Message {
                     .filter_map(|part| part.as_text().map(|t| t.text.clone()))
                     .collect::<Vec<_>>()
                     .join(" ");
-                
+
                 let content = if text.is_empty() {
                     vec![]
                 } else {
@@ -165,11 +165,11 @@ impl From<OpenRouterMessage> for Message {
 /// Note: There's a fundamental mismatch between ai-ox and openrouter-ox tool systems:
 /// - ai-ox uses `Tool::FunctionDeclarations` which are just schemas (metadata)
 /// - openrouter-ox has a full `ToolBox` system with executable tools implementing the `Tool` trait
-/// 
+///
 /// For proper integration, you would need to:
 /// 1. Create wrapper tools that implement `openrouter_ox::Tool`
 /// 2. Or extend ai-ox to support executable tools like openrouter-ox does
-/// 
+///
 /// For now, we handle tool conversion at the schema level in the model implementation.
 
 /// Converts an `ai-ox` `ToolSet` to `openrouter-ox` `ToolBox` (limited conversion).
@@ -373,12 +373,12 @@ mod tests {
                 // Check tool calls
                 let tool_calls = assistant_msg.tool_calls.expect("Should have tool calls");
                 assert_eq!(tool_calls.len(), 1);
-                
+
                 let tool_call = &tool_calls[0];
                 assert_eq!(tool_call.id, Some("call_123".to_string()));
                 assert_eq!(tool_call.type_field, "function");
                 assert_eq!(tool_call.function.name, Some("search_web".to_string()));
-                
+
                 let args: Value = serde_json::from_str(&tool_call.function.arguments).unwrap();
                 assert_eq!(args["query"], "rust programming");
                 assert_eq!(args["max_results"], 5);
@@ -411,7 +411,7 @@ mod tests {
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
-                
+
                 // Tool results should be converted to text representation for user messages
                 assert!(text.contains("Here are the search results:"));
                 // The tool result should be serialized as JSON in the text
@@ -425,7 +425,7 @@ mod tests {
     fn test_reverse_tool_call_conversion() {
         use openrouter_ox::message::AssistantMessage;
         use openrouter_ox::response::{FunctionCall, ToolCall as OpenRouterToolCall};
-        
+
         let tool_call = OpenRouterToolCall {
             index: None,
             id: Some("call_456".to_string()),
@@ -435,22 +435,22 @@ mod tests {
                 arguments: json!({"expression": "2 + 2"}).to_string(),
             },
         };
-        
+
         let mut assistant_msg = AssistantMessage::text("I'll calculate that for you.");
         assistant_msg.tool_calls = Some(vec![tool_call]);
-        
+
         let openrouter_msg = OpenRouterMessage::Assistant(assistant_msg);
         let ai_message: Message = openrouter_msg.into();
-        
+
         assert_eq!(ai_message.role, MessageRole::Assistant);
         assert_eq!(ai_message.content.len(), 2); // Text + ToolCall
-        
+
         // Check text part
         match &ai_message.content[0] {
             Part::Text { text } => assert_eq!(text, "I'll calculate that for you."),
             _ => panic!("Expected text part first"),
         }
-        
+
         // Check tool call part
         match &ai_message.content[1] {
             Part::ToolCall { id, name, args } => {
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn test_complete_tool_workflow() {
         // Test a complete tool workflow: user asks -> assistant calls tool -> user provides result
-        
+
         // 1. User asks a question
         let user_question = Message {
             role: MessageRole::User,
@@ -498,13 +498,13 @@ mod tests {
             }],
             timestamp: chrono::Utc::now(),
         };
-        
+
         let openrouter_user: OpenRouterMessage = user_question.into();
         let back_to_ai: Message = openrouter_user.into();
-        
+
         assert_eq!(back_to_ai.role, MessageRole::User);
         assert_eq!(back_to_ai.content.len(), 1);
-        
+
         // 2. Assistant responds with tool call
         let assistant_response = Message {
             role: MessageRole::Assistant,
@@ -520,13 +520,13 @@ mod tests {
             ],
             timestamp: chrono::Utc::now(),
         };
-        
+
         let openrouter_assistant: OpenRouterMessage = assistant_response.into();
         let back_to_ai_assistant: Message = openrouter_assistant.into();
-        
+
         assert_eq!(back_to_ai_assistant.role, MessageRole::Assistant);
         assert_eq!(back_to_ai_assistant.content.len(), 2); // Text + ToolCall
-        
+
         // Verify the tool call is preserved
         match &back_to_ai_assistant.content[1] {
             Part::ToolCall { id, name, args } => {
@@ -537,7 +537,7 @@ mod tests {
             }
             _ => panic!("Expected tool call part"),
         }
-        
+
         // 3. User provides tool result
         let user_tool_result = Message {
             role: MessageRole::User,
@@ -554,10 +554,10 @@ mod tests {
             ],
             timestamp: chrono::Utc::now(),
         };
-        
+
         let openrouter_tool_result: OpenRouterMessage = user_tool_result.into();
         let back_to_ai_tool_result: Message = openrouter_tool_result.into();
-        
+
         assert_eq!(back_to_ai_tool_result.role, MessageRole::User);
         // Tool results are currently converted to text for OpenRouter
         // This demonstrates the workflow works end-to-end

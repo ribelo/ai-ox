@@ -350,14 +350,12 @@ pub(crate) fn combine_content_list(
         // Now merge/add parts to current_parts
         for new_part in content.parts {
             let mut merged = false;
-            if let Some(last_part) = current_parts.last_mut() {
-                if let Some(last_text) = last_part.as_mut_text() {
-                    if let PartData::Text(new_text_data) = &new_part.data {
+            if let Some(last_part) = current_parts.last_mut()
+                && let Some(last_text) = last_part.as_mut_text()
+                    && let PartData::Text(new_text_data) = &new_part.data {
                         last_text.push_text(new_text_data);
                         merged = true;
                     }
-                }
-            }
             if !merged {
                 current_parts.push(new_part);
             }

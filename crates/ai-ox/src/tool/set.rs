@@ -31,12 +31,12 @@ impl ToolSet {
     /// The provided toolbox will be wrapped in an `Arc` internally, so the caller
     /// does not need to manage the `Arc` themselves. If you need to share a toolbox
     /// instance across multiple sets, wrap it in an `Arc` before adding it.
-    pub fn add_toolbox(&mut self, toolbox: impl ToolBox + Send + Sync + 'static) {
+    pub fn add_toolbox(&mut self, toolbox: impl ToolBox + 'static) {
         self.toolboxes.push(Arc::new(toolbox));
     }
 
     /// Adds a toolbox to this set using a builder pattern.
-    pub fn with_toolbox(mut self, toolbox: impl ToolBox + Send + Sync + 'static) -> Self {
+    pub fn with_toolbox(mut self, toolbox: impl ToolBox + 'static) -> Self {
         self.add_toolbox(toolbox);
         self
     }

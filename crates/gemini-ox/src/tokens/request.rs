@@ -50,7 +50,7 @@ struct ApiCreateAuthTokenPayload<'a> {
 impl CreateAuthTokenOperation {
     pub async fn send(&self) -> Result<AuthTokenResponse, GeminiRequestError> {
         let api_key = &self.gemini.api_key;
-        let url = format!("{}/auth_tokens?key={}", BASE_URL, api_key);
+        let url = format!("{BASE_URL}/auth_tokens?key={api_key}");
 
         let final_field_mask = build_final_field_mask(
             self.live_constrained_parameters.as_ref(),
@@ -94,7 +94,7 @@ fn generate_base_field_mask_for_live_ephemeral(params: &LiveEphemeralParametersO
             fields.push("config.outputAudioTranscription".to_string());
         }
         for key in config.additional_config.keys() {
-            fields.push(format!("config.{}", key));
+            fields.push(format!("config.{key}"));
         }
     }
 
@@ -122,7 +122,7 @@ fn build_final_field_mask(
             for field in additional_fields {
                 // Check if field should be prefixed with "config."
                 if is_config_field(field) {
-                    all_fields.push(format!("config.{}", field));
+                    all_fields.push(format!("config.{field}"));
                 } else {
                     all_fields.push(field.clone());
                 }

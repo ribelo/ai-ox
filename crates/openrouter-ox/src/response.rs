@@ -14,7 +14,7 @@ pub enum FinishReason {
     Limit,
     ContentFilter,
     ToolCalls,
-    #[serde(alias = "length", alias = "LENGTH")]
+    #[serde(alias = "length", alias = "LENGTH", alias = "MAX_TOKENS")]
     Length,
 }
 
