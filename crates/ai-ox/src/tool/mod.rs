@@ -16,8 +16,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::Arc;
 
-#[cfg(feature = "gemini")]
-use gemini_ox::tool::Tool as GeminiTool;
 
 /// Metadata for a tool function.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -41,7 +39,7 @@ pub enum Tool {
     FunctionDeclarations(Vec<FunctionMetadata>),
     /// Vendor-specific tool with opaque metadata
     #[cfg(feature = "gemini")]
-    GeminiTool(GeminiTool),
+    GeminiTool(gemini_ox::tool::Tool),
 }
 
 /// Trait for objects that provide tool functionality.
@@ -99,7 +97,7 @@ impl From<Box<dyn ToolBox>> for Vec<Tool> {
 /// value is not a JSON object.
 #[must_use]
 pub fn schema_for_type<T: JsonSchema>() -> Value {
-    let settings = SchemaSettings::draft2020_12().with(|s| {
+    let settings = SchemaSettings::openapi3().with(|s| {
         s.inline_subschemas = true;
         s.meta_schema = None;
     });
@@ -113,17 +111,5 @@ pub fn schema_for_type<T: JsonSchema>() -> Value {
         obj.remove("title");
     }
 
-    // Ensure we have proper properties or return empty object schema
-    if schema_value
-        .get("properties")
-        .is_some_and(|p| !p.is_null() && p.as_object().is_some_and(|o| !o.is_empty()))
-    {
-        schema_value
-    } else {
-        // Return an empty object schema for no-input functions
-        serde_json::json!({
-            "type": "object",
-            "properties": {}
-        })
-    }
+    schema_value
 }

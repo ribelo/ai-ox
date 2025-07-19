@@ -5,6 +5,7 @@ use thiserror::Error;
 pub enum GenerateContentError {
     /// An error originating from the underlying model client (e.g., `gemini-ox`).
     #[error("Underlying client error: {0}")]
+    #[cfg(feature = "gemini")]
     ClientError(#[from] gemini_ox::GeminiRequestError),
 
     /// An error related to invalid configuration.
@@ -27,6 +28,10 @@ pub enum GenerateContentError {
     /// An error indicating that a requested feature is not supported by this model.
     #[error("Unsupported feature: {0}")]
     UnsupportedFeature(String),
+
+    /// An error originating from a specific provider with context.
+    #[error("Provider {0} error: {1}")]
+    ProviderError(String, String),
 }
 
 impl GenerateContentError {
@@ -48,5 +53,10 @@ impl GenerateContentError {
     /// Creates a new unsupported feature error.
     pub fn unsupported_feature(feature: impl Into<String>) -> Self {
         Self::UnsupportedFeature(feature.into())
+    }
+
+    /// Creates a new provider error with context.
+    pub fn provider_error(provider: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::ProviderError(provider.into(), message.into())
     }
 }

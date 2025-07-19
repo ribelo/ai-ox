@@ -1,19 +1,153 @@
 use openrouter_ox::{
     message::{
-        AssistantMessage, Message as OpenRouterMessage, SystemMessage, ToolMessage, UserMessage,
+        AssistantMessage, Message as OpenRouterMessage, Messages as OpenRouterMessages, SystemMessage, UserMessage,
     },
-    response::{FunctionCall, ToolCall as OpenRouterToolCall},
-    tool::{FunctionMetadata, ToolBox as OpenRouterToolBox, ToolSchema},
+    response::{ChatCompletionChunk, FinishReason as OpenRouterFinishReason, FunctionCall, ToolCall as OpenRouterToolCall},
+    tool::FunctionMetadata,
 };
 use serde_json::Value;
 
 use crate::{
     content::{
+        delta::{FinishReason, StreamEvent, StreamStop},
         message::{Message, MessageRole},
         part::Part,
     },
-    tool::{Tool, ToolSet},
+    model::request::ModelRequest,
+    tool::{Tool, ToolCall},
+    usage::Usage,
 };
+
+use super::error::OpenRouterError;
+
+/// Convert OpenRouter finish reason to ai-ox finish reason
+pub fn convert_finish_reason(reason: OpenRouterFinishReason) -> FinishReason {
+    match reason {
+        OpenRouterFinishReason::Stop => FinishReason::Stop,
+        OpenRouterFinishReason::Length | OpenRouterFinishReason::Limit => FinishReason::Length,
+        OpenRouterFinishReason::ContentFilter => FinishReason::ContentFilter,
+        OpenRouterFinishReason::ToolCalls => FinishReason::ToolCalls,
+    }
+}
+
+/// Convert OpenRouter chunk to ai-ox StreamEvents with 1-to-1 mapping
+pub fn convert_chunk_to_stream_events(chunk: ChatCompletionChunk) -> Vec<StreamEvent> {
+    let mut events = Vec::new();
+
+    // Process each choice in the chunk
+    for choice in chunk.choices {
+        // Handle text content
+        if let Some(content) = choice.delta.content {
+            if !content.is_empty() {
+                events.push(StreamEvent::TextDelta(content));
+            }
+        }
+
+        // Handle tool calls
+        if let Some(tool_calls) = choice.delta.tool_calls {
+            for tool_call in tool_calls {
+                if let (Some(id), Some(name)) = (tool_call.id, tool_call.function.name) {
+                    let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
+                        .unwrap_or(serde_json::Value::Object(Default::default()));
+
+                    let ai_tool_call = ToolCall {
+                        id,
+                        name,
+                        args,
+                    };
+                    events.push(StreamEvent::ToolCall(ai_tool_call));
+                }
+            }
+        }
+
+        // Handle finish reason and usage
+        if let Some(finish_reason) = choice.finish_reason {
+            // Add usage event if available
+            if let Some(usage_data) = &chunk.usage {
+                let usage = extract_usage_from_response(Some(usage_data));
+                events.push(StreamEvent::Usage(usage.clone()));
+
+                // Add stream stop event
+                events.push(StreamEvent::StreamStop(StreamStop {
+                    finish_reason: convert_finish_reason(finish_reason),
+                    usage,
+                }));
+            } else {
+                // Add stream stop event with empty usage
+                events.push(StreamEvent::StreamStop(StreamStop {
+                    finish_reason: convert_finish_reason(finish_reason),
+                    usage: Usage::default(),
+                }));
+            }
+        }
+    }
+
+    events
+}
+
+/// Build OpenRouter messages from ai-ox ModelRequest
+pub fn build_openrouter_messages(request: &ModelRequest) -> Result<OpenRouterMessages, OpenRouterError> {
+    let mut messages = Vec::new();
+
+    // Add system message if present
+    if let Some(system_msg) = &request.system_message {
+        let system_text = system_msg.content.iter()
+            .filter_map(|part| match part {
+                Part::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        messages.push(OpenRouterMessage::System(SystemMessage::text(system_text)));
+    }
+
+    // Convert regular messages using From trait
+    for message in &request.messages {
+        messages.push(message.clone().into());
+    }
+
+    Ok(OpenRouterMessages(messages))
+}
+
+/// Convert ai-ox tools to OpenRouter Tool (using FunctionMetadata directly)
+pub fn convert_tools_to_openrouter(tools: Option<Vec<Tool>>) -> Result<Vec<FunctionMetadata>, OpenRouterError> {
+    match tools {
+        Some(tool_vec) => {
+            let tool_schemas = tool_vec
+                .iter()
+                .flat_map(|tool| -> Vec<FunctionMetadata> { 
+                    match tool {
+                        Tool::FunctionDeclarations(functions) => {
+                            functions.iter().map(|func| FunctionMetadata {
+                                name: func.name.clone(),
+                                description: func.description.clone(),
+                                parameters: func.parameters.clone(),
+                            }).collect()
+                        }
+                        #[cfg(feature = "gemini")]
+                        Tool::GeminiTool(_) => Vec::new(),
+                    }
+                })
+                .collect();
+            Ok(tool_schemas)
+        }
+        None => Ok(Vec::new()),
+    }
+}
+
+/// Extract usage data from OpenRouter response
+pub fn extract_usage_from_response(usage_data: Option<&openrouter_ox::response::Usage>) -> Usage {
+    match usage_data {
+        Some(usage) => {
+            let mut result = Usage::default();
+            result.input_tokens_by_modality.insert(crate::usage::Modality::Text, usage.prompt_tokens as u64);
+            result.output_tokens_by_modality.insert(crate::usage::Modality::Text, usage.completion_tokens as u64);
+            result.requests = 1;
+            result
+        },
+        None => Usage::default(),
+    }
+}
 
 /// Converts an `ai-ox` `Message` to an `openrouter-ox` `Message`.
 impl From<Message> for OpenRouterMessage {
@@ -22,15 +156,14 @@ impl From<Message> for OpenRouterMessage {
             MessageRole::User => {
                 // For user messages, handle tool results and regular content
                 let mut text_parts = Vec::new();
-                let mut tool_results = Vec::new();
 
                 for part in message.content {
                     match part {
                         Part::Text { text } => text_parts.push(text),
                         Part::ToolResult { call_id, content, .. } => {
-                            // Convert tool results to tool messages that will be sent separately
+                            // Convert tool results to text representation for OpenRouter
                             let content_str = serde_json::to_string(&content).unwrap_or_default();
-                            tool_results.push((call_id, content_str));
+                            text_parts.push(format!("Tool result for {}: {}", call_id, content_str));
                         }
                         _ => {
                             // Convert other parts to text representation
@@ -99,11 +232,7 @@ impl From<OpenRouterMessage> for Message {
                     .collect::<Vec<_>>()
                     .join(" ");
 
-                let content = if text.is_empty() {
-                    vec![]
-                } else {
-                    vec![Part::Text { text }]
-                };
+                let content = vec![Part::Text { text }];
                 (MessageRole::User, content)
             }
             OpenRouterMessage::Assistant(assistant_msg) => {
@@ -150,9 +279,9 @@ impl From<OpenRouterMessage> for Message {
             OpenRouterMessage::Tool(tool_msg) => {
                 // Tool messages are converted to User messages with ToolResult parts
                 let content = vec![Part::ToolResult {
-                    call_id: tool_msg.tool_call_id().clone(),
+                    call_id: tool_msg.tool_call_id.clone(),
                     name: "unknown".to_string(), // OpenRouter doesn't provide tool name in response
-                    content: serde_json::from_str(tool_msg.content()).unwrap_or_default(),
+                    content: serde_json::from_str(&tool_msg.content).unwrap_or_default(),
                 }];
                 (MessageRole::User, content)
             }
@@ -172,37 +301,8 @@ impl From<OpenRouterMessage> for Message {
 ///
 /// For now, we handle tool conversion at the schema level in the model implementation.
 
-/// Converts an `ai-ox` `ToolSet` to `openrouter-ox` `ToolBox` (limited conversion).
-impl From<ToolSet> for OpenRouterToolBox {
-    fn from(_tool_set: ToolSet) -> Self {
-        // Create an empty toolbox since we can't convert schemas to executable tools
-        OpenRouterToolBox::builder().build()
-    }
-}
-
-/// Converts an `ai-ox` `Tool` to `openrouter-ox` `ToolSchema` vector.
-impl From<&Tool> for Vec<ToolSchema> {
-    fn from(tool: &Tool) -> Self {
-        match tool {
-            Tool::FunctionDeclarations(functions) => {
-                functions.iter().map(|func| ToolSchema {
-                    tool_type: "function".to_string(),
-                    function: FunctionMetadata {
-                        name: func.name.clone(),
-                        description: func.description.clone(),
-                        parameters: func.parameters.clone(),
-                    },
-                }).collect()
-            }
-            #[cfg(feature = "gemini")]
-            Tool::GeminiTool(_) => {
-                // Gemini-specific tools aren't directly compatible with OpenRouter
-                // Return empty vector for now
-                Vec::new()
-            }
-        }
-    }
-}
+// Note: Tool conversion is handled inline in the conversion function above
+// due to import issues with openrouter_ox::tool::Tool type
 
 
 #[cfg(test)]
@@ -464,10 +564,10 @@ mod tests {
 
     #[test]
     fn test_function_declarations_tool_conversion() {
-        use crate::tool::FunctionMetadata;
+        use crate::tool::FunctionMetadata as AiOxFunctionMetadata;
 
-        let tool = Tool::FunctionDeclarations(vec![
-            FunctionMetadata {
+        let tool_vec = vec![Tool::FunctionDeclarations(vec![
+            AiOxFunctionMetadata {
                 name: "test_function".to_string(),
                 description: Some("A test function".to_string()),
                 parameters: json!({
@@ -477,13 +577,12 @@ mod tests {
                     }
                 }),
             }
-        ]);
+        ])];
 
-        let schemas: Vec<ToolSchema> = (&tool).into();
+        let schemas = convert_tools_to_openrouter(Some(tool_vec)).unwrap();
         assert_eq!(schemas.len(), 1);
-        assert_eq!(schemas[0].tool_type, "function");
-        assert_eq!(schemas[0].function.name, "test_function");
-        assert_eq!(schemas[0].function.description, Some("A test function".to_string()));
+        assert_eq!(schemas[0].name, "test_function");
+        assert_eq!(schemas[0].description, Some("A test function".to_string()));
     }
 
     #[test]

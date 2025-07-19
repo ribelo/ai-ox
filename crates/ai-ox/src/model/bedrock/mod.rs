@@ -6,7 +6,7 @@ pub use error::BedrockError;
 use crate::{
     content::{delta::StreamEvent, part::Part},
     errors::GenerateContentError,
-    model::{request::ModelRequest, response::ModelResponse, Model},
+    model::{request::ModelRequest, response::ModelResponse, Model, ModelInfo, Provider},
     tool::ToolCall,
 };
 use async_stream::try_stream;
@@ -138,7 +138,11 @@ impl BedrockModel {
 }
 
 impl Model for BedrockModel {
-    fn model(&self) -> &str {
+    fn info(&self) -> ModelInfo<'_> {
+        ModelInfo(Provider::Bedrock, &self.model_id)
+    }
+
+    fn name(&self) -> &str {
         &self.model_id
     }
 

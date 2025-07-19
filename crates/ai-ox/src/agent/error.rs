@@ -19,12 +19,13 @@ pub enum AgentError {
 
     /// Failed to parse the model's response into the expected structured type.
     #[error(
-        "Failed to parse response into expected type: {source}. Response text: \"{response_text}\""
+        "Failed to parse response into expected type: {source}. Response text: \"{response_text}\". Expected schema: {expected_schema}"
     )]
     ResponseParsingFailed {
         #[source]
         source: serde_json::Error,
         response_text: String,
+        expected_schema: String,
     },
 
     /// Schema generation failed for structured output.
@@ -42,6 +43,10 @@ pub enum AgentError {
     /// Method not yet implemented.
     #[error("Method not yet implemented")]
     NotImplemented,
+
+    /// Model generated tool calls but no tools are available.
+    #[error("Model generated tool calls but no tools are available")]
+    ToolCallsWithoutTools,
 }
 
 impl AgentError {
@@ -59,10 +64,12 @@ impl AgentError {
     pub fn response_parsing_failed(
         source: serde_json::Error,
         response_text: impl Into<String>,
+        expected_schema: impl Into<String>,
     ) -> Self {
         Self::ResponseParsingFailed {
             source,
             response_text: response_text.into(),
+            expected_schema: expected_schema.into(),
         }
     }
 

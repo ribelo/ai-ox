@@ -15,7 +15,8 @@ use crate::{
         request::ModelRequest,
         response::{ModelResponse, StructuredResponse},
     },
-    tool::{ToolBox, ToolSet},
+    tool::{ToolBox, ToolCall, ToolSet},
+    usage::Usage,
 };
 
 pub mod error;
@@ -27,12 +28,11 @@ use error::AgentError;
 /// Configuration for the agent's behavior.
 #[derive(Debug, Clone, Builder)]
 pub struct Agent {
-    /// The AI model to use for generation.
-    #[builder(start_fn)]
-    model: Arc<dyn Model>,
     /// A toolbox for executing tool calls from the model.
     #[builder(field)]
     tools: ToolSet,
+    /// The AI model to use for generation.
+    model: Arc<dyn Model>,
     /// An optional system instruction to guide the model's behavior.
     #[builder(into)]
     system_instruction: Option<String>,
@@ -41,13 +41,20 @@ pub struct Agent {
     max_iterations: u32,
 }
 
+impl Agent {
+    /// Creates a new agent builder with the specified model.
+    pub fn model<M: Model + 'static>(model: M) -> AgentBuilder<agent_builder::SetModel> {
+        Agent::builder().model(Arc::new(model))
+    }
+}
+
 impl<S: agent_builder::State> AgentBuilder<S> {
     /// Adds a toolbox to the agent's `ToolSet`.
     ///
     /// This is a convenience method that simplifies adding toolboxes
     /// during the build process.
-    pub fn toolbox(mut self, toolbox: impl ToolBox) -> Self {
-        self.tools.add_toolbox(toolbox);
+    pub fn tools(mut self, tools: impl ToolBox) -> Self {
+        self.tools.add_toolbox(tools);
         self
     }
 }
@@ -82,20 +89,7 @@ impl Agent {
         messages: impl IntoIterator<Item = impl Into<Message>> + Send,
     ) -> Result<ModelResponse, AgentError> {
         let conversation = self.build_messages(messages)?;
-        let mut request = ModelRequest {
-            messages: conversation,
-            system_message: None,
-            tools: None,
-        };
-
-        if let Some(ref system_instruction) = self.system_instruction {
-            request.system_message = Some(Message::new(
-                MessageRole::User,
-                vec![Part::Text {
-                    text: system_instruction.clone(),
-                }],
-            ));
-        }
+        let request = self.build_request(conversation);
 
         self.model.request(request).await.map_err(AgentError::Api)
     }
@@ -119,25 +113,7 @@ impl Agent {
             }
 
             // Create a request with the current conversation history.
-            let mut request = ModelRequest {
-                messages: conversation.clone(),
-                system_message: None,
-                tools: None,
-            };
-
-            if let Some(ref system_instruction) = self.system_instruction {
-                request.system_message = Some(Message::new(
-                    MessageRole::User,
-                    vec![Part::Text {
-                        text: system_instruction.clone(),
-                    }],
-                ));
-            }
-            // Inform the model about the available tools for this turn.
-            let available_tools = self.tools.get_all_tools();
-            if !available_tools.is_empty() {
-                request.tools = Some(available_tools);
-            }
+            let request = self.build_request(conversation.clone());
 
             // Generate a response from the model.
             let response = self.model.request(request).await?;
@@ -149,14 +125,28 @@ impl Agent {
             // Check if the response contains any tool calls.
             if let Some(tool_calls) = response.to_tool_calls() {
                 if self.tools.get_all_tools().is_empty() {
-                    // The model is hallucinating tool calls, but we have no tools.
-                    // Return the current response as the final answer.
-                    return Ok(response);
+                    // Model generated tool calls but we have no tools available.
+                    // This is an error condition that should not occur.
+                    return Err(AgentError::ToolCallsWithoutTools);
                 }
 
-                // Execute each tool call and collect the results.
+                // Execute all tool calls in parallel
+                let mut join_set = tokio::task::JoinSet::new();
+
+                // Start all tool calls concurrently
                 for call in tool_calls {
-                    match self.tools.invoke(call).await {
+                    let tools = self.tools.clone();
+                    let call_clone = call.clone();
+                    join_set
+                        .spawn(async move { (call_clone.clone(), tools.invoke(call_clone).await) });
+                }
+
+                // Collect all results
+                while let Some(join_result) = join_set.join_next().await {
+                    let (_call, tool_result) = join_result.map_err(|e| {
+                        AgentError::Tool(crate::tool::ToolError::internal("Task join error", e))
+                    })?;
+                    match tool_result {
                         Ok(result) => {
                             // The ToolResult contains one or more messages (e.g., the tool output)
                             // that should be added to the conversation history.
@@ -190,32 +180,21 @@ impl Agent {
         O: DeserializeOwned + JsonSchema + Send,
     {
         let conversation = self.build_messages(messages)?;
-        let mut request = ModelRequest {
-            messages: conversation.clone(),
-            system_message: None,
-            tools: None,
-        };
-
-        if let Some(ref system_instruction) = self.system_instruction {
-            request.system_message = Some(Message::new(
-                MessageRole::User,
-                vec![Part::Text {
-                    text: system_instruction.clone(),
-                }],
-            ));
-        }
+        let request = self.build_request(conversation.clone());
 
         // For structured requests, we use the schema of the target type.
         let schema = crate::tool::schema_for_type::<O>();
 
+        let schema_string = schema.to_string();
         match self
             .model
-            .request_structured_internal(request.clone(), schema.to_string())
+            .request_structured_internal(request.clone(), schema_string.clone())
             .await
         {
             Ok(raw_structured_content) => {
+                let response_text = raw_structured_content.json.to_string();
                 let data: O = serde_json::from_value(raw_structured_content.json)
-                    .map_err(|e| AgentError::response_parsing_failed(e, "structured response"))?;
+                    .map_err(|e| AgentError::response_parsing_failed(e, response_text, schema_string.clone()))?;
                 Ok(StructuredResponse {
                     data,
                     model_name: raw_structured_content.model_name,
@@ -278,8 +257,8 @@ impl Agent {
         &self,
         messages: impl IntoIterator<Item = impl Into<Message>> + Send,
     ) -> futures_util::stream::BoxStream<'_, Result<events::AgentEvent, AgentError>> {
-        use futures_util::StreamExt;
         use async_stream::try_stream;
+        use futures_util::StreamExt;
 
         let conversation = match self.build_messages(messages) {
             Ok(msgs) => msgs,
@@ -299,49 +278,21 @@ impl Agent {
                 }
 
                 // Create a request with the current conversation history
-                let mut request = ModelRequest {
-                    messages: conversation.clone(),
-                    system_message: None,
-                    tools: None,
-                };
-
-                if let Some(ref system_instruction) = self.system_instruction {
-                    request.system_message = Some(Message::new(
-                        MessageRole::User,
-                        vec![Part::Text {
-                            text: system_instruction.clone(),
-                        }],
-                    ));
-                }
-
-                // Add available tools to the request
-                let available_tools = self.tools.get_all_tools();
-                if !available_tools.is_empty() {
-                    request.tools = Some(available_tools);
-                }
+                let request = self.build_request(conversation.clone());
 
                 // Stream the model response
                 let mut model_stream = self.model.request_stream(request);
-                let mut accumulated_text = String::new();
-                let mut tool_calls = Vec::new();
-                let mut final_usage = None;
+                let mut accumulator = StreamAccumulator::new();
                 let mut response_complete = false;
 
                 // Process the model's streaming response
                 while let Some(stream_event_result) = model_stream.next().await {
                     let stream_event = stream_event_result.map_err(AgentError::Api)?;
 
+                    // First, yield the raw event for real-time streaming
                     match &stream_event {
-                        StreamEvent::TextDelta(text) => {
-                            accumulated_text.push_str(text);
-                            yield events::AgentEvent::Delta(stream_event);
-                        }
-                        StreamEvent::ToolCall(tool_call) => {
-                            tool_calls.push(tool_call.clone());
-                            // Don't yield ToolExecution here - we'll do it after the stream ends
-                        }
-                        StreamEvent::Usage(usage) => {
-                            final_usage = Some(usage.clone());
+                        StreamEvent::TextDelta(_) => {
+                            yield events::AgentEvent::StreamEvent(stream_event.clone());
                         }
                         StreamEvent::StreamStop(_) => {
                             response_complete = true;
@@ -349,9 +300,12 @@ impl Agent {
                         }
                         _ => {
                             // Forward other events as deltas
-                            yield events::AgentEvent::Delta(stream_event);
+                            yield events::AgentEvent::StreamEvent(stream_event.clone());
                         }
                     }
+
+                    // Second, accumulate the event for message construction
+                    accumulator.accumulate(&stream_event);
                 }
 
                 if !response_complete {
@@ -360,40 +314,49 @@ impl Agent {
                 }
 
                 // Build the assistant's response message
-                let mut assistant_content = vec![];
-                if !accumulated_text.is_empty() {
-                    assistant_content.push(Part::Text { text: accumulated_text });
-                }
-                for tool_call in &tool_calls {
-                    assistant_content.push(Part::ToolCall {
-                        id: tool_call.id.clone(),
-                        name: tool_call.name.clone(),
-                        args: tool_call.args.clone(),
-                    });
-                }
-
-                let assistant_message = Message::new(MessageRole::Assistant, assistant_content);
+                let final_usage = accumulator.get_usage();
+                let (assistant_message, tool_calls) = accumulator.finalize();
                 conversation.push(assistant_message.clone());
 
-                // Check if we have tool calls to execute
                 if !tool_calls.is_empty() {
                     if self.tools.get_all_tools().is_empty() {
-                        // Model is hallucinating tool calls but we have no tools
+                        // Model generated tool calls but we have no tools available
                         let final_response = ModelResponse {
                             message: assistant_message,
-                            model_name: self.model.model().to_string(),
-                            vendor_name: "streaming".to_string(),
-                            usage: final_usage.unwrap_or_default(),
+                            model_name: self.model.name().to_string(),
+                            vendor_name: self.model.info().0.to_string(),
+                            usage: final_usage.clone(),
                         };
                         yield events::AgentEvent::Completed(final_response);
+                        yield events::AgentEvent::Failed("Model generated tool calls but no tools are available".to_string());
                         break;
                     }
 
-                    // Execute each tool call
-                    for tool_call in tool_calls {
+                    // Execute all tool calls in parallel
+                    let mut join_set = tokio::task::JoinSet::new();
+
+                    // Emit tool execution events and start all tool calls concurrently
+                    for tool_call in &tool_calls {
                         yield events::AgentEvent::ToolExecution(tool_call.clone());
 
-                        match self.tools.invoke(tool_call.clone()).await {
+                        let tools = self.tools.clone();
+                        let call_clone = tool_call.clone();
+                        join_set.spawn(async move {
+                            tools.invoke(call_clone).await
+                        });
+                    }
+
+                    // Collect all results as they complete
+                    while let Some(join_result) = join_set.join_next().await {
+                        let tool_result = match join_result {
+                            Ok(result) => result,
+                            Err(e) => {
+                                yield events::AgentEvent::Failed(format!("Task join error: {e}"));
+                                return;
+                            }
+                        };
+
+                        match tool_result {
                             Ok(tool_result) => {
                                 yield events::AgentEvent::ToolResult(tool_result.clone());
                                 // Add tool result messages to conversation
@@ -413,9 +376,9 @@ impl Agent {
                     // No tool calls, conversation is complete
                     let final_response = ModelResponse {
                         message: assistant_message,
-                        model_name: self.model.model().to_string(),
-                        vendor_name: "streaming".to_string(),
-                        usage: final_usage.unwrap_or_default(),
+                        model_name: self.model.name().to_string(),
+                        vendor_name: self.model.info().0.to_string(),
+                        usage: final_usage,
                     };
                     yield events::AgentEvent::Completed(final_response);
                     break;
@@ -425,8 +388,84 @@ impl Agent {
 
         Box::pin(stream)
     }
+}
 
+/// Helper struct for accumulating streaming events into a final Message.
+struct StreamAccumulator {
+    text: String,
+    tool_calls: Vec<ToolCall>,
+    usage: Option<Usage>,
+}
+
+impl StreamAccumulator {
+    fn new() -> Self {
+        Self {
+            text: String::new(),
+            tool_calls: Vec::new(),
+            usage: None,
+        }
+    }
+
+    fn accumulate(&mut self, event: &StreamEvent) {
+        match event {
+            StreamEvent::TextDelta(text) => {
+                self.text.push_str(text);
+            }
+            StreamEvent::ToolCall(tool_call) => {
+                self.tool_calls.push(tool_call.clone());
+            }
+            StreamEvent::Usage(usage) => {
+                self.usage = Some(usage.clone());
+            }
+            _ => {
+                // Other events don't affect message construction
+            }
+        }
+    }
+
+    fn get_usage(&self) -> Usage {
+        self.usage.clone().unwrap_or_default()
+    }
+
+    fn finalize(self) -> (Message, Vec<ToolCall>) {
+        let mut content = vec![];
+        if !self.text.is_empty() {
+            content.push(Part::Text { text: self.text });
+        }
+
+        content.extend(self.tool_calls.iter().cloned().map(Part::from));
+
+        let message = Message::new(MessageRole::Assistant, content);
+        (message, self.tool_calls)
+    }
+}
+
+impl Agent {
     // Helper methods
+
+    fn build_request(&self, messages: Vec<Message>) -> ModelRequest {
+        let mut request = ModelRequest {
+            messages,
+            system_message: None,
+            tools: None,
+        };
+
+        if let Some(ref system_instruction) = self.system_instruction {
+            request.system_message = Some(Message::new(
+                MessageRole::User,
+                vec![Part::Text {
+                    text: system_instruction.clone(),
+                }],
+            ));
+        }
+
+        let available_tools = self.tools.get_all_tools();
+        if !available_tools.is_empty() {
+            request.tools = Some(available_tools);
+        }
+
+        request
+    }
 
     fn build_messages(
         &self,
@@ -441,8 +480,9 @@ impl Agent {
 /// Parses the text from a model's response into a structured type `O`.
 fn parse_response_as_typed<O>(response: &ModelResponse) -> Result<O, AgentError>
 where
-    O: DeserializeOwned,
+    O: DeserializeOwned + JsonSchema,
 {
     let text = response.to_string().ok_or(AgentError::NoResponse)?;
-    serde_json::from_str(&text).map_err(|e| AgentError::response_parsing_failed(e, &text))
+    let schema = crate::tool::schema_for_type::<O>();
+    serde_json::from_str(&text).map_err(|e| AgentError::response_parsing_failed(e, &text, schema.to_string()))
 }

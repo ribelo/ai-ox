@@ -190,12 +190,7 @@ pub struct Gemini {
 }
 
 impl Gemini {
-    pub fn new_from_env() -> Self {
-        let api_key =
-            std::env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY environment variable not set");
-        Gemini::new(api_key)
-    }
-
+    /// Create a new Gemini client with the provided API key.
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
             api_key: api_key.into(),
@@ -204,6 +199,12 @@ impl Gemini {
             leaky_bucket: None,
             api_version: "v1beta".to_string(),
         }
+    }
+
+    pub fn load_from_env() -> Result<Self, std::env::VarError> {
+        let api_key =
+            std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))?;
+        Ok(Self::builder().api_key(api_key).build())
     }
 
     /// Create a Live API session builder

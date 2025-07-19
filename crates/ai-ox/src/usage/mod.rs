@@ -1,3 +1,4 @@
+#[cfg(feature = "gemini")]
 pub mod gemini;
 
 use serde::{Deserialize, Serialize};

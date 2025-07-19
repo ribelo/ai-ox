@@ -1,7 +1,8 @@
+use async_stream::try_stream;
 use bon::Builder;
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use futures_util::stream::{BoxStream, StreamExt};
 
+pub mod error;
 pub mod message;
 pub mod models;
 pub mod provider_preference;
@@ -10,6 +11,7 @@ pub mod response;
 pub mod router;
 pub mod tool;
 const BASE_URL: &str = "https://openrouter.ai";
+const API_URL: &str = "api/v1/chat/completions";
 
 #[cfg(feature = "leaky-bucket")]
 pub use leaky_bucket::RateLimiter;
@@ -17,12 +19,11 @@ pub use leaky_bucket::RateLimiter;
 use std::sync::Arc;
 use std::{collections::HashMap, fmt};
 
-#[derive(Clone, Builder)]
+#[derive(Clone, Default, Builder)]
 pub struct OpenRouter {
     #[builder(into)]
     api_key: String,
     #[builder(default)]
-    #[allow(dead_code)]
     headers: HashMap<String, String>,
     #[builder(default)]
     client: reqwest::Client,
@@ -32,9 +33,86 @@ pub struct OpenRouter {
 }
 
 impl OpenRouter {
-    pub fn new_from_env() -> Result<Self, std::env::VarError> {
+    /// Create a new OpenRouter client with the provided API key.
+    pub fn new(api_key: impl Into<String>) -> Self {
+        Self {
+            api_key: api_key.into(),
+            headers: HashMap::new(),
+            client: reqwest::Client::new(),
+            #[cfg(feature = "leaky-bucket")]
+            leaky_bucket: None,
+        }
+    }
+
+    pub fn load_from_env() -> Result<Self, std::env::VarError> {
         let api_key = std::env::var("OPENROUTER_API_KEY")?;
         Ok(Self::builder().api_key(api_key).build())
+    }
+
+    pub async fn send(
+        &self,
+        request: &request::Request,
+    ) -> Result<response::ChatCompletionResponse, ApiRequestError> {
+        let url = format!("{BASE_URL}/{API_URL}");
+
+        let res = self
+            .client
+            .post(&url)
+            .bearer_auth(&self.api_key)
+            .json(request)
+            .send()
+            .await?;
+
+        if res.status().is_success() {
+            Ok(res.json::<response::ChatCompletionResponse>().await?)
+        } else {
+            let status = res.status();
+            let bytes = res.bytes().await?.to_vec();
+            Err(error::parse_error_response(status, bytes))
+        }
+    }
+
+    pub fn stream(
+        &self,
+        request: &request::Request,
+    ) -> BoxStream<'static, Result<response::ChatCompletionChunk, ApiRequestError>> {
+        let client = self.client.clone();
+        let api_key = self.api_key.clone();
+        let url = format!("{BASE_URL}/{API_URL}");
+        let request_data = request.clone();
+
+        Box::pin(try_stream! {
+            let mut body = serde_json::to_value(&request_data)?;
+            body.as_object_mut()
+                .expect("Request body must be a JSON object")
+                .insert("stream".to_string(), serde_json::Value::Bool(true));
+
+            let response = client
+                .post(&url)
+                .bearer_auth(&api_key)
+                .json(&body)
+                .send()
+                .await?;
+
+            let status = response.status();
+
+            if !response.status().is_success() {
+                let bytes = response.bytes().await?.to_vec();
+                Err(error::parse_error_response(status, bytes))?
+            } else {
+                let mut byte_stream = response.bytes_stream();
+
+                while let Some(chunk_result) = byte_stream.next().await {
+                    let chunk = chunk_result?;
+                    let chunk_str = String::from_utf8(chunk.to_vec())
+                        .map_err(|e| ApiRequestError::Stream(format!("UTF-8 decode error: {e}")))?;
+
+                    for parse_result in response::ChatCompletionChunk::from_streaming_data(&chunk_str) {
+                        yield parse_result?;
+                    }
+                }
+            }
+        })
     }
 }
 
@@ -47,69 +125,4 @@ impl fmt::Debug for OpenRouter {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ErrorDetail {
-    pub code: i32,
-    pub message: String,
-}
-
-#[derive(Debug, Deserialize, Serialize)]
-pub struct ErrorResponse {
-    pub error: ErrorDetail,
-    pub user_id: Option<String>,
-}
-
-impl std::fmt::Display for ErrorResponse {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Error {}: {} (user_id: {:?})",
-            self.error.code, self.error.message, self.user_id
-        )
-    }
-}
-
-#[derive(Debug, Error)]
-pub enum ApiRequestError {
-    #[error(transparent)]
-    ReqwestError(#[from] reqwest::Error),
-    #[error(transparent)]
-    SerdeError(#[from] serde_json::Error),
-
-    #[error("Invalid request error: {0}")]
-    InvalidRequestError(ErrorResponse),
-    #[error("Unexpected response from API: {response}")]
-    UnexpectedResponse { response: String },
-    #[error("Stream error: {0}")]
-    Stream(String),
-}
-
-/// `ApiRequest` trait allows sending any prepared request by explicitly providing OpenAI client.
-///
-/// This trait is useful to abstract the details about API request, response, and error handling.
-///
-/// # Associated Types
-///
-/// - `Response`: A type that implements the `DeserializeOwned` trait from Serde. This type
-/// represents the deserialized response that you expect back from the API call.
-#[async_trait::async_trait]
-pub trait ApiRequest {
-    type Response: serde::de::DeserializeOwned;
-    /// An async function that takes in an `OpenAi` object reference and returns a `Result` with
-    /// deserialized `Response` type or an `ApiRequestError`. This function sends off the API
-    /// request with given OpenAi client.
-    async fn send_with(&self, open_ai: &OpenRouter) -> Result<Self::Response, ApiRequestError>;
-}
-
-/// `ApiRequestWithClient` trait allows sending any prepared request which internally uses OpenAI
-/// client.
-///
-/// This trait is useful when the client does not want to externally manage or provide the `OpenAi`
-/// client for making requests.
-#[async_trait::async_trait]
-pub trait ApiRequestWithClient: ApiRequest {
-    /// An async function that takes no parameters. It internally uses the API client and so
-    /// returns a `Result` with deserialized `Response` type or an `ApiRequestError`. This function
-    /// sends off the API request.
-    async fn send(&self) -> Result<Self::Response, ApiRequestError>;
-}
+pub use error::ApiRequestError;

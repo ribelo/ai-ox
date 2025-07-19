@@ -1,13 +1,13 @@
-use std::sync::Arc;
+mod common;
 
+#[cfg(feature = "openrouter")]
+use ai_ox::model::openrouter::OpenRouterModel;
 use ai_ox::{
     agent::{Agent, events::AgentEvent},
     content::{Message, MessageRole, Part, delta::StreamEvent},
     model::gemini::GeminiModel,
     toolbox,
 };
-#[cfg(feature = "openrouter")]
-use ai_ox::model::openrouter::OpenRouterModel;
 use futures_util::StreamExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -31,7 +31,10 @@ struct WeatherResponse {
 #[toolbox]
 impl MockWeatherService {
     /// Get the current weather for a location - this will always be called when mentioned
-    pub async fn get_weather(&self, request: WeatherRequest) -> Result<WeatherResponse, std::io::Error> {
+    pub async fn get_weather(
+        &self,
+        request: WeatherRequest,
+    ) -> Result<WeatherResponse, std::io::Error> {
         // Return a deterministic mock response
         Ok(WeatherResponse {
             location: request.location,
@@ -46,35 +49,39 @@ impl MockWeatherService {
 async fn setup_agents() -> Vec<(String, Agent)> {
     let mut agents = Vec::new();
 
-    // Try to setup Gemini
-    if let Ok(api_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
-        let model = GeminiModel::builder()
-            .api_key(api_key)
-            .model("gemini-1.5-flash".to_string())
-            .build();
+    // Try to setup Gemini (only if feature is enabled)
+    #[cfg(feature = "gemini")]
+    {
+        if let Ok(api_key) =
+            std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+        {
+            let model = GeminiModel::builder()
+                .api_key(api_key)
+                .model("gemini-1.5-flash".to_string())
+                .build();
 
-        let weather_service = MockWeatherService;
-        let agent = Agent::builder(Arc::new(model))
-            .toolbox(weather_service)
-            .system_instruction("You are a helpful assistant. When asked about weather, you MUST use the get_weather function.")
-            .max_iterations(5)
-            .build();
+            let weather_service = MockWeatherService;
+            let agent = Agent::model(model)
+                .tools(weather_service)
+                .system_instruction("You are a helpful assistant. When asked about weather, you MUST use the get_weather function.")
+                .max_iterations(5)
+                .build();
 
-        agents.push(("Gemini".to_string(), agent));
+            agents.push(("Gemini".to_string(), agent));
+        }
     }
 
     // Try to setup OpenRouter (only if feature is enabled)
     #[cfg(feature = "openrouter")]
     {
         if let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") {
-            let model = OpenRouterModel::builder()
-                .model("google/gemini-2.5-flash")
-                .client(openrouter_ox::OpenRouter::builder().api_key(api_key).build())
+            let model = OpenRouterModel::builder().model("google/gemini-2.5-flash")
+                .api_key(api_key)
                 .build();
 
             let weather_service = MockWeatherService;
-            let agent = Agent::builder(Arc::new(model))
-                .toolbox(weather_service)
+            let agent = Agent::model(model)
+                .tools(weather_service)
                 .system_instruction("You are a helpful assistant. When asked about weather, you MUST use the get_weather function.")
                 .max_iterations(5)
                 .build();
@@ -91,13 +98,15 @@ async fn setup_agents_without_tools() -> Vec<(String, Agent)> {
     let mut agents = Vec::new();
 
     // Try to setup Gemini
-    if let Ok(api_key) = std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {
+    if let Ok(api_key) =
+        std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
+    {
         let model = GeminiModel::builder()
             .api_key(api_key)
-            .model("gemini-1.5-flash".to_string())
+            .model("gemini-2.5-flash")
             .build();
 
-        let agent = Agent::builder(Arc::new(model))
+        let agent = Agent::model(model)
             .system_instruction("You are a helpful assistant. Keep responses brief.")
             .build();
 
@@ -109,11 +118,11 @@ async fn setup_agents_without_tools() -> Vec<(String, Agent)> {
     {
         if let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") {
             let model = OpenRouterModel::builder()
+                .api_key(api_key)
                 .model("google/gemini-2.5-flash")
-                .client(openrouter_ox::OpenRouter::builder().api_key(api_key).build())
                 .build();
 
-            let agent = Agent::builder(Arc::new(model))
+            let agent = Agent::model(model)
                 .system_instruction("You are a helpful assistant. Keep responses brief.")
                 .build();
 
@@ -168,12 +177,12 @@ async fn test_streaming_with_tools() {
                     started_received = true;
                     println!("✓ Started event received");
                 }
-                AgentEvent::Delta(StreamEvent::TextDelta(text)) => {
+                AgentEvent::StreamEvent(StreamEvent::TextDelta(text)) => {
                     delta_received = true;
                     print!("{text}"); // Print streaming text in real-time
                 }
-                AgentEvent::Delta(stream_event) => {
-                    println!("△ Other delta: {stream_event:?}");
+                AgentEvent::StreamEvent(stream_event) => {
+                    println!("△ Other stream event: {stream_event:?}");
                 }
                 AgentEvent::ToolExecution(tool_call) => {
                     if tool_call.name == "get_weather" {
@@ -202,8 +211,14 @@ async fn test_streaming_with_tools() {
                         println!("  Response messages: {}", tool_result.response.len());
 
                         // Verify the tool result has proper structure
-                        assert!(!tool_result.name.is_empty(), "Tool result should have a name");
-                        assert!(!tool_result.response.is_empty(), "Tool result should have response messages");
+                        assert!(
+                            !tool_result.name.is_empty(),
+                            "Tool result should have a name"
+                        );
+                        assert!(
+                            !tool_result.response.is_empty(),
+                            "Tool result should have response messages"
+                        );
                     } else {
                         println!("⚠ Unexpected tool result: {}", tool_result.name);
                     }
@@ -216,7 +231,10 @@ async fn test_streaming_with_tools() {
                     println!("  Message parts: {}", response.message.content.len());
 
                     // Verify the final response has content
-                    assert!(!response.message.content.is_empty(), "Final response should have content");
+                    assert!(
+                        !response.message.content.is_empty(),
+                        "Final response should have content"
+                    );
                     break;
                 }
                 AgentEvent::Failed(error) => {
@@ -231,9 +249,18 @@ async fn test_streaming_with_tools() {
 
         // Assert the full sequence of events
         assert!(started_received, "Must receive Started event");
-        assert!(delta_received, "Must receive at least one Delta event with text");
-        assert!(tool_execution_received, "Must receive ToolExecution event for get_weather");
-        assert!(tool_result_received, "Must receive ToolResult event for get_weather");
+        assert!(
+            delta_received,
+            "Must receive at least one Delta event with text"
+        );
+        assert!(
+            tool_execution_received,
+            "Must receive ToolExecution event for get_weather"
+        );
+        assert!(
+            tool_result_received,
+            "Must receive ToolResult event for get_weather"
+        );
         assert!(completed_received, "Must receive Completed event");
 
         // Verify the event sequence makes sense
@@ -246,13 +273,27 @@ async fn test_streaming_with_tools() {
         assert_eq!(events.last().unwrap().event_type(), "Completed");
 
         // Should have tool execution and result events
-        let tool_execution_count = event_types.iter().filter(|&&t| t == "ToolExecution").count();
+        let tool_execution_count = event_types
+            .iter()
+            .filter(|&&t| t == "ToolExecution")
+            .count();
         let tool_result_count = event_types.iter().filter(|&&t| t == "ToolResult").count();
-        assert!(tool_execution_count > 0, "Should have at least one tool execution");
-        assert!(tool_result_count > 0, "Should have at least one tool result");
-        assert_eq!(tool_execution_count, tool_result_count, "Tool executions and results should match");
+        assert!(
+            tool_execution_count > 0,
+            "Should have at least one tool execution"
+        );
+        assert!(
+            tool_result_count > 0,
+            "Should have at least one tool result"
+        );
+        assert_eq!(
+            tool_execution_count, tool_result_count,
+            "Tool executions and results should match"
+        );
 
-        println!("🎉 All assertions passed for {provider_name}! The streaming multi-turn conversation works correctly.");
+        println!(
+            "🎉 All assertions passed for {provider_name}! The streaming multi-turn conversation works correctly."
+        );
     }
 }
 
@@ -291,7 +332,7 @@ async fn test_streaming_without_tools() {
                     started_received = true;
                     println!("✓ Started");
                 }
-                AgentEvent::Delta(StreamEvent::TextDelta(text)) => {
+                AgentEvent::StreamEvent(StreamEvent::TextDelta(text)) => {
                     delta_received = true;
                     accumulated_text.push_str(text);
                     print!("{text}");

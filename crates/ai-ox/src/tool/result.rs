@@ -19,20 +19,15 @@ pub struct ToolResult {
 
 impl ToolResult {
     /// Creates a new ToolResult with the given parameters.
-    pub fn new(id: impl Into<String>, name: impl Into<String>, response: Vec<Message>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        response: impl IntoIterator<Item = impl Into<Message>>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
-            response,
+            response: response.into_iter().map(Into::into).collect(),
         }
-    }
-
-    /// Creates a ToolResult with a single message response.
-    pub fn single_message(
-        id: impl Into<String>,
-        name: impl Into<String>,
-        message: Message,
-    ) -> Self {
-        Self::new(id, name, vec![message])
     }
 }

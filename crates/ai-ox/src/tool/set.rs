@@ -127,7 +127,7 @@ mod tests {
                     Ok(ToolResult::new(
                         call.id,
                         call.name,
-                        vec![], // Empty response for mock
+                        std::iter::empty::<crate::content::Message>(), // Empty response for mock
                     ))
                 } else {
                     Err(ToolError::not_found(call.name))

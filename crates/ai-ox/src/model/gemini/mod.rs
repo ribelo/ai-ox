@@ -1,29 +1,23 @@
 mod conversion;
+mod error;
+
+pub use error::GeminiError;
 
 use crate::{
     ModelResponse,
-    content::{
-        delta::StreamEvent,
-        message::{Message, MessageRole},
-        part::Part,
-    },
+    content::delta::StreamEvent,
     errors::GenerateContentError,
-    model::{Model, ModelRequest, response::RawStructuredResponse},
+    model::{Model, ModelRequest, ModelInfo, Provider, response::RawStructuredResponse},
     usage::Usage,
 };
 use async_stream::try_stream;
-use futures_util::StreamExt;
 use bon::Builder;
-use futures_util::{FutureExt, future::BoxFuture, stream::BoxStream};
+use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
 use gemini_ox::{
     Gemini,
     content::Content as GeminiContent,
-    generate_content::{
-        GenerationConfig, SafetySettings,
-        request::GenerateContentRequest as GeminiGenerateContentRequest,
-        response::GenerateContentResponse as GeminiResponse,
-    },
-    tool::{Tool as GeminiTool, config::ToolConfig},
+    generate_content::{GenerationConfig, SafetySettings},
+    tool::config::ToolConfig,
 };
 
 /// Represents a model from the Google Gemini family.
@@ -32,119 +26,81 @@ pub struct GeminiModel {
     /// Gemini client
     #[builder(field)]
     client: Gemini,
-    #[builder(field)]
+    #[builder(into)]
     system_instruction: Option<GeminiContent>,
     /// The specific model name (e.g., "gemini-1.5-flash-latest").
+    #[builder(into)]
     model: String,
     tool_config: Option<ToolConfig>,
     safety_settings: Option<SafetySettings>,
     generation_config: Option<GenerationConfig>,
+    #[builder(into)]
     cached_content: Option<String>,
 }
 
 impl<S: gemini_model_builder::State> GeminiModelBuilder<S> {
-    pub fn client(mut self, gemini: Gemini) -> Self {
-        self.client = gemini;
-        self
-    }
-
     pub fn api_key(mut self, api_key: impl Into<String>) -> Self {
-        self.client = Gemini::new(api_key.into());
-        self
-    }
-
-    pub fn system_instruction(mut self, system_instruction: impl Into<GeminiContent>) -> Self {
-        self.system_instruction = Some(system_instruction.into());
+        self.client = Gemini::new(api_key);
         self
     }
 }
 
 impl GeminiModel {
-    /// Converts a `gemini-ox` `GenerateContentResponse` to an `ai-ox` `ModelResponse`.
-    fn convert_response(&self, response: GeminiResponse) -> ModelResponse {
-        // Take the first candidate from the response, consuming it to avoid cloning parts.
-        let parts = if let Some(candidate) = response.candidates.into_iter().next() {
-            candidate
-                .content
-                .parts
-                .into_iter()
-                .map(Into::<Part>::into) // Convert each gemini part into our Part
-                .filter(|part| {
-                    // Skip empty text parts, which can be a side-effect of FunctionCall conversion.
-                    !matches!(part, Part::Text { text } if text.is_empty())
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
+    /// Create a new GeminiModel from environment variables.
+    ///
+    /// This function reads the GOOGLE_AI_API_KEY or GEMINI_API_KEY from the environment and returns an error if missing.
+    pub async fn new(model: impl Into<String>) -> Result<Self, GeminiError> {
+        let api_key = std::env::var("GOOGLE_AI_API_KEY")
+            .or_else(|_| std::env::var("GEMINI_API_KEY"))
+            .map_err(|_| GeminiError::MissingApiKey)?;
 
-        let message = Message {
-            role: MessageRole::Assistant,
-            content: parts,
-            timestamp: chrono::Utc::now(),
-        };
+        let client = Gemini::new(&api_key);
 
-        // Convert usage data from the response, if present.
-        let usage = response
-            .usage_metadata
-            .map(Usage::from)
-            .unwrap_or_default();
-
-        ModelResponse {
-            message,
-            model_name: self.model.clone(),
-            usage,
-            vendor_name: "google".to_string(),
-        }
+        Ok(Self {
+            client,
+            system_instruction: None,
+            model: model.into(),
+            tool_config: None,
+            safety_settings: None,
+            generation_config: None,
+            cached_content: None,
+        })
     }
 }
 
 impl Model for GeminiModel {
-    fn model(&self) -> &str {
+    fn info(&self) -> ModelInfo<'_> {
+        ModelInfo(Provider::Google, &self.model)
+    }
+
+    fn name(&self) -> &str {
         &self.model
     }
 
     /// Sends a request to the Gemini API and returns the response.
     ///
-    /// This implementation will handle the conversion from the generic `GenerateContentRequest`
+    /// This implementation will handle the conversion from the generic `ModelRequest`
     /// to the specific format required by the `gemini-ox` client, including handling
     /// system instructions and message history.
     fn request(
         &self,
         request: ModelRequest,
     ) -> BoxFuture<'_, Result<ModelResponse, GenerateContentError>> {
-        let system_instruction = request
-            .system_message
-            .map(Into::into)
-            .or_else(|| self.system_instruction.clone());
-
-        let contents: Vec<GeminiContent> = request.messages.into_iter().map(Into::into).collect();
-
-        let tools = request
-            .tools
-            .map(|tools| {
-                tools
-                    .into_iter()
-                    .map(Into::<GeminiTool>::into)
-                    .filter_map(|tool| serde_json::to_value(tool).ok())
-                    .collect::<Vec<_>>()
-            })
-            .filter(|v| !v.is_empty());
-
-        let gemini_request = GeminiGenerateContentRequest {
-            contents,
-            tools,
-            system_instruction,
-            model: self.model.clone(),
-            tool_config: self.tool_config.clone(),
-            safety_settings: self.safety_settings.clone(),
-            generation_config: self.generation_config.clone(),
-            cached_content: self.cached_content.clone(),
-        };
-
         async move {
-            let response = gemini_request.send(&self.client).await?;
-            Ok(self.convert_response(response))
+            let gemini_request = conversion::convert_request_to_gemini(
+                request,
+                self.model.clone(),
+                self.system_instruction.clone(),
+                self.tool_config.clone(),
+                self.safety_settings.clone(),
+                self.generation_config.clone(),
+                self.cached_content.clone(),
+            )?;
+            let response = gemini_request
+                .send(&self.client)
+                .await
+                .map_err(GeminiError::Api)?;
+            conversion::convert_gemini_response_to_ai_ox(response, self.model.clone())
         }
         .boxed()
     }
@@ -156,44 +112,25 @@ impl Model for GeminiModel {
         &self,
         request: ModelRequest,
     ) -> BoxStream<'_, Result<StreamEvent, GenerateContentError>> {
-        let system_instruction = request
-            .system_message
-            .map(Into::into)
-            .or_else(|| self.system_instruction.clone());
-
-        let contents: Vec<GeminiContent> = request.messages.into_iter().map(Into::into).collect();
-
-        let tools = request
-            .tools
-            .map(|tools| {
-                tools
-                    .into_iter()
-                    .map(Into::<GeminiTool>::into)
-                    .filter_map(|tool| serde_json::to_value(tool).ok())
-                    .collect::<Vec<_>>()
-            })
-            .filter(|v| !v.is_empty());
-
-        let gemini_request = GeminiGenerateContentRequest {
-            contents,
-            tools,
-            system_instruction,
-            model: self.model.clone(),
-            tool_config: self.tool_config.clone(),
-            safety_settings: self.safety_settings.clone(),
-            generation_config: self.generation_config.clone(),
-            cached_content: self.cached_content.clone(),
-        };
+        let client = self.client.clone();
 
         let stream = try_stream! {
-            let mut response_stream = gemini_request.stream(&self.client);
+            let gemini_request = conversion::convert_request_to_gemini(
+                request,
+                self.model.clone(),
+                self.system_instruction.clone(),
+                self.tool_config.clone(),
+                self.safety_settings.clone(),
+                self.generation_config.clone(),
+                self.cached_content.clone(),
+            )?;
+            let mut response_stream = gemini_request.stream(&client);
 
             while let Some(response) = response_stream.next().await {
-                let response = response?;
-                let events = conversion::convert_streaming_response(response);
-                
+                let response = response.map_err(GeminiError::Api)?;
+                let events = conversion::convert_response_to_stream_events(response);
                 for event in events {
-                    yield event;
+                    yield event?;
                 }
             }
         };
@@ -206,52 +143,32 @@ impl Model for GeminiModel {
         request: ModelRequest,
         schema: String,
     ) -> BoxFuture<'_, Result<RawStructuredResponse, GenerateContentError>> {
-        // Convert the ModelRequest into separate components for building the GeminiGenerateContentRequest
-        // Configure generation for structured output (JSON mode)
-        // Parse the schema and remove the $schema field if present (Gemini API doesn't accept it)
-        let mut schema_json: serde_json::Value = serde_json::from_str(&schema).unwrap_or_default();
-        if let Some(obj) = schema_json.as_object_mut() {
-            obj.remove("$schema");
-        }
-
-        let generation_config = GenerationConfig::builder()
-            .response_mime_type("application/json")
-            .response_schema(schema_json)
-            .build();
-
-        // Use system instruction from request if available, otherwise use the model's default
-        let system_instruction = request
-            .system_message
-            .map(Into::into)
-            .or_else(|| self.system_instruction.clone());
-
-        let contents: Vec<GeminiContent> = request.messages.into_iter().map(Into::into).collect();
-
-        // Use tools from request if available
-        let tools = request
-            .tools
-            .map(|tools| {
-                tools
-                    .into_iter()
-                    .map(Into::<GeminiTool>::into)
-                    .filter_map(|tool| serde_json::to_value(tool).ok())
-                    .collect::<Vec<_>>()
-            })
-            .filter(|v| !v.is_empty());
-
-        let gemini_request = GeminiGenerateContentRequest {
-            contents,
-            tools,
-            system_instruction,
-            model: self.model.clone(),
-            tool_config: self.tool_config.clone(),
-            safety_settings: self.safety_settings.clone(),
-            generation_config: Some(generation_config),
-            cached_content: self.cached_content.clone(),
-        };
-
         async move {
-            let response = gemini_request.send(&self.client).await?;
+            // Parse the schema and remove the $schema field if present (Gemini API doesn't accept it)
+            let mut schema_json: serde_json::Value = serde_json::from_str(&schema)
+                .map_err(|e| GeminiError::InvalidSchema(e.to_string()))?;
+            if let Some(obj) = schema_json.as_object_mut() {
+                obj.remove("$schema");
+            }
+
+            let generation_config = GenerationConfig::builder()
+                .response_mime_type("application/json")
+                .response_schema(schema_json)
+                .build();
+
+            let gemini_request = conversion::convert_request_to_gemini(
+                request,
+                self.model.clone(),
+                self.system_instruction.clone(),
+                self.tool_config.clone(),
+                self.safety_settings.clone(),
+                Some(generation_config),
+                self.cached_content.clone(),
+            )?;
+            let response = gemini_request
+                .send(&self.client)
+                .await
+                .map_err(GeminiError::Api)?;
 
             // Extract the text content from the first part of the first candidate.
             let text = response
@@ -259,11 +176,11 @@ impl Model for GeminiModel {
                 .first()
                 .and_then(|candidate| candidate.content.parts().first())
                 .and_then(|part| part.as_text())
-                .ok_or(GenerateContentError::NoResponse)?;
+                .ok_or_else(|| GeminiError::ResponseParsing("No response content".to_string()))?;
 
             // Parse the text as JSON.
             let json = serde_json::from_str(text)
-                .map_err(|e| GenerateContentError::response_parsing(e.to_string()))?;
+                .map_err(|e| GeminiError::ResponseParsing(e.to_string()))?;
 
             let usage = response
                 .usage_metadata
@@ -310,14 +227,14 @@ mod tests {
         active: bool,
     }
 
-    #[test]
-    fn test_model_method() {
+    #[tokio::test]
+    async fn test_model_method() {
         let model = GeminiModel::builder()
             .api_key("test-key")
-            .model("test-model".to_string())
+            .model("test-model")
             .build();
 
-        assert_eq!(model.model(), "test-model");
+        assert_eq!(model.model, "test-model");
     }
 
     #[test]
@@ -334,35 +251,22 @@ mod tests {
         let _response_schema_complex = ResponseSchema::from::<ComplexData>();
     }
 
-    #[test]
-    fn test_request_stream_signature() {
+    #[tokio::test]
+    async fn test_request_stream_signature() {
         // This test verifies that the streaming method exists and has the correct signature
         let model = GeminiModel::builder()
             .api_key("test-key")
-            .model("test-model".to_string())
+            .model("test-model")
             .build();
 
         // Test that the method exists (we don't actually call it to avoid needing API key)
-        assert_eq!(model.model(), "test-model");
+        assert_eq!(model.model, "test-model");
     }
 
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request() {
-        let api_key = match std::env::var("GEMINI_API_KEY")
-            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-        {
-            Ok(key) => key,
-            Err(_) => {
-                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-                return;
-            }
-        };
-
-        let model = GeminiModel::builder()
-            .api_key(api_key)
-            .model("gemini-1.5-flash".to_string())
-            .build();
+        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
 
         let messages = vec![Message {
             role: MessageRole::User,
@@ -399,20 +303,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_structured_simple() {
-        let api_key = match std::env::var("GEMINI_API_KEY")
-            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-        {
-            Ok(key) => key,
-            Err(_) => {
-                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-                return;
-            }
-        };
-
-        let model = GeminiModel::builder()
-            .api_key(api_key)
-            .model("gemini-1.5-flash".to_string())
-            .build();
+        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
 
         let message = Message {
             role: MessageRole::User,
@@ -442,20 +333,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_structured_complex() {
-        let api_key = match std::env::var("GEMINI_API_KEY")
-            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-        {
-            Ok(key) => key,
-            Err(_) => {
-                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-                return;
-            }
-        };
-
-        let model = GeminiModel::builder()
-            .api_key(api_key)
-            .model("gemini-1.5-flash".to_string())
-            .build();
+        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
 
         let message = Message {
             role: MessageRole::User,
@@ -487,20 +365,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_multiple_messages() {
-        let api_key = match std::env::var("GEMINI_API_KEY")
-            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-        {
-            Ok(key) => key,
-            Err(_) => {
-                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping integration test");
-                return;
-            }
-        };
-
-        let model = GeminiModel::builder()
-            .api_key(api_key)
-            .model("gemini-1.5-flash".to_string())
-            .build();
+        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
 
         let messages = vec![
             Message {
@@ -553,20 +418,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_stream() {
-        let api_key = match std::env::var("GEMINI_API_KEY")
-            .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
-        {
-            Ok(key) => key,
-            Err(_) => {
-                println!("GEMINI_API_KEY or GOOGLE_AI_API_KEY not set, skipping streaming test");
-                return;
-            }
-        };
-
-        let model = GeminiModel::builder()
-            .api_key(api_key)
-            .model("gemini-1.5-flash".to_string())
-            .build();
+        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
 
         let messages = vec![Message {
             role: MessageRole::User,
@@ -616,16 +468,27 @@ mod tests {
                     // Usage events are expected
                 }
                 StreamEvent::StreamStop(stream_stop) => {
-                    assert!(stream_stop.usage.input_tokens() > 0, "Should have input token usage");
+                    assert!(
+                        stream_stop.usage.input_tokens() > 0,
+                        "Should have input token usage"
+                    );
                     message_stopped = true;
-                    println!("\nUsage: {:?}", stream_stop.usage);
+                    println!(
+                        "
+Usage: {:?}",
+                        stream_stop.usage
+                    );
                 }
             }
 
             events.push(event);
         }
 
-        println!("\nReceived {} events total", events.len());
+        println!(
+            "
+Received {} events total",
+            events.len()
+        );
 
         // Verify we got the expected event sequence
         assert!(content_received, "Should have received some content");
@@ -636,9 +499,15 @@ mod tests {
             matches!(events.last(), Some(StreamEvent::StreamStop(_))),
             "Last event should be StreamStop"
         );
-        
+
         // Verify we got at least one text delta event
-        let text_delta_count = events.iter().filter(|e| matches!(e, StreamEvent::TextDelta(_))).count();
-        assert!(text_delta_count > 0, "Should have received at least one TextDelta event");
+        let text_delta_count = events
+            .iter()
+            .filter(|e| matches!(e, StreamEvent::TextDelta(_)))
+            .count();
+        assert!(
+            text_delta_count > 0,
+            "Should have received at least one TextDelta event"
+        );
     }
 }

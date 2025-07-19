@@ -13,8 +13,8 @@ pub enum AgentEvent {
     /// Agent started processing a request.
     Started,
 
-    /// Agent received a streaming delta event from the model.
-    Delta(StreamEvent),
+    /// Agent received a streaming event from the model.
+    StreamEvent(StreamEvent),
 
     /// Agent is executing a tool call.
     ToolExecution(ToolCall),
@@ -34,7 +34,7 @@ impl AgentEvent {
     pub fn event_type(&self) -> &'static str {
         match self {
             AgentEvent::Started => "Started",
-            AgentEvent::Delta(_) => "Delta",
+            AgentEvent::StreamEvent(_) => "StreamEvent",
             AgentEvent::ToolExecution(_) => "ToolExecution",
             AgentEvent::ToolResult(_) => "ToolResult",
             AgentEvent::Completed(_) => "Completed",

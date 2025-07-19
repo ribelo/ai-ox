@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::{
     message::{AssistantMessage, Content, ContentPart, Message},
-    ApiRequestError, ErrorResponse,
+    ApiRequestError,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -216,6 +216,17 @@ impl ChatCompletionChunk {
     pub fn from_streaming_data(
         lines_str: &str,
     ) -> Vec<Result<ChatCompletionChunk, ApiRequestError>> {
+        #[derive(Debug, serde::Deserialize)]
+        struct ErrorResponse {
+            error: ErrorDetail,
+            user_id: Option<String>,
+        }
+        #[derive(Debug, serde::Deserialize)]
+        struct ErrorDetail {
+            code: i32,
+            message: String,
+        }
+        
         let mut results = Vec::new();
         for line in lines_str.lines() {
             let trimmed = line.trim();
@@ -225,7 +236,14 @@ impl ChatCompletionChunk {
 
             // Some providers might send error JSON directly without the 'data:' prefix
             if let Ok(err) = serde_json::from_str::<ErrorResponse>(trimmed) {
-                results.push(Err(ApiRequestError::InvalidRequestError(err)));
+                results.push(Err(ApiRequestError::InvalidRequestError {
+                    code: Some(err.error.code.to_string()),
+                    message: err.error.message,
+                    status: None,
+                    details: serde_json::json!({
+                        "user_id": err.user_id
+                    }),
+                }));
                 continue;
             }
 
@@ -256,7 +274,14 @@ impl ChatCompletionChunk {
                     // as some APIs might send errors within the 'data:' payload.
                     match serde_json::from_str::<ErrorResponse>(data) {
                         Ok(error_response) => {
-                            results.push(Err(ApiRequestError::InvalidRequestError(error_response)));
+                            results.push(Err(ApiRequestError::InvalidRequestError {
+                                code: Some(error_response.error.code.to_string()),
+                                message: error_response.error.message,
+                                status: None,
+                                details: serde_json::json!({
+                                    "user_id": error_response.user_id
+                                }),
+                            }));
                         }
                         Err(_) => {
                             // If it fails to parse as both ChatCompletionChunk and ErrorResponse,

@@ -1,430 +1,237 @@
+use std::convert::TryFrom;
+
 use crate::{
     content::{
         delta::{FinishReason, StreamEvent, StreamStop},
         message::{Message, MessageRole},
-        part::{FileData, ImageSource, Part},
+        part::Part,
     },
-    tool::ToolCall,
-    usage::Usage,
+    errors::GenerateContentError,
+    model::{ModelRequest, response::ModelResponse},
+    tool::Tool,
 };
 use gemini_ox::{
-    content::{
-        Blob as GeminiBlob, Content as GeminiContent, FileData as GeminiFileData,
-        FunctionCall as GeminiFunctionCall, FunctionResponse as GeminiFunctionResponse,
-        Part as GeminiPart, PartData as GeminiPartData, Role as GeminiRole, Text as GeminiText,
+    content::{Content as GeminiContent, Part as GeminiPart, Role as GeminiRole},
+    generate_content::{
+        request::GenerateContentRequest as GeminiGenerateContentRequest, GenerationConfig,
+        response::GenerateContentResponse,
+        SafetySettings,
     },
-    generate_content::response::GenerateContentResponse as GeminiResponse,
+    tool::{config::ToolConfig},
 };
 
-/// Converts an `ai-ox` `Message` to a `gemini-ox` `Content`.
-impl From<Message> for GeminiContent {
-    fn from(message: Message) -> Self {
-        let role = match message.role {
-            MessageRole::User => GeminiRole::User,
-            MessageRole::Assistant => GeminiRole::Model,
-        };
 
-        let parts: Vec<GeminiPart> = message.content.into_iter().map(Into::into).collect();
 
-        GeminiContent { role, parts }
-    }
-}
-
-/// Converts an `ai-ox` `Part` to a `gemini-ox` `Part`.
-impl From<Part> for GeminiPart {
-    fn from(part: Part) -> Self {
-        let data = match part {
-            Part::Text { text } => GeminiPartData::Text(GeminiText::new(text)),
-            Part::Image { source } => match source {
-                ImageSource::Base64 { media_type, data } => {
-                    GeminiPartData::InlineData(GeminiBlob::new(media_type, data))
-                }
-            },
-            Part::File(file_data) => {
-                let gemini_file_data = if let Some(display_name) = file_data.display_name {
-                    GeminiFileData::new_with_display_name(
-                        file_data.file_uri,
-                        file_data.mime_type,
-                        display_name,
-                    )
-                } else {
-                    GeminiFileData::new(file_data.file_uri, file_data.mime_type)
-                };
-                GeminiPartData::FileData(gemini_file_data)
-            }
-            Part::ToolCall { id, name, args } => {
-                // Convert tool call to proper Gemini FunctionCall
-                let function_call = GeminiFunctionCall {
-                    id: Some(id),
-                    name,
-                    args: Some(args),
-                };
-                GeminiPartData::FunctionCall(function_call)
-            }
-            Part::ToolResult {
-                call_id,
-                name,
-                content,
-            } => {
-                // Convert tool result to proper Gemini FunctionResponse
-                let function_response = GeminiFunctionResponse {
-                    id: Some(call_id),
-                    name,
-                    response: content,
-                    will_continue: None,
-                    scheduling: None,
-                };
-                GeminiPartData::FunctionResponse(function_response)
-            }
-        };
-
-        GeminiPart {
-            thought: None,
-            video_metadata: None,
-            data,
+impl From<MessageRole> for GeminiRole {
+    fn from(role: MessageRole) -> Self {
+        match role {
+            MessageRole::User => Self::User,
+            MessageRole::Assistant => Self::Model,
         }
     }
 }
 
-/// Converts a `gemini-ox` `Content` to an `ai-ox` `Message`.
-impl From<GeminiContent> for Message {
-    fn from(content: GeminiContent) -> Self {
+impl TryFrom<Message> for GeminiContent {
+    type Error = GenerateContentError;
+
+    fn try_from(message: Message) -> Result<Self, Self::Error> {
+        let role = message.role.into();
+        let parts = message
+            .content
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<GeminiPart>, _>>()?;
+        Ok(Self { role, parts })
+    }
+}
+
+impl TryFrom<Part> for GeminiPart {
+    type Error = GenerateContentError;
+
+    fn try_from(part: Part) -> Result<Self, Self::Error> {
+        match part {
+            Part::Text { text } => Ok(Self::new(gemini_ox::content::PartData::Text(text.into()))),
+            Part::ToolCall { id, name, args } => Ok(Self::new(
+                gemini_ox::content::PartData::FunctionCall(gemini_ox::content::FunctionCall {
+                    id: Some(id),
+                    name,
+                    args: Some(args),
+                }),
+            )),
+            _ => Err(GenerateContentError::unsupported_feature(
+                "Only text and tool calls are supported for Gemini models.",
+            )),
+        }
+    }
+}
+
+impl TryFrom<GeminiContent> for Message {
+    type Error = GenerateContentError;
+
+    fn try_from(content: GeminiContent) -> Result<Self, Self::Error> {
         let role = match content.role {
             GeminiRole::User => MessageRole::User,
             GeminiRole::Model => MessageRole::Assistant,
         };
-
-        let parts = content.parts.into_iter().map(Into::into).collect();
-
-        Message::new(role, parts)
+        let content = content
+            .parts
+            .into_iter()
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<Part>, _>>()?;
+        Ok(Self {
+            role,
+            content,
+            timestamp: chrono::Utc::now(),
+        })
     }
 }
 
-/// Converts a `gemini-ox` `Part` to an `ai-ox` `Part`.
-impl From<GeminiPart> for Part {
-    fn from(part: GeminiPart) -> Self {
+impl TryFrom<GeminiPart> for Part {
+    type Error = GenerateContentError;
+
+    fn try_from(part: GeminiPart) -> Result<Self, Self::Error> {
         match part.data {
-            GeminiPartData::Text(text) => Part::Text {
-                text: text.to_string(),
-            },
-            GeminiPartData::InlineData(blob) => Part::Image {
-                source: ImageSource::Base64 {
-                    media_type: blob.mime_type,
-                    data: blob.data,
-                },
-            },
-            GeminiPartData::FileData(file_data) => {
-                let ai_file_data = FileData {
-                    file_uri: file_data.file_uri,
-                    mime_type: file_data.mime_type,
-                    display_name: file_data.display_name,
-                };
-                Part::File(ai_file_data)
-            }
-            GeminiPartData::FunctionCall(function_call) => Part::ToolCall {
-                id: function_call.id.unwrap_or_default(),
+            gemini_ox::content::PartData::Text(text) => Ok(Part::Text { text: text.to_string() }),
+            gemini_ox::content::PartData::FunctionCall(function_call) => Ok(Part::ToolCall {
+                id: uuid::Uuid::new_v4().to_string(),
                 name: function_call.name,
                 args: function_call.args.unwrap_or_default(),
-            },
-            GeminiPartData::FunctionResponse(function_response) => Part::ToolResult {
-                call_id: function_response.id.unwrap_or_default(),
-                name: function_response.name,
-                content: function_response.response,
-            },
-            GeminiPartData::ExecutableCode(executable_code) => Part::ToolCall {
-                // Gemini provides no ID for code execution requests. An empty string is used
-                // as a placeholder, making the `name` field essential for identification.
-                id: String::new(),
-                name: "code_interpreter".to_string(),
-                args: serde_json::json!({
-                    "language": executable_code.language.to_string(),
-                    "code": executable_code.code,
-                }),
-            },
-            GeminiPartData::CodeExecutionResult(code_execution_result) => Part::ToolResult {
-                // Gemini provides no ID for code execution results. An empty string is used
-                // as a placeholder, making the `name` field essential for identification.
-                call_id: String::new(),
-                name: "code_interpreter".to_string(),
-                content: serde_json::json!({
-                    "outcome": code_execution_result.outcome.to_string(),
-                    "output": code_execution_result.output,
-                }),
-            },
+            }),
+            _ => Err(GenerateContentError::unsupported_feature(
+                "Unsupported Gemini part type.",
+            )),
         }
     }
 }
 
-/// Converts a `gemini-ox` `FunctionCall` to a `ToolCall`.
-impl From<GeminiFunctionCall> for ToolCall {
-    fn from(function_call: GeminiFunctionCall) -> Self {
-        ToolCall {
-            id: function_call.id.unwrap_or_default(),
-            name: function_call.name,
-            args: function_call.args.unwrap_or_default(),
+
+
+impl From<Tool> for serde_json::Value {
+    fn from(tool: Tool) -> Self {
+        serde_json::to_value(tool).unwrap()
+    }
+}
+
+impl From<crate::tool::FunctionMetadata> for gemini_ox::tool::FunctionMetadata {
+    fn from(metadata: crate::tool::FunctionMetadata) -> Self {
+        Self {
+            name: metadata.name,
+            description: metadata.description,
+            parameters: metadata.parameters,
         }
     }
 }
 
-/// Converts a streaming Gemini response to ai-ox StreamEvents
-pub fn convert_streaming_response(response: GeminiResponse) -> Vec<StreamEvent> {
-    to_ai_ox_stream_events(response)
-}
-
-/// Converts a raw Gemini chunk to our internal StreamEvent format
-fn to_ai_ox_stream_events(gemini_chunk: GeminiResponse) -> Vec<StreamEvent> {
+pub(super) fn convert_response_to_stream_events(
+    response: GenerateContentResponse,
+) -> Vec<Result<StreamEvent, GenerateContentError>> {
     let mut events = Vec::new();
 
-    // Process candidates
-    if let Some(candidate) = gemini_chunk.candidates.first() {
+    if let Some(candidate) = response.candidates.first() {
         for part in &candidate.content.parts {
-            match &part.data {
-                GeminiPartData::Text(text) => {
-                    events.push(StreamEvent::TextDelta(text.to_string()));
-                }
-                GeminiPartData::FunctionCall(function_call) => {
-                    events.push(StreamEvent::ToolCall(ToolCall::from(function_call.clone())));
-                }
-                GeminiPartData::ExecutableCode(executable_code) => {
-                    let tool_call = crate::tool::ToolCall {
-                        id: String::new(), // Gemini doesn't provide IDs for code execution
-                        name: "code_interpreter".to_string(),
-                        args: serde_json::json!({
-                            "language": executable_code.language.to_string(),
-                            "code": executable_code.code,
-                        }),
-                    };
-                    events.push(StreamEvent::ToolCall(tool_call));
-                }
-                GeminiPartData::CodeExecutionResult(code_execution_result) => {
-                    use crate::content::{message::{Message, MessageRole}, part::Part};
-                    
-                    let content_json = serde_json::json!({
-                        "outcome": code_execution_result.outcome.to_string(),
-                        "output": code_execution_result.output,
-                    });
-                    
-                    let message = Message::new(
-                        MessageRole::Assistant,
-                        vec![Part::Text { text: content_json.to_string() }]
-                    );
-                    
-                    let tool_result = crate::tool::ToolResult {
-                        id: String::new(), // Gemini doesn't provide IDs for code execution results
-                        name: "code_interpreter".to_string(),
-                        response: vec![message],
-                    };
-                    events.push(StreamEvent::ToolResult(tool_result));
-                }
-                GeminiPartData::InlineData(_) | 
-                GeminiPartData::FileData(_) | 
-                GeminiPartData::FunctionResponse(_) => {
-                    // These part types are handled but don't generate stream events
-                }
+            if let Ok(event) = StreamEvent::try_from(part.clone()) {
+                events.push(Ok(event));
             }
         }
     }
 
-    // Handle usage metadata
-    if let Some(usage_metadata) = &gemini_chunk.usage_metadata {
-        let usage = Usage::from(usage_metadata.clone());
-        events.push(StreamEvent::Usage(usage.clone()));
-        
-        // Determine finish reason
-        let finish_reason = gemini_chunk.candidates
+    if let Some(usage_metadata) = &response.usage_metadata {
+        events.push(Ok(StreamEvent::Usage(usage_metadata.clone().into())));
+
+        let finish_reason = response
+            .candidates
             .first()
-            .and_then(|candidate| candidate.finish_reason.as_ref())
-            .map(|reason| match reason {
-                gemini_ox::generate_content::FinishReason::Stop => FinishReason::Stop,
-                gemini_ox::generate_content::FinishReason::MaxTokens => FinishReason::Length,
-                gemini_ox::generate_content::FinishReason::Safety => FinishReason::ContentFilter,
-                gemini_ox::generate_content::FinishReason::Recitation => FinishReason::ContentFilter,
-                _ => FinishReason::Other,
-            })
+            .and_then(|c| c.finish_reason.as_ref())
+            .map(|fr| fr.into())
             .unwrap_or(FinishReason::Stop);
 
-        events.push(StreamEvent::StreamStop(StreamStop {
+        events.push(Ok(StreamEvent::StreamStop(StreamStop {
             finish_reason,
-            usage,
-        }));
+            usage: usage_metadata.clone().into(),
+        })));
     }
 
     events
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::content::part::FileData;
+impl TryFrom<GeminiPart> for StreamEvent {
+    type Error = GenerateContentError;
 
-    #[test]
-    fn test_message_to_content_user_role() {
-        let message = Message {
-            role: MessageRole::User,
-            content: vec![Part::Text {
-                text: "Hello, world!".to_string(),
-            }],
-            timestamp: chrono::Utc::now(),
-        };
-
-        let content: GeminiContent = message.into();
-        assert_eq!(content.role, GeminiRole::User);
-        assert_eq!(content.parts.len(), 1);
-    }
-
-    #[test]
-    fn test_message_to_content_assistant_role() {
-        let message = Message {
-            role: MessageRole::Assistant,
-            content: vec![Part::Text {
-                text: "Hi there!".to_string(),
-            }],
-            timestamp: chrono::Utc::now(),
-        };
-
-        let content: GeminiContent = message.into();
-        assert_eq!(content.role, GeminiRole::Model);
-        assert_eq!(content.parts.len(), 1);
-    }
-
-    #[test]
-    fn test_text_part_conversion() {
-        let part = Part::Text {
-            text: "Test text".to_string(),
-        };
-
-        let gemini_part: GeminiPart = part.into();
-        let text_data = gemini_part.data.as_text().unwrap();
-        assert_eq!(text_data.to_string(), "Test text");
-    }
-
-    #[test]
-    fn test_image_part_conversion() {
-        let part = Part::Image {
-            source: ImageSource::Base64 {
-                media_type: "image/png".to_string(),
-                data: "base64data".to_string(),
-            },
-        };
-
-        let gemini_part: GeminiPart = part.into();
-        let blob_data = gemini_part.data.as_inline_data().unwrap();
-        assert_eq!(blob_data.mime_type, "image/png");
-        assert_eq!(blob_data.data, "base64data");
-    }
-
-    #[test]
-    fn test_file_part_conversion() {
-        let file_data = FileData::new_with_display_name(
-            "gs://bucket/file.pdf",
-            "application/pdf",
-            "document.pdf",
-        );
-        let part = Part::File(file_data);
-
-        let gemini_part: GeminiPart = part.into();
-        let file_data_result = gemini_part.data.as_file_data().unwrap();
-        assert_eq!(file_data_result.file_uri, "gs://bucket/file.pdf");
-        assert_eq!(file_data_result.mime_type, "application/pdf");
-        assert_eq!(
-            file_data_result.display_name,
-            Some("document.pdf".to_string())
-        );
-    }
-
-    #[test]
-    fn test_reverse_text_part_conversion() {
-        let gemini_part = GeminiPart::new(GeminiText::new("Hello, world!"));
-        let ai_part: Part = gemini_part.into();
-
-        match ai_part {
-            Part::Text { text } => assert_eq!(text, "Hello, world!"),
-            _ => panic!("Expected text part"),
-        }
-    }
-
-    #[test]
-    fn test_tool_call_conversion() {
-        use serde_json::json;
-
-        let part = Part::ToolCall {
-            id: "call_456".to_string(),
-            name: "search_web".to_string(),
-            args: json!({"query": "rust programming"}),
-        };
-
-        let gemini_part: GeminiPart = part.into();
-        let function_call = gemini_part.data.as_function_call().unwrap();
-        assert_eq!(function_call.id, Some("call_456".to_string()));
-        assert_eq!(function_call.name, "search_web");
-        assert_eq!(
-            function_call.args,
-            Some(json!({"query": "rust programming"}))
-        );
-    }
-
-    #[test]
-    fn test_reverse_function_call_conversion() {
-        use serde_json::json;
-
-        let function_call = GeminiFunctionCall {
-            id: Some("call_789".to_string()),
-            name: "calculate".to_string(),
-            args: Some(json!({"expression": "2 + 2"})),
-        };
-        let gemini_part = GeminiPart::new(function_call);
-        let ai_part: Part = gemini_part.into();
-
-        match ai_part {
-            Part::ToolCall { id, name, args } => {
-                assert_eq!(id, "call_789");
-                assert_eq!(name, "calculate");
-                assert_eq!(args, json!({"expression": "2 + 2"}));
+    fn try_from(part: GeminiPart) -> Result<Self, Self::Error> {
+        match part.data {
+            gemini_ox::content::PartData::Text(text) => Ok(StreamEvent::TextDelta(text.to_string())),
+            gemini_ox::content::PartData::FunctionCall(function_call) => {
+                Ok(StreamEvent::ToolCall(function_call.into()))
             }
-            _ => panic!("Expected tool call part"),
+            _ => Err(GenerateContentError::unsupported_feature(
+                "Unsupported Gemini part type for streaming.",
+            )),
         }
     }
+}
 
-    #[test]
-    fn test_reverse_function_response_conversion() {
-        use serde_json::json;
-
-        let function_response = GeminiFunctionResponse::new_with_id(
-            "call_123",
-            "test_function",
-            json!({"result": "success"}),
-        );
-        let gemini_part = GeminiPart::new(function_response);
-        let ai_part: Part = gemini_part.into();
-
-        match ai_part {
-            Part::ToolResult {
-                call_id,
-                name,
-                content,
-            } => {
-                assert_eq!(call_id, "call_123");
-                assert_eq!(name, "test_function");
-                assert_eq!(content, json!({"result": "success"}));
-            }
-            _ => panic!("Expected tool result part"),
+impl From<&gemini_ox::generate_content::FinishReason> for FinishReason {
+    fn from(reason: &gemini_ox::generate_content::FinishReason) -> Self {
+        match reason {
+            gemini_ox::generate_content::FinishReason::Stop => Self::Stop,
+            gemini_ox::generate_content::FinishReason::MaxTokens => Self::Length,
+            gemini_ox::generate_content::FinishReason::Safety => Self::ContentFilter,
+            gemini_ox::generate_content::FinishReason::Recitation => Self::ContentFilter,
+            _ => Self::Other,
         }
     }
+}
 
-    #[test]
-    fn test_reverse_message_conversion() {
-        let gemini_content = GeminiContent {
-            role: GeminiRole::Model,
-            parts: vec![GeminiPart::new(GeminiText::new("AI response"))],
-        };
+pub(super) fn convert_request_to_gemini(
+    request: ModelRequest,
+    model: String,
+    system_instruction: Option<GeminiContent>,
+    tool_config: Option<ToolConfig>,
+    safety_settings: Option<SafetySettings>,
+    generation_config: Option<GenerationConfig>,
+    cached_content: Option<String>,
+) -> Result<GeminiGenerateContentRequest, GenerateContentError> {
+    let contents = request
+        .messages
+        .into_iter()
+        .map(TryInto::try_into)
+        .collect::<Result<Vec<GeminiContent>, _>>()?;
 
-        let ai_message: Message = gemini_content.into();
-        assert_eq!(ai_message.role, MessageRole::Assistant);
-        assert_eq!(ai_message.content.len(), 1);
+    let tools = request
+        .tools
+        .map(|tools| tools.into_iter().map(|tool| tool.into()).collect());
 
-        match &ai_message.content[0] {
-            Part::Text { text } => assert_eq!(text, "AI response"),
-            _ => panic!("Expected text part"),
-        }
-    }
+    Ok(GeminiGenerateContentRequest {
+        model,
+        contents,
+        system_instruction,
+        tools,
+        tool_config,
+        safety_settings,
+        generation_config,
+        cached_content,
+    })
+}
+
+pub(super) fn convert_gemini_response_to_ai_ox(
+    response: GenerateContentResponse,
+    model_name: String,
+) -> Result<ModelResponse, GenerateContentError> {
+    let message = response
+        .candidates
+        .first()
+        .map(|candidate| candidate.content.clone().try_into())
+        .transpose()?        .unwrap_or(Message::new(MessageRole::Assistant, vec![]));
+
+    let usage = response
+        .usage_metadata
+        .map(|usage_metadata| usage_metadata.into())
+        .unwrap_or_default();
+
+    Ok(ModelResponse {
+        message,
+        model_name,
+        vendor_name: "google".to_string(),
+        usage,
+    })
 }

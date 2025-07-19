@@ -2,6 +2,8 @@
 pub mod gemini;
 #[cfg(feature = "openrouter")]
 pub mod openrouter;
+#[cfg(feature = "bedrock")]
+pub mod bedrock;
 pub mod request;
 pub mod response;
 
@@ -19,6 +21,28 @@ use crate::{
     },
 };
 
+/// Supported model providers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display, strum::EnumString)]
+#[strum(serialize_all = "lowercase")]
+pub enum Provider {
+    #[cfg(feature = "gemini")]
+    Google,
+    #[cfg(feature = "openrouter")]
+    OpenRouter,
+    #[cfg(feature = "bedrock")]
+    Bedrock,
+}
+
+/// Model information containing provider and model identifier.
+#[derive(Debug, Clone)]
+pub struct ModelInfo<'a>(pub Provider, pub &'a str);
+
+impl<'a> std::fmt::Display for ModelInfo<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.0, self.1)
+    }
+}
+
 /// The primary trait for interacting with a large language model.
 ///
 /// This trait provides a standardized interface for sending requests, streaming
@@ -26,12 +50,19 @@ use crate::{
 /// (`dyn Model`) for its core, non-generic methods. Generic helper methods are
 /// provided for a more ergonomic developer experience.
 pub trait Model: Send + Sync + 'static + std::fmt::Debug {
-    /// Returns the model name/identifier.
+    /// Returns the model information containing provider and model identifier.
     ///
     /// # Returns
     ///
-    /// A string slice containing the model name or identifier.
-    fn model(&self) -> &str;
+    /// A `ModelInfo` containing the provider and model identifier.
+    fn info(&self) -> ModelInfo<'_>;
+
+    /// Returns the model name.
+    ///
+    /// # Returns
+    ///
+    /// A string slice containing the model name.
+    fn name(&self) -> &str;
 
     /// Sends a single, non-streaming request to the model.
     ///

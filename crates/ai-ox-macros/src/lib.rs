@@ -193,7 +193,7 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
                             );
 
                             // Wrap in a ToolResult
-                            Ok(#crate_prefix::tool::ToolResult::single_message(
+                            Ok(#crate_prefix::tool::ToolResult::new(
                                 call.id.clone(),
                                 call.name.clone(),
                                 message
@@ -230,7 +230,7 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
                     );
 
                     // Wrap in a ToolResult
-                    Ok(#crate_prefix::tool::ToolResult::single_message(
+                    Ok(#crate_prefix::tool::ToolResult::new(
                         call.id.clone(),
                         call.name.clone(),
                         message
@@ -251,7 +251,7 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
                     );
 
                     // Wrap in a ToolResult
-                    Ok(#crate_prefix::tool::ToolResult::single_message(
+                    Ok(#crate_prefix::tool::ToolResult::new(
                         call.id.clone(),
                         call.name.clone(),
                         message

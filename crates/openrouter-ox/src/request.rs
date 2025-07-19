@@ -1,6 +1,4 @@
-use async_stream::try_stream;
 use bon::Builder;
-use futures_util::stream::{BoxStream, StreamExt};
 use schemars::{generate::SchemaSettings, JsonSchema};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -8,12 +6,8 @@ use serde_json::{json, Value};
 use crate::{
     message::{Message, Messages},
     provider_preference::ProviderPreferences,
-    response::{ChatCompletionChunk, ChatCompletionResponse},
     tool::{ToolChoice, Tool},
-    ApiRequestError, ErrorResponse, OpenRouter, BASE_URL,
 };
-
-const API_URL: &str = "api/v1/chat/completions";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -29,6 +23,7 @@ pub struct Prediction {
 }
 
 #[derive(Debug, Clone, Serialize, Builder)]
+#[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
 pub struct Request {
     #[builder(field)]
     pub messages: Messages,
@@ -109,82 +104,5 @@ impl<S: request_builder::State> RequestBuilder<S> {
 impl Request {
     pub fn push_message(&mut self, message: impl Into<Message>) {
         self.messages.push(message.into());
-    }
-    pub async fn send(&self, open_router: &OpenRouter) -> Result<ChatCompletionResponse, ApiRequestError> {
-        let url = format!("{BASE_URL}/{API_URL}");
-
-        // Use bearer_auth instead of manually constructing the Authorization header
-        let res = open_router
-            .client
-            .post(&url)
-            .bearer_auth(&open_router.api_key)
-            .json(self)
-            .send()
-            .await?;
-
-        if res.status().is_success() {
-            // Parse the response body directly to the target type
-            Ok(res.json::<ChatCompletionResponse>().await?)
-        } else {
-            Err(ApiRequestError::InvalidRequestError(res.json().await?))
-        }
-    }
-
-    // pub fn stream(&self) -> Pin<Box<dyn Stream<Item = Result<ChatCompletionChunk, ApiRequestError>> + Send>> {
-    pub fn stream(&self, open_router: &OpenRouter) -> BoxStream<'static, Result<ChatCompletionChunk, ApiRequestError>> {
-        let client = open_router.client.clone();
-        let api_key = open_router.api_key.clone();
-        let url = format!("{BASE_URL}/{API_URL}");
-        let request_data = self.clone();
-
-        Box::pin(try_stream! {
-            // Prepare request body with streaming enabled
-            let mut body = serde_json::to_value(&request_data)?;
-            body.as_object_mut()
-                .expect("Request body must be a JSON object")
-                .insert("stream".to_string(), serde_json::Value::Bool(true));
-
-            // Send request
-            let response = client
-                .post(&url)
-                .bearer_auth(&api_key)
-                .json(&body)
-                .send()
-                .await?;
-            let status = response.status();
-
-            if !response.status().is_success() {
-                // Handle error response
-                match response.json::<ErrorResponse>().await {
-                    Ok(error_response) => {
-                        Err(ApiRequestError::InvalidRequestError(error_response))?
-                    }
-                    Err(json_err) => {
-                        Err(ApiRequestError::Stream(format!(
-                            "API error (status {status}): Failed to parse error response: {json_err}",
-                        )))?
-                    }
-                }
-            } else {
-                // Process successful streaming response
-                let mut byte_stream = response.bytes_stream();
-
-                while let Some(chunk_result) = byte_stream.next().await {
-                    let chunk = chunk_result?;
-                    let chunk_str = String::from_utf8(chunk.to_vec())
-                        .map_err(|e| ApiRequestError::Stream(format!("UTF-8 decode error: {e}")))?;
-
-                    for parse_result in ChatCompletionChunk::from_streaming_data(&chunk_str) {
-                        yield parse_result?;
-                    }
-                }
-            }
-        })
-    }
-}
-
-impl OpenRouter {
-    pub fn chat_completion(&self) -> RequestBuilder<request_builder::Empty> {
-        Request::builder()
     }
 }

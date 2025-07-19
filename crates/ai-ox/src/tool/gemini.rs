@@ -1,5 +1,6 @@
-use crate::tool::Tool as AiOxTool;
+use crate::tool::{Tool as AiOxTool, ToolCall};
 use gemini_ox::tool::{FunctionMetadata as GeminiFunctionMetadata, Tool as GeminiTool};
+use gemini_ox::content::part::FunctionCall as GeminiFunctionCall;
 
 /// Converts an `ai-ox` `Tool` to a `gemini-ox` `Tool`.
 impl From<AiOxTool> for GeminiTool {
@@ -18,6 +19,16 @@ impl From<AiOxTool> for GeminiTool {
                 Self::FunctionDeclarations(gemini_functions)
             }
             AiOxTool::GeminiTool(gemini_tool) => gemini_tool,
+        }
+    }
+}
+
+impl From<GeminiFunctionCall> for ToolCall {
+    fn from(gemini_call: GeminiFunctionCall) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(), // Gemini does not provide an ID for tool calls
+            name: gemini_call.name,
+            args: gemini_call.args.unwrap_or_default(),
         }
     }
 }
