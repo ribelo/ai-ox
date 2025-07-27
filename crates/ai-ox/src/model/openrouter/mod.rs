@@ -10,11 +10,7 @@ use openrouter_ox::{OpenRouter, request::Request as OpenRouterRequest};
 use serde_json::Value;
 
 use crate::{
-    content::{
-        delta::StreamEvent,
-        message::{Message, MessageRole},
-        part::Part,
-    },
+    content::delta::StreamEvent,
     errors::GenerateContentError,
     model::{
         Model, ModelInfo, Provider,
@@ -26,16 +22,25 @@ use crate::{
 /// OpenRouter model implementation that adapts OpenRouter API to the ai-ox Model trait.
 #[derive(Debug, Clone, Builder)]
 pub struct OpenRouterModel {
-    #[builder(field)]
     client: OpenRouter,
     #[builder(into)]
     model: String,
+    #[builder(default = default_tool_choice())]
+    tool_choice: openrouter_ox::tool::ToolChoice,
 }
 
-impl<S: open_router_model_builder::State> OpenRouterModelBuilder<S> {
-    pub fn api_key(mut self, api_key: impl Into<String>) -> Self {
-        self.client = OpenRouter::new(api_key);
-        self
+/// Returns the default tool choice for OpenRouter models.
+/// Defaults to Auto, allowing the model to decide when to use tools.
+fn default_tool_choice() -> openrouter_ox::tool::ToolChoice {
+    openrouter_ox::tool::ToolChoice::Auto
+}
+
+impl<S: open_router_model_builder::State> OpenRouterModelBuilder<S> 
+where 
+    <S as open_router_model_builder::State>::Client: open_router_model_builder::IsUnset
+{
+    pub fn api_key(self, api_key: impl Into<String>) -> OpenRouterModelBuilder<open_router_model_builder::SetClient<S>> {
+        self.client(OpenRouter::new(api_key))
     }
 }
 
@@ -50,6 +55,7 @@ impl OpenRouterModel {
         Ok(Self {
             model: model_name,
             client,
+            tool_choice: default_tool_choice(),
         })
     }
 
@@ -57,6 +63,7 @@ impl OpenRouterModel {
     fn build_openrouter_request(
         request: ModelRequest,
         model: &str,
+        tool_choice: &openrouter_ox::tool::ToolChoice,
         response_format: Option<Value>,
     ) -> Result<OpenRouterRequest, OpenRouterError> {
         // Convert messages using the conversion module
@@ -65,31 +72,30 @@ impl OpenRouterModel {
         // Convert tools using the conversion module
         let tools = conversion::convert_tools_to_openrouter(request.tools)?;
 
-        let builder = OpenRouterRequest::builder().model(model).messages(messages);
-
-        // Convert FunctionMetadata to proper Tool structs with type field
-        let openrouter_tools: Vec<serde_json::Value> = if !tools.is_empty() {
-            tools
+        // Build request based on whether we have tools or not
+        let mut request = if !tools.is_empty() {
+            let openrouter_tools: Vec<openrouter_ox::tool::Tool> = tools
                 .into_iter()
-                .map(|func| {
-                    serde_json::json!({
-                        "type": "function",
-                        "function": func
-                    })
+                .map(|func| openrouter_ox::tool::Tool {
+                    tool_type: "function".to_string(),
+                    function: func,
                 })
-                .collect()
+                .collect();
+            
+            OpenRouterRequest::builder()
+                .model(model)
+                .messages(messages)
+                .tools(openrouter_tools)
+                .tool_choice(tool_choice.clone())
+                .build()
         } else {
-            Vec::new()
+            OpenRouterRequest::builder()
+                .model(model)
+                .messages(messages)
+                .build()
         };
 
-        let mut request = if !openrouter_tools.is_empty() {
-            // For now, skip tools since the openrouter-ox Tool struct import is not working
-            // This is a temporary workaround - the tools functionality needs the proper Tool type
-            builder.build()
-        } else {
-            builder.build()
-        };
-
+        // Set response_format if provided
         if let Some(format) = response_format {
             request.response_format = Some(format);
         }
@@ -113,32 +119,21 @@ impl Model for OpenRouterModel {
     ) -> BoxFuture<'_, Result<ModelResponse, GenerateContentError>> {
         async move {
             // Build the request using the helper function
-            let chat_request = Self::build_openrouter_request(request, &self.model, None)?;
+            let chat_request = Self::build_openrouter_request(request, &self.model, &self.tool_choice, None)?;
 
             let response = self.client
                 .send(&chat_request)
                 .await
                 .map_err(OpenRouterError::Api)?;
 
-            // Convert response
+            // Convert response using the conversion module to properly handle tool calls
             let choice = response.choices.first().ok_or_else(|| {
                 OpenRouterError::ResponseParsing("No choices in response".to_string())
             })?;
 
-            let content = choice
-                .message
-                .content
-                .0
-                .first()
-                .and_then(|part| part.as_text())
-                .map(|text| text.text.clone())
-                .unwrap_or_else(|| "".to_string());
-
-            let message = Message {
-                role: MessageRole::Assistant,
-                content: vec![Part::Text { text: content }],
-                timestamp: chrono::Utc::now(),
-            };
+            // Convert the OpenRouter message to ai-ox Message using the From trait
+            let openrouter_message = openrouter_ox::message::Message::Assistant(choice.message.clone());
+            let message = openrouter_message.into();
 
             // Extract usage data using conversion module
             let usage = conversion::extract_usage_from_response(Some(&response.usage));
@@ -159,10 +154,11 @@ impl Model for OpenRouterModel {
     ) -> BoxStream<'_, Result<StreamEvent, GenerateContentError>> {
         let client = self.client.clone();
         let model_name = self.model.clone();
+        let tool_choice = self.tool_choice.clone();
 
         let stream = try_stream! {
             // Build the request using the helper function
-            let chat_request = Self::build_openrouter_request(request, &model_name, None)?;
+            let chat_request = Self::build_openrouter_request(request, &model_name, &tool_choice, None)?;
 
             let mut chunk_stream = client.stream(&chat_request);
 
@@ -209,7 +205,7 @@ impl Model for OpenRouterModel {
 
             // Build the request using the helper function
             let chat_request =
-                Self::build_openrouter_request(request, &self.model, Some(response_format))?;
+                Self::build_openrouter_request(request, &self.model, &self.tool_choice, Some(response_format))?;
 
             let response = self.client
                 .send(&chat_request)

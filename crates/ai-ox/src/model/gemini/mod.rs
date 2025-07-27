@@ -28,7 +28,7 @@ pub struct GeminiModel {
     client: Gemini,
     #[builder(into)]
     system_instruction: Option<GeminiContent>,
-    /// The specific model name (e.g., "gemini-1.5-flash-latest").
+    /// The specific model name (e.g., "gemini-2.5-flash").
     #[builder(into)]
     model: String,
     tool_config: Option<ToolConfig>,
@@ -266,7 +266,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request() {
-        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
+        let model = GeminiModel::new("gemini-2.5-flash").await.unwrap();
 
         let messages = vec![Message {
             role: MessageRole::User,
@@ -287,7 +287,7 @@ mod tests {
         assert!(result.is_ok(), "Model request failed: {:?}", result.err());
         let response = result.unwrap();
         assert_eq!(response.vendor_name, "google");
-        assert_eq!(response.model_name, "gemini-1.5-flash");
+        assert_eq!(response.model_name, "gemini-2.5-flash");
         assert_eq!(response.message.role, MessageRole::Assistant);
         assert!(!response.message.content.is_empty());
 
@@ -303,7 +303,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_structured_simple() {
-        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
+        let model = GeminiModel::new("gemini-2.5-flash").await.unwrap();
 
         let message = Message {
             role: MessageRole::User,
@@ -320,7 +320,7 @@ mod tests {
             Ok(response) => {
                 assert!(!response.data.name.is_empty());
                 assert_eq!(response.vendor_name, "google");
-                assert_eq!(response.model_name, "gemini-1.5-flash");
+                assert_eq!(response.model_name, "gemini-2.5-flash");
 
                 println!("Generated cat: {:?}", response.data);
             }
@@ -333,7 +333,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_structured_complex() {
-        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
+        let model = GeminiModel::new("gemini-2.5-flash").await.unwrap();
 
         let message = Message {
             role: MessageRole::User,
@@ -352,7 +352,7 @@ mod tests {
                 assert!(!response.data.tags.is_empty());
                 assert!(response.data.active);
                 assert_eq!(response.vendor_name, "google");
-                assert_eq!(response.model_name, "gemini-1.5-flash");
+                assert_eq!(response.model_name, "gemini-2.5-flash");
 
                 println!("Generated complex data: {:?}", response.data);
             }
@@ -365,7 +365,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_multiple_messages() {
-        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
+        let model = GeminiModel::new("gemini-2.5-flash").await.unwrap();
 
         let messages = vec![
             Message {
@@ -402,7 +402,7 @@ mod tests {
         assert!(result.is_ok(), "Model request failed: {:?}", result.err());
         let response = result.unwrap();
         assert_eq!(response.vendor_name, "google");
-        assert_eq!(response.model_name, "gemini-1.5-flash");
+        assert_eq!(response.model_name, "gemini-2.5-flash");
         assert_eq!(response.message.role, MessageRole::Assistant);
         assert!(!response.message.content.is_empty());
 
@@ -418,7 +418,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "Requires GEMINI_API_KEY environment variable and makes actual API calls"]
     async fn test_gemini_model_request_stream() {
-        let model = GeminiModel::new("gemini-1.5-flash").await.unwrap();
+        let model = GeminiModel::new("gemini-2.5-flash").await.unwrap();
 
         let messages = vec![Message {
             role: MessageRole::User,

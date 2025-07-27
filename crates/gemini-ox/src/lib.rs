@@ -120,11 +120,29 @@ pub enum Model {
     #[strum(to_string = "gemini-exp-1206")] // Alias for 2.5-exp-03-25
     GeminiExp1206,
 
-    // Gemini 2.5 Flash (Preview)
+    // Gemini 2.5 Flash (Stable and Preview)
+    #[strum(to_string = "gemini-2.5-flash")]
+    Gemini25Flash, // Stable
+    #[strum(to_string = "gemini-2.5-flash-lite")]
+    Gemini25FlashLite, // Stable Lite
+    #[strum(to_string = "gemini-2.5-flash-lite-preview-06-17")]
+    Gemini25FlashLitePreview0617, // Preview
     #[strum(to_string = "gemini-2.5-flash-preview-05-20")]
     Gemini25FlashPreview0520,
+    #[strum(to_string = "gemini-2.5-flash-preview-tts")]
+    Gemini25FlashPreviewTts, // TTS Preview
     #[strum(to_string = "gemini-2.5-flash-preview-native-audio-dialog")]
     Gemini25FlashPreviewNativeAudioDialog,
+    
+    // Gemini 2.5 Pro (Stable and Preview)
+    #[strum(to_string = "gemini-2.5-pro")]
+    Gemini25Pro, // Stable
+    #[strum(to_string = "gemini-2.5-pro-preview-05-06")]
+    Gemini25ProPreview0506, // Preview
+    #[strum(to_string = "gemini-2.5-pro-preview-06-05")]
+    Gemini25ProPreview0605, // Preview
+    #[strum(to_string = "gemini-2.5-pro-preview-tts")]
+    Gemini25ProPreviewTts, // TTS Preview
 
     // --- Gemma 3 Series ---
     #[strum(to_string = "gemma-3-1b-it")]
@@ -135,12 +153,18 @@ pub enum Model {
     Gemma3_12bIt,
     #[strum(to_string = "gemma-3-27b-it")]
     Gemma3_27bIt,
+    #[strum(to_string = "gemma-3n-e2b-it")]
+    Gemma3nE2bIt,
+    #[strum(to_string = "gemma-3n-e4b-it")]
+    Gemma3nE4bIt,
 
     // --- Embedding Models ---
     #[strum(to_string = "embedding-001")]
     Embedding001,
     #[strum(to_string = "text-embedding-004")]
     TextEmbedding004,
+    #[strum(to_string = "gemini-embedding-001")]
+    GeminiEmbedding001,
     #[strum(to_string = "gemini-embedding-exp-03-07")] // Experimental
     GeminiEmbeddingExp0307,
     #[strum(to_string = "gemini-embedding-exp")] // Alias for exp-03-07

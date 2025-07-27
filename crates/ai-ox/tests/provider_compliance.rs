@@ -189,6 +189,7 @@ async fn test_all_providers_tool_use() {
 
         let response = result.unwrap();
 
+
         // Check if the response contains a tool call. This must not be lenient.
         let has_tool_call = response.message.content.iter().any(|part| {
             matches!(part, Part::ToolCall { name, .. } if name == "get_weather")

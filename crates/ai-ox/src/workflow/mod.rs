@@ -39,15 +39,13 @@
 //!     }
 //! }
 //!
-//! dyn_clone::clone_trait_object!(IncrementNode);
-//!
 //! // Usage in an async context:
-//! async fn example() -> Result<(), WorkflowError> {
+//! # async fn example() -> Result<(), WorkflowError> {
 //!     let workflow = Workflow::new(IncrementNode, SimpleState { counter: 0 }, EmptyDeps);
 //!     let result = workflow.run().await?;
 //!     println!("Result: {}", result); // Prints: "Result: Counter: 1"
-//!     Ok(())
-//! }
+//! #    Ok(())
+//! # }
 //! ```
 
 pub mod error;

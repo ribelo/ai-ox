@@ -179,20 +179,19 @@ async fn multi_agent_weather_workflow() {
     let model = Arc::from(models.into_iter().next().unwrap());
     let weather_service = WeatherService;
 
-    // Planner Agent - determines which tool to use
+    // Planner Agent - determines what needs to be done (no tools)
     let planner_agent = Agent::builder()
         .model(Arc::clone(&model))
-        .tools(weather_service.clone())
         .system_instruction(
-            "Given the user's request, decide which tool to call. Respond only with the tool call.",
+            "Given the user's request, analyze what information they need. Simply state what needs to be checked or retrieved.",
         )
         .build();
 
-    // Tool Executor Agent - the Agent will automatically handle tool execution via run()
+    // Tool Executor Agent - has tools and will execute them based on context
     let tool_executor_agent = Agent::builder()
         .model(Arc::clone(&model))
         .tools(weather_service.clone())
-        .system_instruction("Execute the requested tool call and return the result.")
+        .system_instruction("Based on the conversation, use the appropriate tools to get the requested information.")
         .build();
 
     // Summarizer Agent - provides final response

@@ -58,8 +58,17 @@ impl TryFrom<Part> for GeminiPart {
                     args: Some(args),
                 }),
             )),
+            Part::ToolResult { call_id, name, content } => Ok(Self::new(
+                gemini_ox::content::PartData::FunctionResponse(gemini_ox::content::FunctionResponse {
+                    id: Some(call_id),
+                    name,
+                    response: content,
+                    will_continue: None,
+                    scheduling: None,
+                }),
+            )),
             _ => Err(GenerateContentError::unsupported_feature(
-                "Only text and tool calls are supported for Gemini models.",
+                "Only text, tool calls, and tool results are supported for Gemini models.",
             )),
         }
     }

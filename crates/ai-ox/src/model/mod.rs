@@ -2,6 +2,8 @@
 pub mod gemini;
 #[cfg(feature = "openrouter")]
 pub mod openrouter;
+#[cfg(feature = "mistral")]
+pub mod mistral;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;
 pub mod request;
@@ -29,6 +31,8 @@ pub enum Provider {
     Google,
     #[cfg(feature = "openrouter")]
     OpenRouter,
+    #[cfg(feature = "mistral")]
+    Mistral,
     #[cfg(feature = "bedrock")]
     Bedrock,
 }

@@ -542,14 +542,11 @@ async fn test_toolbox_schema_generation() {
             .unwrap();
         let no_input_schema = &no_input_tool.parameters;
 
-        // Should be empty object schema
-        assert_eq!(no_input_schema.get("type").unwrap(), "object");
-        let empty_properties = no_input_schema
-            .get("properties")
-            .unwrap()
-            .as_object()
-            .unwrap();
-        assert!(empty_properties.is_empty());
+
+        // For a function with no parameters, the schema should be a null schema
+        assert!(no_input_schema.get("enum").is_some());
+        assert!(no_input_schema.get("nullable").is_some());
+        assert_eq!(no_input_schema.get("nullable").unwrap(), &serde_json::Value::Bool(true));
 
         // Test complex input schema
         let complex_tool = functions.iter().find(|f| f.name == "complex_tool").unwrap();
