@@ -9,7 +9,7 @@ use super::executor::AgentExecutor;
 use super::traits::{Agent, AgentCore};
 use crate::{
     message::Messages, response::ChatCompletionResponse, tool::Tool, tool::ToolBox,
-    ApiRequestError, OpenRouter,
+    OpenRouterRequestError, OpenRouter,
 };
 
 #[derive(Debug, Clone, Builder)]
@@ -91,7 +91,7 @@ impl AgentCore for SimpleAgent {
         &self,
         executor: &AgentExecutor,
         messages: impl Into<Messages> + Send,
-    ) -> Result<ChatCompletionResponse, ApiRequestError> {
+    ) -> Result<ChatCompletionResponse, OpenRouterRequestError> {
         executor.execute_once(self, messages).await
     }
 
@@ -101,7 +101,7 @@ impl AgentCore for SimpleAgent {
         messages: impl Into<Messages> + Send,
     ) -> Pin<
         Box<
-            dyn Stream<Item = Result<crate::response::ChatCompletionChunk, ApiRequestError>> + Send,
+            dyn Stream<Item = Result<crate::response::ChatCompletionChunk, OpenRouterRequestError>> + Send,
         >,
     > {
         executor.stream_once(self, messages)

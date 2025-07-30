@@ -11,7 +11,7 @@ use super::error::AgentError;
 use super::executor::AgentExecutor;
 use super::traits::{AgentCore, TypedAgent};
 use crate::{
-    message::Messages, response::ChatCompletionResponse, tool::ToolBox, ApiRequestError, OpenRouter,
+    message::Messages, response::ChatCompletionResponse, tool::ToolBox, OpenRouterRequestError, OpenRouter,
 };
 
 #[derive(Debug, Clone, Builder)]
@@ -90,7 +90,7 @@ where
         &self,
         executor: &AgentExecutor,
         messages: impl Into<Messages> + Send,
-    ) -> Result<ChatCompletionResponse, ApiRequestError> {
+    ) -> Result<ChatCompletionResponse, OpenRouterRequestError> {
         executor.execute_once(self, messages).await
     }
 
@@ -100,7 +100,7 @@ where
         messages: impl Into<Messages> + Send,
     ) -> Pin<
         Box<
-            dyn Stream<Item = Result<crate::response::ChatCompletionChunk, ApiRequestError>> + Send,
+            dyn Stream<Item = Result<crate::response::ChatCompletionChunk, OpenRouterRequestError>> + Send,
         >,
     > {
         executor.stream_once(self, messages)

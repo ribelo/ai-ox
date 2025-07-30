@@ -2,12 +2,19 @@
 name = "openrouter-ox"
 version = "0.3.0"
 edition = "2024"
+license = "MIT"
+description = "OpenRouter AI API client for Rust"
+readme = "README.md"
+repository = "https://github.com/ribelo/ai-ox"
+categories = ["api-bindings", "asynchronous"]
+keywords = ["openrouter", "ai", "api", "client", "async"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-default = ["leaky-bucket"]
+default = []
 leaky-bucket = ["dep:leaky-bucket"]
+schema = ["dep:schemars"]
 
 [dependencies]
 reqwest = { workspace = true }
@@ -19,7 +26,7 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 bon = { workspace = true }
 derive_more = { workspace = true }
-schemars = { workspace = true }
+schemars = { workspace = true, optional = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
 

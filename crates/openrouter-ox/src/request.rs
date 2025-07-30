@@ -1,4 +1,5 @@
 use bon::Builder;
+#[cfg(feature = "schema")]
 use schemars::{generate::SchemaSettings, JsonSchema};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -24,7 +25,7 @@ pub struct Prediction {
 
 #[derive(Debug, Clone, Serialize, Builder)]
 #[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
-pub struct Request {
+pub struct ChatRequest {
     #[builder(field)]
     pub messages: Messages,
     #[builder(field)]
@@ -77,7 +78,7 @@ pub struct Request {
     pub include_reasoning: Option<bool>,
 }
 
-impl<S: request_builder::State> RequestBuilder<S> {
+impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
     pub fn messages(mut self, messages: impl IntoIterator<Item = impl Into<Message>>) -> Self {
         self.messages = messages.into_iter().map(Into::into).collect();
         self
@@ -86,6 +87,7 @@ impl<S: request_builder::State> RequestBuilder<S> {
         self.messages.push(message.into());
         self
     }
+    #[cfg(feature = "schema")]
     pub fn response_format<T: JsonSchema + DeserializeOwned>(mut self) -> Self {
         let type_name = std::any::type_name::<T>().split("::").last().unwrap();
         let mut schema_settings = SchemaSettings::draft2020_12();
@@ -101,7 +103,7 @@ impl<S: request_builder::State> RequestBuilder<S> {
     }
 }
 
-impl Request {
+impl ChatRequest {
     pub fn push_message(&mut self, message: impl Into<Message>) {
         self.messages.push(message.into());
     }

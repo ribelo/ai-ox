@@ -8,6 +8,7 @@ default = []
 gemini = ["dep:gemini-ox"]
 openrouter = ["dep:openrouter-ox"]
 mistral = ["dep:mistral-ox"]
+groq = ["dep:groq-ox"]
 bedrock = [
     "dep:aws-config",
     "dep:aws-sdk-bedrockruntime",
@@ -24,6 +25,7 @@ schemars = { workspace = true }
 gemini-ox = { path = "../gemini-ox", optional = true }
 openrouter-ox = { path = "../openrouter-ox", optional = true }
 mistral-ox = { path = "../mistral-ox", optional = true }
+groq-ox = { path = "../groq-ox", optional = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
 bon = { workspace = true }

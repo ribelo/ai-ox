@@ -4,6 +4,8 @@ pub mod gemini;
 pub mod openrouter;
 #[cfg(feature = "mistral")]
 pub mod mistral;
+#[cfg(feature = "groq")]
+pub mod groq;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;
 pub mod request;
@@ -33,6 +35,8 @@ pub enum Provider {
     OpenRouter,
     #[cfg(feature = "mistral")]
     Mistral,
+    #[cfg(feature = "groq")]
+    Groq,
     #[cfg(feature = "bedrock")]
     Bedrock,
 }

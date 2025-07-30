@@ -1,3 +1,10 @@
+#![cfg_attr(not(test), deny(unsafe_code))]
+#![warn(
+    clippy::pedantic,
+    clippy::unwrap_used,
+    clippy::missing_docs_in_private_items
+)]
+
 pub mod audio;
 pub mod error;
 pub mod message;

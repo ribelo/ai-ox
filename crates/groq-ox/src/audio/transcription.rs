@@ -37,8 +37,9 @@ pub struct TranscriptionRequest {
 }
 
 /// The format of the transcript output
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum TranscriptionFormat {
     Json,
     Text,
@@ -46,8 +47,9 @@ pub enum TranscriptionFormat {
 }
 
 /// The level of timestamp detail
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, strum::Display)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum TimestampGranularity {
     Word,
     Segment,
@@ -123,6 +125,16 @@ impl crate::Groq {
         &self,
         request: &TranscriptionRequest,
     ) -> Result<TranscriptionResponse, GroqRequestError> {
+        // Validate that timestamp_granularities requires verbose_json format
+        if request.timestamp_granularities.is_some() 
+            && request.response_format != Some(TranscriptionFormat::VerboseJson) {
+            return Err(GroqRequestError::InvalidRequestError {
+                code: None,
+                message: "`timestamp_granularities` requires `response_format = verbose_json`".into(),
+                r#type: Some("validation_error".into()),
+            });
+        }
+        
         let url = format!("{}/openai/v1/audio/transcriptions", self.base_url);
         
         // Create multipart form
@@ -138,7 +150,7 @@ impl crate::Groq {
         }
         
         if let Some(format) = &request.response_format {
-            form = form.text("response_format", serde_json::to_string(format)?);
+            form = form.text("response_format", format.to_string());
         }
         
         if let Some(temp) = request.temperature {
@@ -146,7 +158,9 @@ impl crate::Groq {
         }
         
         if let Some(granularities) = &request.timestamp_granularities {
-            form = form.text("timestamp_granularities", serde_json::to_string(granularities)?);
+            for g in granularities {
+                form = form.text("timestamp_granularities[]", g.to_string());
+            }
         }
         
         // Add the audio file

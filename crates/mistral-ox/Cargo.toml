@@ -24,7 +24,7 @@ mime = { workspace = true }
 mime_guess = { workspace = true }
 base64 = { workspace = true }
 strum = { workspace = true }
-schemars = { workspace = true }
+schemars = { workspace = true, optional = true }
 tokio = { workspace = true }
 url = { workspace = true }
 anyhow = { workspace = true }
@@ -33,6 +33,7 @@ leaky-bucket = { workspace = true, optional = true }
 [features]
 default = []
 leaky-bucket = ["dep:leaky-bucket"]
+schema = ["dep:schemars"]
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }

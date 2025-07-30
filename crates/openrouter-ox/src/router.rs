@@ -16,7 +16,7 @@
 //     request::ResponseFormat,
 //     response::ChatCompletionResponse,
 //     tool::{Tool, ToolBox, ToolsList},
-//     ApiRequestError, OpenRouter,
+//     OpenRouterRequestError, OpenRouter,
 // };
 
 // static DEFAULT_ROUTER_SYSTEM_PROMPT: &str = indoc! {"
@@ -111,7 +111,7 @@
 //         &self,
 //         agent_name: &str,
 //         messages: impl Into<Messages> + Send,
-//     ) -> Result<ChatCompletionResponse, ApiRequestError> {
+//     ) -> Result<ChatCompletionResponse, OpenRouterRequestError> {
 //         let agent = self.get(agent_name).unwrap().clone();
 //         agent.send_any(messages.into()).await
 //     }
@@ -165,7 +165,7 @@
 //     async fn choose(
 //         &self,
 //         messages: impl Into<Messages> + Send,
-//     ) -> Result<AgentScores, ApiRequestError> {
+//     ) -> Result<AgentScores, OpenRouterRequestError> {
 //         // Convert agents to JSON string
 //         let agents_list = serde_json::to_string_pretty(&self.agents())?;
 
@@ -203,14 +203,14 @@
 //         &self,
 //         agent_name: &str,
 //         messages: impl Into<Messages> + Send,
-//     ) -> Result<ChatCompletionResponse, ApiRequestError> {
+//     ) -> Result<ChatCompletionResponse, OpenRouterRequestError> {
 //         self.agents().route(agent_name, messages).await
 //     }
 
 //     async fn route(
 //         &self,
 //         messages: impl Into<Messages> + Send,
-//     ) -> Result<ChatCompletionResponse, ApiRequestError> {
+//     ) -> Result<ChatCompletionResponse, OpenRouterRequestError> {
 //         // Get agent scores and find best match
 //         let messages = messages.into();
 //         let scores = self.choose(messages.clone()).await?;

@@ -11,3 +11,31 @@ criterion/
 # AI
 .rules
 CLAUDE.md
+
+# IDE and editors
+.zed/
+.vscode/
+.idea/
+
+# Temporary files
+tmp/
+*.tmp
+
+# Rust compiler internal error logs
+rustc-ice-*.txt
+
+# Documentation drafts and notes
+docs/drafts/
+*.draft.md
+prompt.md
+!README.md
+
+# Code review artifacts
+code_review/
+review_request/
+
+# Task tracking
+tasks/
+
+# Resources (test files, etc)
+resources/

@@ -2,11 +2,18 @@
 name = "gemini-ox"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/ribelo/ai-ox"
+categories = ["api-bindings", "asynchronous"]
+keywords = ["gemini", "ai", "client", "async"]
+description = "Google Gemini API client for Rust"
 
 [features]
 # Default features - minimal build without media dependencies
 default = []
 leaky-bucket = ["dep:leaky-bucket"]
+schema = ["dep:schemars"]
 
 # Feature to enable the procedural macros (like #[toolbox])
 # macros = ["dep:gemini-ox-macros"]
@@ -26,7 +33,7 @@ video = ["dep:nokhwa", "dep:image"]
 [dependencies]
 # Use workspace dependencies where possible
 futures-util = { workspace = true }
-schemars = { workspace = true }
+schemars = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

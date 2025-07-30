@@ -1,3 +1,10 @@
+#![cfg_attr(not(test), deny(unsafe_code))]
+#![warn(
+    clippy::pedantic,
+    clippy::unwrap_used,
+    clippy::missing_docs_in_private_items
+)]
+
 use async_stream::try_stream;
 use bon::Builder;
 use futures_util::stream::{BoxStream, StreamExt};
@@ -52,8 +59,8 @@ impl OpenRouter {
 
     pub async fn send(
         &self,
-        request: &request::Request,
-    ) -> Result<response::ChatCompletionResponse, ApiRequestError> {
+        request: &request::ChatRequest,
+    ) -> Result<response::ChatCompletionResponse, OpenRouterRequestError> {
         let url = format!("{BASE_URL}/{API_URL}");
 
         let res = self
@@ -75,8 +82,8 @@ impl OpenRouter {
 
     pub fn stream(
         &self,
-        request: &request::Request,
-    ) -> BoxStream<'static, Result<response::ChatCompletionChunk, ApiRequestError>> {
+        request: &request::ChatRequest,
+    ) -> BoxStream<'static, Result<response::ChatCompletionChunk, OpenRouterRequestError>> {
         let client = self.client.clone();
         let api_key = self.api_key.clone();
         let url = format!("{BASE_URL}/{API_URL}");
@@ -106,7 +113,7 @@ impl OpenRouter {
                 while let Some(chunk_result) = byte_stream.next().await {
                     let chunk = chunk_result?;
                     let chunk_str = String::from_utf8(chunk.to_vec())
-                        .map_err(|e| ApiRequestError::Stream(format!("UTF-8 decode error: {e}")))?;
+                        .map_err(|e| OpenRouterRequestError::Stream(format!("UTF-8 decode error: {e}")))?;
 
                     for parse_result in response::ChatCompletionChunk::from_streaming_data(&chunk_str) {
                         yield parse_result?;
@@ -126,4 +133,5 @@ impl fmt::Debug for OpenRouter {
     }
 }
 
-pub use error::ApiRequestError;
+pub use error::OpenRouterRequestError;
+pub use request::ChatRequest;

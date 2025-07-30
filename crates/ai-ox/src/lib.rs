@@ -2,6 +2,8 @@ pub mod agent;
 pub mod content;
 pub mod errors;
 pub mod model;
+#[cfg(any(feature = "groq", feature = "mistral", feature = "gemini"))]
+pub mod stt;
 pub mod tool;
 pub mod usage;
 pub mod workflow;

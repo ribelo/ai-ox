@@ -3,7 +3,7 @@ use serde_json::Value;
 
 use crate::{
     message::{AssistantMessage, Content, ContentPart, Message},
-    ApiRequestError,
+    OpenRouterRequestError,
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -215,7 +215,7 @@ pub struct ChatCompletionChunk {
 impl ChatCompletionChunk {
     pub fn from_streaming_data(
         lines_str: &str,
-    ) -> Vec<Result<ChatCompletionChunk, ApiRequestError>> {
+    ) -> Vec<Result<ChatCompletionChunk, OpenRouterRequestError>> {
         #[derive(Debug, serde::Deserialize)]
         struct ErrorResponse {
             error: ErrorDetail,
@@ -236,7 +236,7 @@ impl ChatCompletionChunk {
 
             // Some providers might send error JSON directly without the 'data:' prefix
             if let Ok(err) = serde_json::from_str::<ErrorResponse>(trimmed) {
-                results.push(Err(ApiRequestError::InvalidRequestError {
+                results.push(Err(OpenRouterRequestError::InvalidRequestError {
                     code: Some(err.error.code.to_string()),
                     message: err.error.message,
                     status: None,
@@ -274,7 +274,7 @@ impl ChatCompletionChunk {
                     // as some APIs might send errors within the 'data:' payload.
                     match serde_json::from_str::<ErrorResponse>(data) {
                         Ok(error_response) => {
-                            results.push(Err(ApiRequestError::InvalidRequestError {
+                            results.push(Err(OpenRouterRequestError::InvalidRequestError {
                                 code: Some(error_response.error.code.to_string()),
                                 message: error_response.error.message,
                                 status: None,

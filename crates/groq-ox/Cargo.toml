@@ -2,6 +2,12 @@
 name = "groq-ox"
 version = "0.1.0"
 edition = "2024"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/ribelo/ai-ox"
+categories = ["api-bindings", "asynchronous"]
+keywords = ["groq", "ai", "client", "async"]
+description = "Groq API client for Rust"
 
 [dependencies]
 async-stream = { workspace = true }

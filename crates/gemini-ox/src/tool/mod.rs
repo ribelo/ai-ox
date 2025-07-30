@@ -11,6 +11,7 @@ use crate::tool::error::FunctionCallError;
 
 use futures_util::future::BoxFuture;
 use google::{GoogleSearch, GoogleSearchRetrieval};
+#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -48,6 +49,7 @@ pub enum Tool {
 /// Panics if the generated schema cannot be serialized to a `serde_json::Value`
 /// or if the resulting value is not a JSON object.
 #[must_use]
+#[cfg(feature = "schema")]
 pub fn schema_for_type<T: JsonSchema>() -> Value {
     let settings = schemars::generate::SchemaSettings::openapi3().with(|s| {
         s.inline_subschemas = true;

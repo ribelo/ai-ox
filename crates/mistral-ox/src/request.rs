@@ -1,4 +1,5 @@
 use bon::Builder;
+#[cfg(feature = "schema")]
 use schemars::{generate::SchemaSettings, JsonSchema};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -59,6 +60,7 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
         self
     }
     
+    #[cfg(feature = "schema")]
     pub fn response_format<T: JsonSchema + DeserializeOwned>(mut self) -> Self {
         let _type_name = std::any::type_name::<T>().split("::").last().unwrap();
         let mut schema_settings = SchemaSettings::draft2020_12();
