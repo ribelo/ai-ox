@@ -54,7 +54,7 @@ pub trait ToolBox: Send + Sync + 'static {
     ///
     /// Returns a boxed future that resolves to either a ToolResult on success
     /// or a ToolError on failure.
-    fn invoke(&self, call: ToolCall) -> BoxFuture<Result<ToolResult, ToolError>>;
+    fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>>;
 
     /// Checks if this toolbox has a function with the given name.
     fn has_function(&self, name: &str) -> bool {
@@ -71,7 +71,7 @@ impl<T: ToolBox + ?Sized> ToolBox for Arc<T> {
         self.as_ref().tools()
     }
 
-    fn invoke(&self, call: ToolCall) -> BoxFuture<Result<ToolResult, ToolError>> {
+    fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
         self.as_ref().invoke(call)
     }
 

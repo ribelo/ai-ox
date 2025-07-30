@@ -112,7 +112,7 @@ pub trait ToolBox: Send + Sync + 'static {
     fn invoke(
         &self,
         fn_call: FunctionCall,
-    ) -> BoxFuture<Result<FunctionResponse, FunctionCallError>>;
+    ) -> BoxFuture<'_, Result<FunctionResponse, FunctionCallError>>;
 
     fn has_function(&self, name: &str) -> bool {
         // Check through all tool declarations to find matching function name

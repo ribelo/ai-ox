@@ -1,5 +1,5 @@
 use mistral_ox::{
-    message::{AssistantMessage as MistralAssistantMessage, ContentPart as MistralContentPart, 
+    message::{AssistantMessage as MistralAssistantMessage, AudioContent as MistralAudioContent, ContentPart as MistralContentPart, 
              Message as MistralMessage, SystemMessage as MistralSystemMessage, TextContent as MistralTextContent, 
              ToolMessage as MistralToolMessage, UserMessage as MistralUserMessage},
     request::ChatRequest,
@@ -73,6 +73,9 @@ fn convert_message_to_mistral(message: Message) -> Result<Vec<MistralMessage>, G
                         // Mistral supports images through Pixtral models
                         // For now, we'll skip image parts
                         // TODO: Implement image support when needed
+                    }
+                    Part::Audio { audio_uri } => {
+                        text_parts.push(MistralContentPart::Audio(MistralAudioContent::new(audio_uri)));
                     }
                     Part::File(_) => {
                         // Mistral doesn't support generic file uploads
@@ -465,6 +468,46 @@ mod tests {
                 assert_eq!(tool_calls[0].id, "call_123");
             }
             _ => panic!("Expected assistant message"),
+        }
+    }
+
+    #[test]
+    fn test_user_message_with_audio_content() {
+        // Create an ai-ox message with audio content
+        let ai_msg = Message {
+            role: MessageRole::User,
+            content: vec![
+                Part::Text { text: "What is being said in this audio?".into() },
+                Part::Audio { audio_uri: "https://example.com/audio.mp3".into() },
+            ],
+            timestamp: Utc::now(),
+        };
+
+        // Convert to Mistral messages
+        let result = convert_message_to_mistral(ai_msg).unwrap();
+        
+        // Should create 1 user message with both text and audio
+        assert_eq!(result.len(), 1);
+        
+        match &result[0] {
+            MistralMessage::User(user_msg) => {
+                assert_eq!(user_msg.content.len(), 2);
+                
+                // Check text content
+                if let Some(MistralContentPart::Text(text)) = user_msg.content.get(0) {
+                    assert_eq!(text.text, "What is being said in this audio?");
+                } else {
+                    panic!("Expected text content first");
+                }
+                
+                // Check audio content
+                if let Some(MistralContentPart::Audio(audio)) = user_msg.content.get(1) {
+                    assert_eq!(audio.audio_url, "https://example.com/audio.mp3");
+                } else {
+                    panic!("Expected audio content second");
+                }
+            }
+            _ => panic!("Expected user message"),
         }
     }
 }

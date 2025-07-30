@@ -52,7 +52,7 @@ pub enum ImageSource {
 }
 
 /// Represents a single piece of content that can be part of a message.
-/// Supports text, images, files, tool calls, and tool results.
+/// Supports text, images, files, audio, tool calls, and tool results.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Part {
@@ -68,6 +68,11 @@ pub enum Part {
     },
     /// File content referenced by URI.
     File(FileData),
+    /// Audio content referenced by URI.
+    Audio {
+        /// URI to the audio file.
+        audio_uri: String,
+    },
     /// Request to call a tool function.
     ToolCall {
         /// Unique identifier for this tool call.

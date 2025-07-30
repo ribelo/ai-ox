@@ -161,6 +161,13 @@ fn convert_parts_to_content_blocks(parts: Vec<Part>) -> Result<Vec<ContentBlock>
                     ))?;
                 ContentBlock::ToolResult(tool_result_block)
             },
+            Part::Audio { .. } => {
+                // Bedrock doesn't support audio content directly
+                // Skip audio parts or return an error based on requirements
+                return Err(BedrockError::MessageConversion(
+                    "Audio content is not supported by Bedrock".to_string()
+                ));
+            },
         };
         content_blocks.push(content_block);
     }

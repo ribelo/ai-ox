@@ -1,0 +1,31 @@
+[package]
+name = "groq-ox"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-stream = { workspace = true }
+bon = { workspace = true }
+bytes = { workspace = true }
+chrono = { workspace = true }
+futures-util = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+
+# Optional dependencies
+leaky-bucket = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { version = "1.42", features = ["full", "test-util"] }
+dotenv = "0.15"
+wiremock = "0.6"
+
+[features]
+default = []
+leaky-bucket = ["dep:leaky-bucket"]
+schema = ["dep:schemars"]

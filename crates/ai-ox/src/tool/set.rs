@@ -80,7 +80,7 @@ impl ToolBox for ToolSet {
         self.get_all_tools()
     }
 
-    fn invoke(&self, call: ToolCall) -> BoxFuture<Result<ToolResult, ToolError>> {
+    fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
         Box::pin(async move { self.invoke(call).await })
     }
 
@@ -120,7 +120,7 @@ mod tests {
             }])]
         }
 
-        fn invoke(&self, call: ToolCall) -> BoxFuture<Result<ToolResult, ToolError>> {
+        fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
             let function_name = self.function_name.clone();
             async move {
                 if call.name == function_name {

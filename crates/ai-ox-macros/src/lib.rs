@@ -329,7 +329,7 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
 
 /// Processes a single method within the `impl` block to determine if it's a valid tool function
 /// and extracts relevant information if it is.
-fn process_method(method: &ImplItemFn) -> syn::Result<Option<ToolMethodInfo>> {
+fn process_method(method: &ImplItemFn) -> syn::Result<Option<ToolMethodInfo<'_>>> {
     let method_sig = &method.sig;
     let method_name = &method_sig.ident;
     let method_name_str = method_name.to_string();

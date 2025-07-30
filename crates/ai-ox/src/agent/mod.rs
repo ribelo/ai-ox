@@ -314,20 +314,20 @@ impl Agent {
                 }
 
                 // Build the assistant's response message
-                let final_usage = accumulator.get_usage();
+                let _final_usage = accumulator.get_usage();
                 let (assistant_message, tool_calls) = accumulator.finalize();
                 conversation.push(assistant_message.clone());
 
                 if !tool_calls.is_empty() {
                     if self.tools.get_all_tools().is_empty() {
                         // Model generated tool calls but we have no tools available
-                        let final_response = ModelResponse {
+                        let _final_response = ModelResponse {
                             message: assistant_message,
                             model_name: self.model.name().to_string(),
-                            vendor_name: self.model.info().0.to_string(),
-                            usage: final_usage.clone(),
+                            vendor_name: format!("{}", self.model.info().0),
+                            usage: _final_usage.clone(),
                         };
-                        yield events::AgentEvent::Completed(final_response);
+                        yield events::AgentEvent::Completed(_final_response);
                         yield events::AgentEvent::Failed("Model generated tool calls but no tools are available".to_string());
                         break;
                     }
@@ -374,13 +374,13 @@ impl Agent {
                     continue;
                 } else {
                     // No tool calls, conversation is complete
-                    let final_response = ModelResponse {
+                    let _final_response = ModelResponse {
                         message: assistant_message,
                         model_name: self.model.name().to_string(),
-                        vendor_name: self.model.info().0.to_string(),
-                        usage: final_usage,
+                        vendor_name: format!("{}", self.model.info().0),
+                        usage: _final_usage,
                     };
-                    yield events::AgentEvent::Completed(final_response);
+                    yield events::AgentEvent::Completed(_final_response);
                     break;
                 }
             }

@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/gemini-ox", "crates/ai-ox", "crates/ai-ox-macros", "crates/openrouter-ox", "crates/mistral-ox"]
+members = ["crates/gemini-ox", "crates/ai-ox", "crates/ai-ox-macros", "crates/openrouter-ox", "crates/mistral-ox", "crates/groq-ox"]
 
 resolver = "2"
 
