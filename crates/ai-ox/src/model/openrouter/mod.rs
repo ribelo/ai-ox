@@ -6,7 +6,7 @@ pub use error::OpenRouterError;
 use async_stream::try_stream;
 use bon::Builder;
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
-use openrouter_ox::{OpenRouter, request::Request as OpenRouterRequest};
+use openrouter_ox::{OpenRouter, request::ChatRequest as OpenRouterRequest};
 use serde_json::Value;
 
 use crate::{
