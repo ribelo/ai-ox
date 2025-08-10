@@ -1,0 +1,43 @@
+[package]
+name = "anthropic-ox"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/ribelo/ai-ox"
+categories = ["api-bindings", "asynchronous"]
+keywords = ["anthropic", "claude", "ai", "client", "async"]
+description = "Anthropic API client for Rust"
+
+[features]
+default = []
+leaky-bucket = ["dep:leaky-bucket"]
+schema = ["dep:schemars"]
+
+[dependencies]
+bon = "3.3"
+reqwest = { version = "0.12", default-features = false, features = [
+    "http2",
+    "charset", 
+    "json",
+    "rustls-tls",
+    "stream",
+    "multipart",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+leaky-bucket = { version = "1.1", optional = true }
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+async-trait = "0.1"
+schemars = { version = "0.8", optional = true }
+strum = { version = "0.26", features = ["derive"] }
+base64 = "0.22"
+mime_guess = "2.0"
+bytes = "1.9"
+tap = "1.0"
+async-stream = "0.3"
+tokio-stream = "0.1"
+backon = { workspace = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

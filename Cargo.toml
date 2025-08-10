@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/gemini-ox", "crates/ai-ox", "crates/ai-ox-macros", "crates/openrouter-ox", "crates/mistral-ox", "crates/groq-ox"]
+members = ["crates/gemini-ox", "crates/ai-ox", "crates/ai-ox-macros", "crates/openrouter-ox", "crates/mistral-ox", "crates/groq-ox", "crates/anthropic-ox"]
 
 resolver = "2"
 
@@ -48,4 +48,5 @@ tokio = { version = "1.45.1", features = ["rt", "macros", "sync", "io-std"] }
 clap = { version = "4.5.39", features = ["derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
+backon = "1.3"
 

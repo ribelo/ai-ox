@@ -8,6 +8,8 @@ pub mod mistral;
 pub mod groq;
 #[cfg(feature = "bedrock")]
 pub mod bedrock;
+#[cfg(feature = "anthropic")]
+pub mod anthropic;
 pub mod request;
 pub mod response;
 
@@ -39,6 +41,8 @@ pub enum Provider {
     Groq,
     #[cfg(feature = "bedrock")]
     Bedrock,
+    #[cfg(feature = "anthropic")]
+    Anthropic,
 }
 
 /// Model information containing provider and model identifier.

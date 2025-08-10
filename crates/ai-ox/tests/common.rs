@@ -22,11 +22,15 @@ use ai_ox::model::openrouter::OpenRouterModel;
 #[cfg(feature = "mistral")]
 use ai_ox::model::mistral::MistralModel;
 
+#[cfg(feature = "anthropic")]
+use ai_ox::model::anthropic::AnthropicModel;
+
 // Model version constants for consistent testing
 const BEDROCK_MODEL: &str = "anthropic.claude-3-haiku-20240307-v1:0";
 const GEMINI_MODEL: &str = "gemini-2.5-flash";
 const OPENROUTER_MODEL: &str = "openai/gpt-4o-mini";
 const MISTRAL_MODEL: &str = "mistral-small-latest";
+const ANTHROPIC_MODEL: &str = "claude-3-haiku-20240307";
 
 /// Helper function to initialize a provider model with graceful error handling
 async fn try_init_provider<T, E, F, Fut>(
@@ -124,13 +128,24 @@ pub async fn get_available_models() -> Vec<Box<dyn Model>> {
         }
     }
 
+    #[cfg(feature = "anthropic")]
+    {
+        if let Some(model) = try_init_provider(
+            "ANTHROPIC_API_KEY",
+            "Anthropic",
+            || AnthropicModel::new(ANTHROPIC_MODEL.to_string())
+        ).await {
+            models.push(model);
+        }
+    }
+
     // This is to satisfy the compiler in case no features are enabled.
-    #[cfg(not(any(feature = "bedrock", feature = "gemini", feature = "openrouter", feature = "mistral")))]
+    #[cfg(not(any(feature = "bedrock", feature = "gemini", feature = "openrouter", feature = "mistral", feature = "anthropic")))]
     {
         println!("⚠️ No provider features enabled. All compliance tests will be skipped.");
     }
 
-    if models.is_empty() && cfg!(any(feature = "bedrock", feature = "gemini", feature = "openrouter", feature = "mistral")) {
+    if models.is_empty() && cfg!(any(feature = "bedrock", feature = "gemini", feature = "openrouter", feature = "mistral", feature = "anthropic")) {
          // This case can happen when features are enabled but API keys are not set
          // All providers now gracefully handle missing API keys
         println!("⚠️  No models were initialized. Make sure to set the appropriate API keys:");
@@ -142,6 +157,8 @@ pub async fn get_available_models() -> Vec<Box<dyn Model>> {
         println!("   - OPENROUTER_API_KEY for OpenRouter");
         #[cfg(feature = "mistral")]
         println!("   - MISTRAL_API_KEY for Mistral");
+        #[cfg(feature = "anthropic")]
+        println!("   - ANTHROPIC_API_KEY for Anthropic");
     }
 
     models

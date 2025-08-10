@@ -8,8 +8,8 @@ pub mod tool;
 pub mod usage;
 pub mod workflow;
 
-// Re-export the toolbox macro
-pub use ai_ox_macros::toolbox;
+// Re-export the toolbox and dangerous macros
+pub use ai_ox_macros::{toolbox, dangerous};
 
 // Re-export commonly used types
 pub use errors::GenerateContentError;

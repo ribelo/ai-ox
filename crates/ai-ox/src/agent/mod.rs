@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, collections::HashSet};
 
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -15,7 +15,7 @@ use crate::{
         request::ModelRequest,
         response::{ModelResponse, StructuredResponse},
     },
-    tool::{ToolBox, ToolCall, ToolSet},
+    tool::{ToolBox, ToolCall, ToolSet, ToolHooks, ApprovalRequest},
     usage::Usage,
 };
 
@@ -39,6 +39,9 @@ pub struct Agent {
     /// Maximum number of iterations for tool execution loops.
     #[builder(default = 12)]
     max_iterations: u32,
+    /// Pre-approved dangerous tools that won't require individual approval.
+    #[builder(default)]
+    approved_dangerous_tools: HashSet<String>,
 }
 
 impl Agent {
@@ -80,6 +83,53 @@ impl Agent {
         self.system_instruction = None;
     }
 
+    /// Pre-approve specific dangerous tools for this agent.
+    /// 
+    /// These tools will execute without requesting approval through hooks.
+    /// Use this for session-based approval where the user has already
+    /// granted permission for certain operations.
+    pub fn approve_dangerous_tools(&mut self, tool_names: &[&str]) {
+        self.approved_dangerous_tools.extend(
+            tool_names.iter().map(|s| s.to_string())
+        );
+    }
+
+    /// Remove approval for specific dangerous tools.
+    /// 
+    /// These tools will once again require approval through hooks.
+    pub fn revoke_dangerous_tools(&mut self, tool_names: &[&str]) {
+        for name in tool_names {
+            self.approved_dangerous_tools.remove(*name);
+        }
+    }
+
+    /// Pre-approve ALL dangerous tools for this agent (trust mode).
+    /// 
+    /// This allows the agent to execute any dangerous operation without
+    /// requesting approval. Use with caution.
+    pub fn approve_all_dangerous_tools(&mut self) {
+        self.approved_dangerous_tools.extend(
+            self.tools.get_all_dangerous_functions().iter().map(|s| s.to_string())
+        );
+    }
+
+    /// Clear all pre-approved dangerous tools.
+    /// 
+    /// All dangerous tools will once again require approval through hooks.
+    pub fn clear_approved_dangerous_tools(&mut self) {
+        self.approved_dangerous_tools.clear();
+    }
+
+    /// Get the list of currently approved dangerous tools.
+    pub fn get_approved_dangerous_tools(&self) -> &HashSet<String> {
+        &self.approved_dangerous_tools
+    }
+
+    /// Check if a specific dangerous tool is pre-approved.
+    pub fn is_dangerous_tool_approved(&self, tool_name: &str) -> bool {
+        self.approved_dangerous_tools.contains(tool_name)
+    }
+
     /// Generates a response without tool execution.
     ///
     /// This method sends the messages to the model and returns the response
@@ -103,6 +153,18 @@ impl Agent {
     pub async fn run(
         &self,
         messages: impl IntoIterator<Item = impl Into<Message>> + Send,
+    ) -> Result<ModelResponse, AgentError> {
+        self.run_with_hooks(messages, None).await
+    }
+
+    /// Executes a conversation with automatic tool handling and optional hooks.
+    ///
+    /// This method is like `run()` but allows passing ToolHooks for dangerous
+    /// operations that need approval or progress reporting.
+    pub async fn run_with_hooks(
+        &self,
+        messages: impl IntoIterator<Item = impl Into<Message>> + Send,
+        hooks: Option<ToolHooks>,
     ) -> Result<ModelResponse, AgentError> {
         let mut conversation = self.build_messages(messages)?;
         let mut iteration = 0;
@@ -133,12 +195,60 @@ impl Agent {
                 // Execute all tool calls in parallel
                 let mut join_set = tokio::task::JoinSet::new();
 
+                // Clone hooks once outside the loop for better performance
+                let hooks_clone = hooks.clone();
+                let approved_tools = self.approved_dangerous_tools.clone();
+                
                 // Start all tool calls concurrently
                 for call in tool_calls {
                     let tools = self.tools.clone();
                     let call_clone = call.clone();
-                    join_set
-                        .spawn(async move { (call_clone.clone(), tools.invoke(call_clone).await) });
+                    let hooks_for_task = hooks_clone.clone();
+                    let approved_tools_for_task = approved_tools.clone();
+                    
+                    join_set.spawn(async move { 
+                        let call_name = call_clone.name.clone();
+                        let result = if tools.is_dangerous_function(&call_name) {
+                            // Check if pre-approved first
+                            if approved_tools_for_task.contains(&call_name) {
+                                // Pre-approved dangerous tool - execute without asking
+                                tools.invoke(call_clone.clone()).await
+                            } else if let Some(hooks) = hooks_for_task {
+                                // Not pre-approved - ask for approval via hooks
+                                let approval_request = ApprovalRequest {
+                                    tool_name: call_name.clone(),
+                                    args: call_clone.args.clone(),
+                                };
+                                
+                                if hooks.request_approval(approval_request).await {
+                                    // Approved this time - execute the tool
+                                    tools.invoke(call_clone.clone()).await
+                                } else {
+                                    // Denied - return error
+                                    Err(crate::tool::ToolError::execution(
+                                        &call_name,
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::PermissionDenied,
+                                            "User denied execution of dangerous operation"
+                                        )
+                                    ))
+                                }
+                            } else {
+                                // Dangerous tool, not pre-approved, no hooks - deny
+                                Err(crate::tool::ToolError::execution(
+                                    &call_name,
+                                    std::io::Error::new(
+                                        std::io::ErrorKind::PermissionDenied,
+                                        "Dangerous operation requires approval but no hooks provided"
+                                    )
+                                ))
+                            }
+                        } else {
+                            // Safe function - execute normally
+                            tools.invoke(call_clone.clone()).await
+                        };
+                        (call_clone, result)
+                    });
                 }
 
                 // Collect all results
@@ -257,6 +367,18 @@ impl Agent {
         &self,
         messages: impl IntoIterator<Item = impl Into<Message>> + Send,
     ) -> futures_util::stream::BoxStream<'_, Result<events::AgentEvent, AgentError>> {
+        self.stream_with_hooks(messages, None)
+    }
+
+    /// Streams agent execution events with optional hooks for dangerous operations.
+    ///
+    /// This method is like `stream()` but allows passing ToolHooks for dangerous
+    /// operations that need approval or progress reporting.
+    pub fn stream_with_hooks(
+        &self,
+        messages: impl IntoIterator<Item = impl Into<Message>> + Send,
+        hooks: Option<ToolHooks>,
+    ) -> futures_util::stream::BoxStream<'_, Result<events::AgentEvent, AgentError>> {
         use async_stream::try_stream;
         use futures_util::StreamExt;
 
@@ -334,6 +456,10 @@ impl Agent {
 
                     // Execute all tool calls in parallel
                     let mut join_set = tokio::task::JoinSet::new();
+                    
+                    // Clone hooks once outside the loop for better performance
+                    let hooks_clone = hooks.clone();
+                    let approved_tools = self.approved_dangerous_tools.clone();
 
                     // Emit tool execution events and start all tool calls concurrently
                     for tool_call in &tool_calls {
@@ -341,8 +467,50 @@ impl Agent {
 
                         let tools = self.tools.clone();
                         let call_clone = tool_call.clone();
+                        let hooks_for_task = hooks_clone.clone();
+                        let approved_tools_for_task = approved_tools.clone();
                         join_set.spawn(async move {
-                            tools.invoke(call_clone).await
+                            let call_name = call_clone.name.clone();
+                            let result = if tools.is_dangerous_function(&call_name) {
+                                // Check if pre-approved first
+                                if approved_tools_for_task.contains(&call_name) {
+                                    // Pre-approved dangerous tool - execute without asking
+                                    tools.invoke(call_clone.clone()).await
+                                } else if let Some(hooks) = hooks_for_task {
+                                    // Not pre-approved - ask for approval via hooks
+                                    let approval_request = ApprovalRequest {
+                                        tool_name: call_name.clone(),
+                                        args: call_clone.args.clone(),
+                                    };
+                                    
+                                    if hooks.request_approval(approval_request).await {
+                                        // Approved this time - execute the tool
+                                        tools.invoke(call_clone.clone()).await
+                                    } else {
+                                        // Denied - return error
+                                        Err(crate::tool::ToolError::execution(
+                                            &call_name,
+                                            std::io::Error::new(
+                                                std::io::ErrorKind::PermissionDenied,
+                                                "User denied execution of dangerous operation"
+                                            )
+                                        ))
+                                    }
+                                } else {
+                                    // Dangerous tool, not pre-approved, no hooks - deny
+                                    Err(crate::tool::ToolError::execution(
+                                        &call_name,
+                                        std::io::Error::new(
+                                            std::io::ErrorKind::PermissionDenied,
+                                            "Dangerous operation requires approval but no hooks provided"
+                                        )
+                                    ))
+                                }
+                            } else {
+                                // Safe function - execute normally
+                                tools.invoke(call_clone.clone()).await
+                            };
+                            result
                         });
                     }
 
