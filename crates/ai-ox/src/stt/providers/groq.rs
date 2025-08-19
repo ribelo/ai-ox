@@ -1,4 +1,5 @@
 use futures_util::{future::BoxFuture, FutureExt};
+use base64::Engine;
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 

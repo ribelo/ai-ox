@@ -11,6 +11,7 @@ use serde_json::Value;
 
 use crate::{
     content::delta::StreamEvent,
+    tool::ToolCall,
     errors::GenerateContentError,
     model::{
         Model, ModelInfo, Provider,
@@ -18,6 +19,140 @@ use crate::{
         response::{ModelResponse, RawStructuredResponse},
     },
 };
+use std::collections::HashMap;
+
+/// Simple buffer for accumulating partial tool calls from OpenRouter streaming
+#[derive(Debug, Default)]
+struct OpenRouterStreamProcessor {
+    partial_calls: HashMap<String, PartialCall>,
+}
+
+#[derive(Debug)]
+struct PartialCall {
+    id: String,
+    name: Option<String>,
+    args: String,
+}
+
+impl OpenRouterStreamProcessor {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn is_valid_json(s: &str) -> bool {
+        !s.trim().is_empty() && serde_json::from_str::<Value>(s).is_ok()
+    }
+
+    fn process_chunk(&mut self, chunk: openrouter_ox::response::ChatCompletionChunk) -> Vec<StreamEvent> {
+        let mut events = Vec::new();
+
+        // Process each choice in the chunk
+        for choice in chunk.choices {
+            // Handle text content
+            if let Some(content) = choice.delta.content {
+                if !content.is_empty() {
+                    events.push(StreamEvent::TextDelta(content));
+                }
+            }
+
+            // Handle tool calls - just accumulate by ID until complete
+            if let Some(tool_calls) = choice.delta.tool_calls {
+                for tool_call in tool_calls {
+                    if let Some(id) = tool_call.id {
+                        // New tool call - create entry
+                        self.partial_calls.insert(id.clone(), PartialCall {
+                            id: id.clone(),
+                            name: tool_call.function.name,
+                            args: tool_call.function.arguments,
+                        });
+                    } else {
+                        // Continue existing tool call - append to the most recent incomplete one
+                        // NOTE: This assumes OpenRouter streams one tool at a time (which it does in practice).
+                        // If multiple tools streamed simultaneously, we'd need tool call indexing.
+                        if let Some(partial) = self.partial_calls.values_mut()
+                            .find(|p| p.name.is_some() && !Self::is_valid_json(&p.args)) 
+                        {
+                            partial.args.push_str(&tool_call.function.arguments);
+                        }
+                    }
+
+                    // Check for completed tool calls
+                    let mut completed_ids = Vec::new();
+                    for (id, partial) in &self.partial_calls {
+                        if partial.name.is_some() && Self::is_valid_json(&partial.args) {
+                            completed_ids.push(id.clone());
+                        }
+                    }
+
+                    // Emit completed tool calls
+                    for id in completed_ids {
+                        if let Some(partial) = self.partial_calls.remove(&id) {
+                            let args = match serde_json::from_str(&partial.args) {
+                                Ok(json) => json,
+                                Err(e) => {
+                                    eprintln!("Warning: Failed to parse tool call args as JSON: {}. Args: '{}'", e, partial.args);
+                                    serde_json::Value::Object(Default::default())
+                                }
+                            };
+                            events.push(StreamEvent::ToolCall(ToolCall {
+                                id: partial.id,
+                                name: partial.name.unwrap(),
+                                args,
+                            }));
+                        }
+                    }
+                }
+            }
+
+            // Handle finish reason and usage
+            if let Some(finish_reason) = choice.finish_reason {
+                // Emit any remaining complete tool calls
+                let remaining_complete: Vec<String> = self.partial_calls
+                    .iter()
+                    .filter(|(_, p)| p.name.is_some() && Self::is_valid_json(&p.args))
+                    .map(|(id, _)| id.clone())
+                    .collect();
+                
+                for id in remaining_complete {
+                    if let Some(partial) = self.partial_calls.remove(&id) {
+                        let args = match serde_json::from_str(&partial.args) {
+                            Ok(json) => json,
+                            Err(e) => {
+                                eprintln!("Warning: Failed to parse final tool call args as JSON: {}. Args: '{}'", e, partial.args);
+                                serde_json::Value::Object(Default::default())
+                            }
+                        };
+                        events.push(StreamEvent::ToolCall(ToolCall {
+                            id: partial.id,
+                            name: partial.name.unwrap(),
+                            args,
+                        }));
+                    }
+                }
+
+                // Clear any remaining incomplete calls
+                self.partial_calls.clear();
+
+                // Add usage and stop events
+                if let Some(usage_data) = &chunk.usage {
+                    let usage = conversion::extract_usage_from_response(Some(usage_data));
+                    events.push(StreamEvent::Usage(usage.clone()));
+                    events.push(StreamEvent::StreamStop(crate::content::delta::StreamStop {
+                        finish_reason: conversion::convert_finish_reason(finish_reason),
+                        usage,
+                    }));
+                } else {
+                    events.push(StreamEvent::StreamStop(crate::content::delta::StreamStop {
+                        finish_reason: conversion::convert_finish_reason(finish_reason),
+                        usage: crate::usage::Usage::default(),
+                    }));
+                }
+            }
+        }
+
+        events
+    }
+}
 
 /// OpenRouter model implementation that adapts OpenRouter API to the ai-ox Model trait.
 #[derive(Debug, Clone, Builder)]
@@ -161,12 +296,13 @@ impl Model for OpenRouterModel {
             let chat_request = Self::build_openrouter_request(request, &model_name, &tool_choice, None)?;
 
             let mut chunk_stream = client.stream(&chat_request);
+            let mut processor = OpenRouterStreamProcessor::new();
 
             while let Some(chunk_result) = chunk_stream.next().await {
                 let chunk = chunk_result.map_err(OpenRouterError::Api)?;
 
-                // Convert chunk to stream events - yield each event individually
-                let events = conversion::convert_chunk_to_stream_events(chunk);
+                // Process chunk with stateful processor to handle tool calls properly
+                let events = processor.process_chunk(chunk);
 
                 for event in events {
                     // Check for stream end

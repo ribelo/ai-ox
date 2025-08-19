@@ -480,9 +480,7 @@ mod tests {
     fn test_convert_tools_to_anthropic_skips_gemini_tools() {
         use crate::tool::gemini::GeminiTool;
         
-        let gemini_tool = AiOxTool::GeminiTool(GeminiTool {
-            function_declarations: vec![],
-        });
+        let gemini_tool = AiOxTool::GeminiTool(GeminiTool::FunctionDeclarations(vec![]));
         
         let tools = vec![gemini_tool];
         let result = convert_tools_to_anthropic(tools).unwrap();

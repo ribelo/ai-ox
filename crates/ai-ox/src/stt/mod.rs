@@ -15,8 +15,9 @@ pub use builder::groq_stt;
 #[cfg(feature = "mistral")]
 pub use builder::mistral_stt;
 
-#[cfg(feature = "gemini")]
-pub use builder::gemini_stt;
+// TODO: Implement Gemini STT provider (currently requires ALSA for audio examples)
+// #[cfg(feature = "gemini")]
+// pub use builder::gemini_stt;
 
 use futures_util::future::BoxFuture;
 use std::sync::Arc;

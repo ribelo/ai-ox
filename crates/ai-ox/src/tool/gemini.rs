@@ -1,5 +1,5 @@
 use crate::tool::{Tool as AiOxTool, ToolCall};
-use gemini_ox::tool::{FunctionMetadata as GeminiFunctionMetadata, Tool as GeminiTool};
+pub use gemini_ox::tool::{FunctionMetadata as GeminiFunctionMetadata, Tool as GeminiTool};
 use gemini_ox::content::part::FunctionCall as GeminiFunctionCall;
 
 /// Converts an `ai-ox` `Tool` to a `gemini-ox` `Tool`.

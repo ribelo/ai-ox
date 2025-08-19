@@ -39,22 +39,24 @@ pub fn mistral_stt_with_key(model: &str, api_key: &str) -> Result<Arc<dyn Speech
 }
 
 /// Convenience function to create a Gemini STT provider
-#[cfg(feature = "gemini")]
-pub fn gemini_stt(model: &str) -> Result<Arc<dyn SpeechToText>, SttError> {
-    super::providers::gemini::GeminiStt::builder()
-        .model(model)
-        .api_key_from_env("GEMINI_API_KEY")?
-        .build()
-}
+/// TODO: Implement Gemini STT provider (currently requires ALSA for audio examples)
+// #[cfg(feature = "gemini")]
+// pub fn gemini_stt(model: &str) -> Result<Arc<dyn SpeechToText>, SttError> {
+//     super::providers::gemini::GeminiStt::builder()
+//         .model(model)
+//         .api_key_from_env("GEMINI_API_KEY")?
+//         .build()
+// }
 
 /// Convenience function to create a Gemini STT provider with custom API key
-#[cfg(feature = "gemini")]
-pub fn gemini_stt_with_key(model: &str, api_key: &str) -> Result<Arc<dyn SpeechToText>, SttError> {
-    super::providers::gemini::GeminiStt::builder()
-        .model(model)
-        .api_key(api_key)
-        .build()
-}
+/// TODO: Implement Gemini STT provider (currently requires ALSA for audio examples)
+// #[cfg(feature = "gemini")]
+// pub fn gemini_stt_with_key(model: &str, api_key: &str) -> Result<Arc<dyn SpeechToText>, SttError> {
+//     super::providers::gemini::GeminiStt::builder()
+//         .model(model)
+//         .api_key(api_key)
+//         .build()
+// }
 
 /// Auto-detect and create the best available STT provider
 /// Auto-detection preference order:
@@ -72,10 +74,11 @@ pub fn auto_stt() -> Result<Arc<dyn SpeechToText>, SttError> {
         return mistral_stt("voxtral-large-24-05");
     }
 
-    #[cfg(feature = "gemini")]
-    if std::env::var("GEMINI_API_KEY").is_ok() {
-        return gemini_stt("gemini-1.5-flash");
-    }
+    // TODO: Implement Gemini STT provider (currently requires ALSA for audio examples)
+    // #[cfg(feature = "gemini")]
+    // if std::env::var("GEMINI_API_KEY").is_ok() {
+    //     return gemini_stt("gemini-1.5-flash");
+    // }
 
     Err(SttError::MissingApiKey)
 }
@@ -102,22 +105,26 @@ mod tests {
         let original_gemini = std::env::var("GEMINI_API_KEY");
 
         // Remove all keys temporarily
-        std::env::remove_var("GROQ_API_KEY");
-        std::env::remove_var("MISTRAL_API_KEY");
-        std::env::remove_var("GEMINI_API_KEY");
+        unsafe {
+            std::env::remove_var("GROQ_API_KEY");
+            std::env::remove_var("MISTRAL_API_KEY");
+            std::env::remove_var("GEMINI_API_KEY");
+        }
 
         let result = auto_stt();
         assert!(matches!(result, Err(SttError::MissingApiKey)));
 
         // Restore original values
-        if let Ok(key) = original_groq {
-            std::env::set_var("GROQ_API_KEY", key);
-        }
-        if let Ok(key) = original_mistral {
-            std::env::set_var("MISTRAL_API_KEY", key);
-        }
-        if let Ok(key) = original_gemini {
-            std::env::set_var("GEMINI_API_KEY", key);
+        unsafe {
+            if let Ok(key) = original_groq {
+                std::env::set_var("GROQ_API_KEY", key);
+            }
+            if let Ok(key) = original_mistral {
+                std::env::set_var("MISTRAL_API_KEY", key);
+            }
+            if let Ok(key) = original_gemini {
+                std::env::set_var("GEMINI_API_KEY", key);
+            }
         }
     }
 }

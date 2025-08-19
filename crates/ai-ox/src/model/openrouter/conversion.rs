@@ -2,19 +2,19 @@ use openrouter_ox::{
     message::{
         AssistantMessage, Message as OpenRouterMessage, Messages as OpenRouterMessages, SystemMessage, ToolMessage, UserMessage,
     },
-    response::{ChatCompletionChunk, FinishReason as OpenRouterFinishReason, FunctionCall, ToolCall as OpenRouterToolCall},
+    response::{FinishReason as OpenRouterFinishReason, FunctionCall, ToolCall as OpenRouterToolCall},
     tool::FunctionMetadata,
 };
 use serde_json::Value;
 
 use crate::{
     content::{
-        delta::{FinishReason, StreamEvent, StreamStop},
+        delta::FinishReason,
         message::{Message, MessageRole},
         part::Part,
     },
     model::request::ModelRequest,
-    tool::{Tool, ToolCall},
+    tool::Tool,
     usage::Usage,
 };
 
@@ -30,60 +30,6 @@ pub fn convert_finish_reason(reason: OpenRouterFinishReason) -> FinishReason {
     }
 }
 
-/// Convert OpenRouter chunk to ai-ox StreamEvents with 1-to-1 mapping
-pub fn convert_chunk_to_stream_events(chunk: ChatCompletionChunk) -> Vec<StreamEvent> {
-    let mut events = Vec::new();
-
-    // Process each choice in the chunk
-    for choice in chunk.choices {
-        // Handle text content
-        if let Some(content) = choice.delta.content {
-            if !content.is_empty() {
-                events.push(StreamEvent::TextDelta(content));
-            }
-        }
-
-        // Handle tool calls
-        if let Some(tool_calls) = choice.delta.tool_calls {
-            for tool_call in tool_calls {
-                if let (Some(id), Some(name)) = (tool_call.id, tool_call.function.name) {
-                    let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
-                        .unwrap_or(serde_json::Value::Object(Default::default()));
-
-                    let ai_tool_call = ToolCall {
-                        id,
-                        name,
-                        args,
-                    };
-                    events.push(StreamEvent::ToolCall(ai_tool_call));
-                }
-            }
-        }
-
-        // Handle finish reason and usage
-        if let Some(finish_reason) = choice.finish_reason {
-            // Add usage event if available
-            if let Some(usage_data) = &chunk.usage {
-                let usage = extract_usage_from_response(Some(usage_data));
-                events.push(StreamEvent::Usage(usage.clone()));
-
-                // Add stream stop event
-                events.push(StreamEvent::StreamStop(StreamStop {
-                    finish_reason: convert_finish_reason(finish_reason),
-                    usage,
-                }));
-            } else {
-                // Add stream stop event with empty usage
-                events.push(StreamEvent::StreamStop(StreamStop {
-                    finish_reason: convert_finish_reason(finish_reason),
-                    usage: Usage::default(),
-                }));
-            }
-        }
-    }
-
-    events
-}
 
 /// Build OpenRouter messages from ai-ox ModelRequest
 pub fn build_openrouter_messages(request: &ModelRequest) -> Result<OpenRouterMessages, OpenRouterError> {

@@ -239,7 +239,6 @@ mod tests {
 
     #[test]
     fn test_json_schema_generation() {
-        use gemini_ox::ResponseSchema;
         use schemars::schema_for;
 
         // Test that we can generate schemas for our types
@@ -247,8 +246,11 @@ mod tests {
         let _complex_schema = schema_for!(ComplexData);
 
         // Test that we can use ResponseSchema::from which is what the implementation uses
-        let _response_schema_cat = ResponseSchema::from::<Cat>();
-        let _response_schema_complex = ResponseSchema::from::<ComplexData>();
+        #[cfg(feature = "schema")]
+        {
+            let _response_schema_cat = <gemini_ox::ResponseSchema>::from::<Cat>();
+            let _response_schema_complex = <gemini_ox::ResponseSchema>::from::<ComplexData>();
+        }
     }
 
     #[tokio::test]
@@ -509,5 +511,78 @@ Received {} events total",
             text_delta_count > 0,
             "Should have received at least one TextDelta event"
         );
+    }
+
+    #[tokio::test]
+    async fn test_gemini_tool_conversion_to_request() {
+        use crate::{
+            content::{message::{Message, MessageRole}, part::Part},
+            tool::{FunctionMetadata, Tool},
+        };
+        use serde_json::json;
+
+        // Create a simple function declaration tool
+        let tool = Tool::FunctionDeclarations(vec![FunctionMetadata {
+            name: "get_weather".to_string(),
+            description: Some("Get the current weather for a location".to_string()),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The location to get weather for"
+                    }
+                },
+                "required": ["location"]
+            }),
+        }]);
+
+        let message = Message {
+            role: MessageRole::User,
+            content: vec![Part::Text {
+                text: "What's the weather like in San Francisco?".to_string(),
+            }],
+            timestamp: chrono::Utc::now(),
+        };
+
+        // Test the conversion function directly (without making API call)
+        let result = conversion::convert_request_to_gemini(
+            ModelRequest {
+                messages: vec![message],
+                system_message: None,
+                tools: Some(vec![tool.clone()]), // Actually provide tools here!
+            },
+            "gemini-1.5-flash".to_string(),
+            None, // system_instruction
+            None, // tool_config
+            None, // safety_settings
+            None, // generation_config
+            None, // cached_content
+        );
+
+        match result {
+            Ok(gemini_request) => {
+                println!("Tool conversion succeeded!");
+                println!("Tools in request: {:?}", gemini_request.tools);
+                
+                // Verify tools were converted
+                assert!(gemini_request.tools.is_some(), "Tools should be present in converted request");
+                let tools = gemini_request.tools.unwrap();
+                assert_eq!(tools.len(), 1, "Should have exactly one tool");
+                
+                // Print the JSON to see what it looks like
+                let json_str = serde_json::to_string_pretty(&tools[0]).unwrap();
+                println!("Converted tool JSON: {}", json_str);
+                
+                // Check that it's the right structure - this should expose issues
+                let tool_json = &tools[0];
+                if tool_json.get("function_declarations").is_none() {
+                    panic!("Expected 'function_declarations' field in converted tool JSON, got: {}", json_str);
+                }
+            }
+            Err(e) => {
+                panic!("Tool conversion failed: {:?}", e);
+            }
+        }
     }
 }

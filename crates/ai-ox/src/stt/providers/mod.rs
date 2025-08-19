@@ -4,5 +4,6 @@ pub mod groq;
 #[cfg(feature = "mistral")]
 pub mod mistral;
 
-#[cfg(feature = "gemini")]
-pub mod gemini;
+// TODO: Implement Gemini STT provider (requires ALSA dependencies)
+// #[cfg(feature = "gemini")]
+// pub mod gemini;
