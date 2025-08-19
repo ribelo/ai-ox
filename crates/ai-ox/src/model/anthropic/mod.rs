@@ -116,7 +116,7 @@ impl Model for AnthropicModel {
                     .map_err(|e| AnthropicError::Api(e))
                     .map_err(|e| GenerateContentError::provider_error(
                         "anthropic", 
-                        format!("Stream error for model {}: {}", model, e)
+                        format!("Stream error for model {}: {}", self.model, e)
                     ))?;
                 let events = conversion::convert_stream_event_to_ai_ox(response);
                 for event in events {

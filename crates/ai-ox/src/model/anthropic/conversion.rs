@@ -381,9 +381,17 @@ fn convert_tools_to_anthropic(tools: Vec<AiOxTool>) -> Result<Vec<anthropic_ox::
                         func.description.clone().unwrap_or_default(),
                     );
                     
-                    // Note: Schema support requires schema feature
+                    // Schema support requires schema feature to be enabled in anthropic-ox
                     #[cfg(feature = "schema")]
                     let anthropic_tool = anthropic_tool.with_schema(func.parameters.clone());
+                    
+                    #[cfg(not(feature = "schema"))]
+                    {
+                        // Return an error if schema feature is not enabled but tools are provided
+                        return Err(GenerateContentError::configuration(
+                            "Tool schemas require the 'schema' feature to be enabled. Please enable the 'schema' feature."
+                        ));
+                    }
                     
                     anthropic_tools.push(anthropic_tool);
                 }
@@ -435,18 +443,18 @@ impl From<Option<AnthropicStopReason>> for FinishReason {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tool::{Tool as AiOxTool, function::FunctionDeclaration};
+    use crate::tool::{Tool as AiOxTool, FunctionMetadata};
     use serde_json::json;
 
     #[test]
     fn test_convert_tools_to_anthropic_multiple_functions() {
-        let function1 = FunctionDeclaration {
+        let function1 = FunctionMetadata {
             name: "get_weather".to_string(),
             description: Some("Get weather information".to_string()),
             parameters: json!({"type": "object", "properties": {"location": {"type": "string"}}}),
         };
         
-        let function2 = FunctionDeclaration {
+        let function2 = FunctionMetadata {
             name: "get_time".to_string(),
             description: Some("Get current time".to_string()),
             parameters: json!({"type": "object"}),
@@ -548,6 +556,7 @@ mod tests {
         let message_start = AnthropicStreamEvent::MessageStart {
             message: StreamMessage {
                 id: "msg_123".to_string(),
+                r#type: "message".to_string(),
                 role: anthropic_ox::message::Role::Assistant,
                 content: vec![],
                 model: "claude-3-haiku".to_string(),
@@ -700,7 +709,8 @@ mod tests {
 
     #[test]
     fn test_stream_event_error() {
-        use anthropic_ox::response::{StreamEvent as AnthropicStreamEvent, ErrorInfo};
+        use anthropic_ox::response::StreamEvent as AnthropicStreamEvent;
+        use anthropic_ox::error::ErrorInfo;
         
         let error_event = AnthropicStreamEvent::Error {
             error: ErrorInfo {
