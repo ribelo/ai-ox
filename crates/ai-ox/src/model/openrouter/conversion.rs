@@ -112,7 +112,11 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
                     Part::Text { text } => text_parts.push(text),
                     Part::ToolResult { call_id, content, .. } => {
                         // Collect tool results to create separate Tool messages
-                        let content_str = serde_json::to_string(&content).unwrap_or_default();
+                        // Convert JSON value to string - if it's already a string, use it as-is
+                        let content_str = match content {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => serde_json::to_string(&other).unwrap_or_default(),
+                        };
                         tool_results.push((call_id, content_str));
                     }
                     _ => {
@@ -756,6 +760,205 @@ mod tests {
                 assert_eq!(tool_calls[0].function.name, Some("get_weather".to_string()));
             }
             _ => panic!("Expected Assistant message"),
+        }
+    }
+
+    #[test]
+    fn test_convert_tool_result_message_format() {
+        use crate::content::message::{Message, MessageRole};
+        use crate::content::part::Part;
+        use serde_json::json;
+
+        // Create a message with tool result (similar to what Agronauts produces)
+        let tool_result_content = json!([{
+            "content_id": 0,
+            "document_id": 2,
+            "score": 0.4306826078078052,
+            "tags": [
+                {"id": 5, "name": "Centrum Doradztwa Rolniczego"},
+                {"id": 1, "name": "nawozy azotowe"}
+            ],
+            "text": "Nitrogen fertilizers are essential for corn production."
+        }]);
+
+        let tool_result_message = Message {
+            role: MessageRole::User,
+            content: vec![Part::ToolResult {
+                call_id: "call_123".to_string(),
+                name: "knowledge_search".to_string(),
+                content: tool_result_content,
+            }],
+            timestamp: chrono::Utc::now(),
+        };
+
+        // Convert to OpenRouter format
+        let openrouter_messages = convert_message_to_openrouter(tool_result_message);
+
+        println!("Converted messages: {:#?}", openrouter_messages);
+        println!("Number of messages: {}", openrouter_messages.len());
+
+        // The issue might be in how tool results are converted
+        // According to the conversion.rs logic, tool results should create Tool messages
+        assert_eq!(openrouter_messages.len(), 1, "Should produce exactly one Tool message");
+        
+        match &openrouter_messages[0] {
+            OpenRouterMessage::Tool(tool_msg) => {
+                assert_eq!(tool_msg.tool_call_id, "call_123");
+                println!("Tool message content: {}", tool_msg.content);
+                
+                // Verify the content is valid JSON
+                let _parsed: serde_json::Value = serde_json::from_str(&tool_msg.content)
+                    .expect("Tool message content should be valid JSON");
+            }
+            _ => panic!("Expected Tool message, got: {:?}", openrouter_messages[0]),
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "Requires OPENROUTER_API_KEY environment variable and makes actual API calls"]
+    async fn test_openrouter_tool_result_flow_reproduces_400_error() {
+        use crate::content::message::{Message, MessageRole};
+        use crate::content::part::Part;
+        use crate::model::{Model, request::ModelRequest};
+        use crate::tool::{FunctionMetadata, Tool};
+        use serde_json::json;
+
+        let api_key = std::env::var("OPENROUTER_API_KEY")
+            .expect("OPENROUTER_API_KEY must be set for this test");
+
+        // Create OpenRouter model
+        let model = crate::model::openrouter::OpenRouterModel::builder()
+            .api_key(api_key)
+            .model("google/gemini-2.0-flash-exp")
+            .build();
+
+        // Define the knowledge search tool (similar to what Agronauts uses)
+        let knowledge_search_tool = Tool::FunctionDeclarations(vec![FunctionMetadata {
+            name: "knowledge_search".to_string(),
+            description: Some("Search agricultural knowledge database".to_string()),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query for agricultural knowledge"
+                    }
+                },
+                "required": ["query"]
+            }),
+        }]);
+
+        // Step 1: User asks question
+        let user_message = Message {
+            role: MessageRole::User,
+            content: vec![Part::Text {
+                text: "Tell me about corn fertilizers".to_string(),
+            }],
+            timestamp: chrono::Utc::now(),
+        };
+
+        let first_request = ModelRequest {
+            messages: vec![user_message],
+            system_message: None,
+            tools: Some(vec![knowledge_search_tool]),
+        };
+
+        println!("Step 1: Making initial request with tool...");
+        let first_response = model.request(first_request).await.unwrap();
+        
+        // Verify we got a tool call
+        let tool_call = first_response.message.content.iter()
+            .find_map(|part| match part {
+                Part::ToolCall { id, name, args } => Some((id.clone(), name.clone(), args.clone())),
+                _ => None,
+            })
+            .expect("Expected a tool call in the response");
+
+        println!("Step 2: Got tool call: {} -> {}", tool_call.1, tool_call.2);
+
+        // Step 3: Simulate tool execution result (this is what Agronauts returns)
+        let tool_result_content = json!([{
+            "content_id": 0,
+            "document_id": 2,
+            "score": 0.4306826078078052,
+            "tags": [
+                {"id": 5, "name": "Centrum Doradztwa Rolniczego"},
+                {"id": 1, "name": "nawozy azotowe"}
+            ],
+            "text": "Nitrogen fertilizers are essential for corn production. Apply 150-200 kg N/ha in split applications."
+        }]);
+
+        let tool_result_message = Message {
+            role: MessageRole::User,
+            content: vec![Part::ToolResult {
+                call_id: tool_call.0.clone(),
+                name: tool_call.1.clone(),
+                content: tool_result_content,
+            }],
+            timestamp: chrono::Utc::now(),
+        };
+
+        // Step 4: Send the tool result back - this should trigger the 400 error
+        let messages_with_result = vec![
+            Message {
+                role: MessageRole::User,
+                content: vec![Part::Text {
+                    text: "Tell me about corn fertilizers".to_string(),
+                }],
+                timestamp: chrono::Utc::now(),
+            },
+            Message {
+                role: MessageRole::Assistant,
+                content: vec![Part::ToolCall {
+                    id: tool_call.0.clone(),
+                    name: tool_call.1.clone(),
+                    args: tool_call.2.clone(),
+                }],
+                timestamp: chrono::Utc::now(),
+            },
+            tool_result_message,
+        ];
+
+        let second_request = ModelRequest {
+            messages: messages_with_result,
+            system_message: None,
+            tools: Some(vec![]),
+        };
+
+        println!("Step 3: Sending tool result back to OpenRouter...");
+        println!("Messages being sent to OpenRouter:");
+        for (i, msg) in second_request.messages.iter().enumerate() {
+            println!("  Message {}: {:?}", i, msg.role);
+            for (j, part) in msg.content.iter().enumerate() {
+                match part {
+                    Part::Text { text } => println!("    Part {}: Text({})", j, text.chars().take(50).collect::<String>()),
+                    Part::ToolCall { id, name, .. } => println!("    Part {}: ToolCall({}, {})", j, id, name),
+                    Part::ToolResult { call_id, name, .. } => println!("    Part {}: ToolResult({}, {})", j, call_id, name),
+                    _ => println!("    Part {}: {:?}", j, part),
+                }
+            }
+        }
+
+        // This should reproduce the 400 error we're seeing in Agronauts
+        let result = model.request(second_request).await;
+        
+        match result {
+            Ok(_) => {
+                println!("SUCCESS: Tool result processed without error!");
+                // If this passes, the fix worked
+            }
+            Err(e) => {
+                println!("ERROR: {}", e);
+                // Check if it's the specific 400 error we're debugging
+                let error_str = e.to_string();
+                if error_str.contains("400") && error_str.contains("Provider returned error") {
+                    panic!("REPRODUCED: OpenRouter 400 error when processing tool results: {}", e);
+                } else {
+                    // Some other error occurred
+                    println!("Different error occurred: {}", e);
+                    panic!("Unexpected error: {}", e);
+                }
+            }
         }
     }
 }
