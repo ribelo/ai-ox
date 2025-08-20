@@ -110,14 +110,12 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
             for part in message.content {
                 match part {
                     Part::Text { text } => text_parts.push(text),
-                    Part::ToolResult { call_id, content, .. } => {
+                    Part::ToolResult { call_id, name, content } => {
                         // Collect tool results to create separate Tool messages
-                        // Convert JSON value to string - if it's already a string, use it as-is
-                        let content_str = match content {
-                            serde_json::Value::String(s) => s.clone(),
-                            other => serde_json::to_string(&other).unwrap_or_default(),
-                        };
-                        tool_results.push((call_id, content_str));
+                        // OpenRouter expects JSON-encoded content for tool responses
+                        let content_str = serde_json::to_string(&content).unwrap_or_else(|_| "null".to_string());
+                        println!("DEBUG: User ToolResult conversion for call_id {} and name {} with JSON content", call_id, name);
+                        tool_results.push((call_id, name, content_str));
                     }
                     _ => {
                         // Convert other parts to text representation
@@ -136,8 +134,8 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
             }
 
             // Add tool result messages
-            for (call_id, content) in tool_results {
-                messages.push(OpenRouterMessage::Tool(ToolMessage::new(call_id, content)));
+            for (call_id, name, content) in tool_results {
+                messages.push(OpenRouterMessage::Tool(ToolMessage::with_name(call_id, content, name)));
             }
 
             // If no content at all, return empty user message
@@ -149,8 +147,10 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
         }
         MessageRole::Assistant => {
             // For assistant messages, handle tool calls and regular content
+            // BUT if we find ToolResult parts, those need to be converted to separate Tool messages
             let mut text_parts = Vec::new();
             let mut tool_calls = Vec::new();
+            let mut tool_results = Vec::new();
 
             for part in message.content {
                 match part {
@@ -168,6 +168,13 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
                         };
                         tool_calls.push(tool_call);
                     }
+                    Part::ToolResult { call_id, name, content } => {
+                        // Convert tool results to separate Tool messages  
+                        // OpenRouter expects JSON-encoded content for tool responses
+                        let content_str = serde_json::to_string(&content).unwrap_or_else(|_| "null".to_string());
+                        println!("DEBUG: Converting Assistant ToolResult to Tool message for call_id {} and name {} with JSON content", call_id, name);
+                        tool_results.push((call_id, name, content_str));
+                    }
                     _ => {
                         // Convert other parts to text representation
                         if let Ok(serialized) = serde_json::to_string(&part) {
@@ -177,18 +184,34 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
                 }
             }
 
-            let mut assistant_msg = if text_parts.is_empty() {
-                AssistantMessage::text("")
-            } else {
-                AssistantMessage::text(text_parts.join("\n"))
-            };
+            let mut messages = Vec::new();
 
-            if !tool_calls.is_empty() {
-                assistant_msg.tool_calls = Some(tool_calls);
+            // Create assistant message (if there's content to add)
+            if !text_parts.is_empty() || !tool_calls.is_empty() {
+                let mut assistant_msg = if text_parts.is_empty() {
+                    AssistantMessage::text("")
+                } else {
+                    AssistantMessage::text(text_parts.join("\n"))
+                };
+
+                if !tool_calls.is_empty() {
+                    assistant_msg.tool_calls = Some(tool_calls);
+                }
+
+                messages.push(OpenRouterMessage::Assistant(assistant_msg));
             }
 
-            // Assistant messages always return a single message
-            vec![OpenRouterMessage::Assistant(assistant_msg)]
+            // Add tool result messages (these should be separate Tool messages)
+            for (call_id, name, content) in tool_results {
+                messages.push(OpenRouterMessage::Tool(ToolMessage::with_name(call_id, content, name)));
+            }
+
+            // If no content at all, return empty assistant message
+            if messages.is_empty() {
+                messages.push(OpenRouterMessage::Assistant(AssistantMessage::text("")));
+            }
+
+            messages
         }
     }
 }
@@ -960,5 +983,91 @@ mod tests {
                 }
             }
         }
+    }
+}
+
+fn convert_tool_result_to_text(content: &serde_json::Value) -> String {
+    match content {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Null => "null".to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Array(arr) => {
+            if arr.is_empty() {
+                "No results found.".to_string()
+            } else {
+                // Process each array item more deeply
+                arr.iter()
+                    .filter_map(|item| extract_meaningful_content(item))
+                    .collect::<Vec<_>>()
+                    .join("\n\n---\n\n")
+            }
+        }
+        serde_json::Value::Object(_) => {
+            // For object results, try to extract meaningful text
+            extract_meaningful_content(content).unwrap_or_else(|| "No readable content".to_string())
+        }
+    }
+}
+
+fn extract_meaningful_content(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::Object(obj) => {
+            // Try different common text fields
+            if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
+                return Some(text.to_string());
+            }
+            if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
+                return Some(content.to_string());
+            }
+            if let Some(message) = obj.get("message").and_then(|v| v.as_str()) {
+                return Some(message.to_string());
+            }
+            if let Some(description) = obj.get("description").and_then(|v| v.as_str()) {
+                return Some(description.to_string());
+            }
+            
+            // For nested structures with content arrays, recursively extract text
+            if let Some(content_array) = obj.get("content") {
+                if let serde_json::Value::Array(arr) = content_array {
+                    let texts: Vec<String> = arr.iter()
+                        .filter_map(|item| extract_meaningful_content(item))
+                        .collect();
+                    if !texts.is_empty() {
+                        return Some(texts.join(" "));
+                    }
+                }
+            }
+            
+            // If no text fields found, try to build a readable representation from key-value pairs
+            let mut parts = Vec::new();
+            for (key, value) in obj {
+                if key == "score" || key == "id" || key == "content_id" || key == "document_id" {
+                    continue; // Skip metadata fields
+                }
+                if let Some(text) = extract_meaningful_content(value) {
+                    if !text.trim().is_empty() {
+                        parts.push(format!("{}: {}", key, text));
+                    }
+                }
+            }
+            if !parts.is_empty() {
+                Some(parts.join(", "))
+            } else {
+                None
+            }
+        }
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Array(arr) => {
+            let texts: Vec<String> = arr.iter()
+                .filter_map(|item| extract_meaningful_content(item))
+                .collect();
+            if texts.is_empty() {
+                None
+            } else {
+                Some(texts.join(", "))
+            }
+        }
+        _ => None,
     }
 }

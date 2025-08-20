@@ -471,6 +471,8 @@ impl From<String> for AssistantMessage {
 pub struct ToolMessage {
     pub content: String,
     pub tool_call_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
 }
 
 impl ToolMessage {
@@ -478,6 +480,15 @@ impl ToolMessage {
         Self {
             content: content.into(),
             tool_call_id: tool_call_id.into(),
+            name: None,
+        }
+    }
+    
+    pub fn with_name(tool_call_id: impl Into<String>, content: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            content: content.into(),
+            tool_call_id: tool_call_id.into(),
+            name: Some(name.into()),
         }
     }
 
