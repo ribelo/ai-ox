@@ -32,7 +32,7 @@ pub fn convert_finish_reason(reason: OpenRouterFinishReason) -> FinishReason {
 
 
 /// Build OpenRouter messages from ai-ox ModelRequest
-pub fn build_openrouter_messages(request: &ModelRequest) -> Result<OpenRouterMessages, OpenRouterError> {
+pub fn build_openrouter_messages(request: &ModelRequest, model_name: &str) -> Result<OpenRouterMessages, OpenRouterError> {
     let mut messages = Vec::new();
 
     // Add system message if present
@@ -49,7 +49,7 @@ pub fn build_openrouter_messages(request: &ModelRequest) -> Result<OpenRouterMes
 
     // Convert regular messages using the new conversion function
     for message in &request.messages {
-        let converted_messages = convert_message_to_openrouter(message.clone());
+        let converted_messages = convert_message_to_openrouter(message.clone(), model_name);
         messages.extend(converted_messages);
     }
 
@@ -82,6 +82,12 @@ pub fn convert_tools_to_openrouter(tools: Option<Vec<Tool>>) -> Result<Vec<Funct
     }
 }
 
+/// Detect if the model is a Google provider model that requires simple string format
+fn is_google_model(model_name: &str) -> bool {
+    model_name.starts_with("google/") || 
+    model_name.contains("gemini")
+}
+
 /// Extract usage data from OpenRouter response
 pub fn extract_usage_from_response(usage_data: Option<&openrouter_ox::response::Usage>) -> Usage {
     match usage_data {
@@ -100,7 +106,7 @@ pub fn extract_usage_from_response(usage_data: Option<&openrouter_ox::response::
 /// 
 /// Returns a vector because tool results need to be converted to separate Tool messages,
 /// which means a single ai-ox message can become multiple OpenRouter messages.
-pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage> {
+pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Vec<OpenRouterMessage> {
     match message.role {
         MessageRole::User => {
             // For user messages, separate tool results from regular content
@@ -112,9 +118,8 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
                     Part::Text { text } => text_parts.push(text),
                     Part::ToolResult { call_id, name, content } => {
                         // Collect tool results to create separate Tool messages
-                        // OpenRouter expects JSON-encoded content for tool responses
+                        // OpenRouter expects content as a JSON-stringified string with proper escaping
                         let content_str = serde_json::to_string(&content).unwrap_or_else(|_| "null".to_string());
-                        println!("DEBUG: User ToolResult conversion for call_id {} and name {} with JSON content", call_id, name);
                         tool_results.push((call_id, name, content_str));
                     }
                     _ => {
@@ -129,11 +134,18 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
             let mut messages = Vec::new();
 
             // Add user message if there's any text content
+            // Use provider-specific formatting
             if !text_parts.is_empty() {
-                messages.push(OpenRouterMessage::User(UserMessage::text(text_parts.join("\n"))));
+                if is_google_model(model_name) {
+                    // Google models require simple string format
+                    messages.push(OpenRouterMessage::User(UserMessage::text(text_parts.join("\n"))));
+                } else {
+                    // OpenAI and other models use complex content format
+                    messages.push(OpenRouterMessage::User(UserMessage::text(text_parts.join("\n"))));
+                }
             }
 
-            // Add tool result messages
+            // Add tool result messages - Google requires name field
             for (call_id, name, content) in tool_results {
                 messages.push(OpenRouterMessage::Tool(ToolMessage::with_name(call_id, content, name)));
             }
@@ -170,9 +182,8 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
                     }
                     Part::ToolResult { call_id, name, content } => {
                         // Convert tool results to separate Tool messages  
-                        // OpenRouter expects JSON-encoded content for tool responses
+                        // OpenRouter expects content as a JSON-stringified string with proper escaping
                         let content_str = serde_json::to_string(&content).unwrap_or_else(|_| "null".to_string());
-                        println!("DEBUG: Converting Assistant ToolResult to Tool message for call_id {} and name {} with JSON content", call_id, name);
                         tool_results.push((call_id, name, content_str));
                     }
                     _ => {
@@ -201,7 +212,7 @@ pub fn convert_message_to_openrouter(message: Message) -> Vec<OpenRouterMessage>
                 messages.push(OpenRouterMessage::Assistant(assistant_msg));
             }
 
-            // Add tool result messages (these should be separate Tool messages)
+            // Add tool result messages (these should be separate Tool messages) - Google requires name field
             for (call_id, name, content) in tool_results {
                 messages.push(OpenRouterMessage::Tool(ToolMessage::with_name(call_id, content, name)));
             }
@@ -317,7 +328,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message).into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model").into_iter().next().unwrap();
         match openrouter_msg {
             OpenRouterMessage::User(user_msg) => {
                 let text = user_msg.content.0.iter()
@@ -340,7 +351,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message).into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model").into_iter().next().unwrap();
         match openrouter_msg {
             OpenRouterMessage::Assistant(assistant_msg) => {
                 let text = assistant_msg.content.0.iter()
@@ -368,7 +379,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message).into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model").into_iter().next().unwrap();
         match openrouter_msg {
             OpenRouterMessage::User(user_msg) => {
                 let text = user_msg.content.0.iter()
@@ -389,7 +400,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message).into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model").into_iter().next().unwrap();
         match openrouter_msg {
             OpenRouterMessage::User(user_msg) => {
                 let text = user_msg.content.0.iter()
@@ -455,7 +466,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message).into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model").into_iter().next().unwrap();
         match openrouter_msg {
             OpenRouterMessage::Assistant(assistant_msg) => {
                 // Check text content
@@ -499,7 +510,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message).into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model").into_iter().next().unwrap();
         match openrouter_msg {
             OpenRouterMessage::User(user_msg) => {
                 let text = user_msg.content.0.iter()
@@ -593,7 +604,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_user = convert_message_to_openrouter(user_question).into_iter().next().unwrap();
+        let openrouter_user = convert_message_to_openrouter(user_question, "test-model").into_iter().next().unwrap();
         let back_to_ai: Message = openrouter_user.into();
 
         assert_eq!(back_to_ai.role, MessageRole::User);
@@ -615,7 +626,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_assistant = convert_message_to_openrouter(assistant_response).into_iter().next().unwrap();
+        let openrouter_assistant = convert_message_to_openrouter(assistant_response, "test-model").into_iter().next().unwrap();
         let back_to_ai_assistant: Message = openrouter_assistant.into();
 
         assert_eq!(back_to_ai_assistant.role, MessageRole::Assistant);
@@ -649,7 +660,7 @@ mod tests {
             timestamp: chrono::Utc::now(),
         };
 
-        let openrouter_tool_result = convert_message_to_openrouter(user_tool_result).into_iter().next().unwrap();
+        let openrouter_tool_result = convert_message_to_openrouter(user_tool_result, "test-model").into_iter().next().unwrap();
         let back_to_ai_tool_result: Message = openrouter_tool_result.into();
 
         assert_eq!(back_to_ai_tool_result.role, MessageRole::User);
@@ -681,7 +692,7 @@ mod tests {
         };
 
         // Use the new conversion function
-        let openrouter_messages = convert_message_to_openrouter(message);
+        let openrouter_messages = convert_message_to_openrouter(message, "test-model");
         
         // Should produce two messages: one User message and one Tool message
         assert_eq!(openrouter_messages.len(), 2);
@@ -727,7 +738,7 @@ mod tests {
         };
 
         // Use the new conversion function
-        let openrouter_messages = convert_message_to_openrouter(message);
+        let openrouter_messages = convert_message_to_openrouter(message, "test-model");
         
         // Should produce one Tool message
         assert_eq!(openrouter_messages.len(), 1);
@@ -761,7 +772,7 @@ mod tests {
         };
 
         // Use the new conversion function
-        let openrouter_messages = convert_message_to_openrouter(message);
+        let openrouter_messages = convert_message_to_openrouter(message, "test-model");
         
         // Should produce one Assistant message
         assert_eq!(openrouter_messages.len(), 1);
@@ -815,7 +826,7 @@ mod tests {
         };
 
         // Convert to OpenRouter format
-        let openrouter_messages = convert_message_to_openrouter(tool_result_message);
+        let openrouter_messages = convert_message_to_openrouter(tool_result_message, "test-model");
 
         println!("Converted messages: {:#?}", openrouter_messages);
         println!("Number of messages: {}", openrouter_messages.len());
@@ -849,10 +860,10 @@ mod tests {
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .expect("OPENROUTER_API_KEY must be set for this test");
 
-        // Create OpenRouter model
+        // Create OpenRouter model - test with OpenAI GPT-4o
         let model = crate::model::openrouter::OpenRouterModel::builder()
             .api_key(api_key)
-            .model("google/gemini-2.0-flash-exp")
+            .model("openai/gpt-4o")
             .build();
 
         // Define the knowledge search tool (similar to what Agronauts uses)
@@ -972,6 +983,8 @@ mod tests {
             }
             Err(e) => {
                 println!("ERROR: {}", e);
+                println!("DETAILED ERROR DEBUG: {:?}", e);
+                
                 // Check if it's the specific 400 error we're debugging
                 let error_str = e.to_string();
                 if error_str.contains("400") && error_str.contains("Provider returned error") {
@@ -986,88 +999,3 @@ mod tests {
     }
 }
 
-fn convert_tool_result_to_text(content: &serde_json::Value) -> String {
-    match content {
-        serde_json::Value::String(s) => s.clone(),
-        serde_json::Value::Null => "null".to_string(),
-        serde_json::Value::Bool(b) => b.to_string(),
-        serde_json::Value::Number(n) => n.to_string(),
-        serde_json::Value::Array(arr) => {
-            if arr.is_empty() {
-                "No results found.".to_string()
-            } else {
-                // Process each array item more deeply
-                arr.iter()
-                    .filter_map(|item| extract_meaningful_content(item))
-                    .collect::<Vec<_>>()
-                    .join("\n\n---\n\n")
-            }
-        }
-        serde_json::Value::Object(_) => {
-            // For object results, try to extract meaningful text
-            extract_meaningful_content(content).unwrap_or_else(|| "No readable content".to_string())
-        }
-    }
-}
-
-fn extract_meaningful_content(value: &serde_json::Value) -> Option<String> {
-    match value {
-        serde_json::Value::Object(obj) => {
-            // Try different common text fields
-            if let Some(text) = obj.get("text").and_then(|v| v.as_str()) {
-                return Some(text.to_string());
-            }
-            if let Some(content) = obj.get("content").and_then(|v| v.as_str()) {
-                return Some(content.to_string());
-            }
-            if let Some(message) = obj.get("message").and_then(|v| v.as_str()) {
-                return Some(message.to_string());
-            }
-            if let Some(description) = obj.get("description").and_then(|v| v.as_str()) {
-                return Some(description.to_string());
-            }
-            
-            // For nested structures with content arrays, recursively extract text
-            if let Some(content_array) = obj.get("content") {
-                if let serde_json::Value::Array(arr) = content_array {
-                    let texts: Vec<String> = arr.iter()
-                        .filter_map(|item| extract_meaningful_content(item))
-                        .collect();
-                    if !texts.is_empty() {
-                        return Some(texts.join(" "));
-                    }
-                }
-            }
-            
-            // If no text fields found, try to build a readable representation from key-value pairs
-            let mut parts = Vec::new();
-            for (key, value) in obj {
-                if key == "score" || key == "id" || key == "content_id" || key == "document_id" {
-                    continue; // Skip metadata fields
-                }
-                if let Some(text) = extract_meaningful_content(value) {
-                    if !text.trim().is_empty() {
-                        parts.push(format!("{}: {}", key, text));
-                    }
-                }
-            }
-            if !parts.is_empty() {
-                Some(parts.join(", "))
-            } else {
-                None
-            }
-        }
-        serde_json::Value::String(s) => Some(s.clone()),
-        serde_json::Value::Array(arr) => {
-            let texts: Vec<String> = arr.iter()
-                .filter_map(|item| extract_meaningful_content(item))
-                .collect();
-            if texts.is_empty() {
-                None
-            } else {
-                Some(texts.join(", "))
-            }
-        }
-        _ => None,
-    }
-}

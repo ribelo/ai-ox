@@ -202,38 +202,7 @@ impl OpenRouterModel {
         response_format: Option<Value>,
     ) -> Result<OpenRouterRequest, OpenRouterError> {
         // Convert messages using the conversion module
-        let messages = conversion::build_openrouter_messages(&request)?;
-        
-        // DEBUG: Log the converted messages to see what we're sending to OpenRouter
-        println!("=== DEBUG: OpenRouter Messages After Conversion ===");
-        for (i, msg) in messages.iter().enumerate() {
-            match msg {
-                openrouter_ox::message::Message::System(sys_msg) => {
-                    println!("Message {}: Role=System", i);
-                    println!("  Content: {:?}", sys_msg.content());
-                },
-                openrouter_ox::message::Message::User(user_msg) => {
-                    println!("Message {}: Role=User", i);
-                    println!("  Content: {:?}", user_msg.content());
-                },
-                openrouter_ox::message::Message::Assistant(asst_msg) => {
-                    println!("Message {}: Role=Assistant", i);
-                    println!("  Content: {:?}", asst_msg.content());
-                    if let Some(tool_calls) = &asst_msg.tool_calls {
-                        println!("  Tool calls: {} calls", tool_calls.len());
-                    }
-                },
-                openrouter_ox::message::Message::Tool(tool_msg) => {
-                    println!("Message {}: Role=Tool", i);
-                    println!("  Tool call ID: {}", tool_msg.tool_call_id);
-                    if let Some(ref name) = tool_msg.name {
-                        println!("  Tool name: {}", name);
-                    }
-                    println!("  Content (first 500 chars): {}", tool_msg.content.chars().take(500).collect::<String>());
-                },
-            }
-            println!("  Full message JSON: {}", serde_json::to_string_pretty(msg).unwrap_or_default());
-        }
+        let messages = conversion::build_openrouter_messages(&request, model)?;
 
         // Convert tools using the conversion module
         let tools = conversion::convert_tools_to_openrouter(request.tools)?;
