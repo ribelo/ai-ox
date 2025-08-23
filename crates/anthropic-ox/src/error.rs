@@ -64,6 +64,10 @@ pub enum AnthropicRequestError {
     #[error("Authentication error: {0}")]
     Authentication(String),
 
+    /// No authentication provided (neither API key nor OAuth token)
+    #[error("No authentication provided - either API key or OAuth token is required")]
+    AuthenticationMissing,
+
     /// Permission denied
     #[error("Permission denied: {0}")]
     PermissionDenied(String),
@@ -110,7 +114,7 @@ impl AnthropicRequestError {
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::RateLimit => ErrorKind::RateLimit,
-            Self::Authentication(_) | Self::PermissionDenied(_) => ErrorKind::Auth,
+            Self::Authentication(_) | Self::AuthenticationMissing | Self::PermissionDenied(_) => ErrorKind::Auth,
             Self::InvalidRequestError { .. } | Self::NotFound(_) => ErrorKind::InvalidRequest,
             Self::Overloaded(_) => ErrorKind::ServerOverloaded,
             Self::ReqwestError(e) => {

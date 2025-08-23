@@ -8,7 +8,6 @@ use crate::{
     content::delta::StreamEvent,
     errors::GenerateContentError,
     model::{Model, ModelRequest, ModelInfo, Provider, response::RawStructuredResponse},
-    usage::Usage,
 };
 use async_stream::try_stream;
 use bon::Builder;
@@ -38,6 +37,13 @@ pub struct AnthropicModel {
 impl<S: anthropic_model_builder::State> AnthropicModelBuilder<S> {
     pub fn api_key(mut self, api_key: impl Into<String>) -> Self {
         self.client = Anthropic::new(api_key);
+        self
+    }
+
+    pub fn oauth_token(mut self, oauth_token: impl Into<String>) -> Self {
+        self.client = anthropic_ox::Anthropic::builder()
+            .oauth_token(oauth_token)
+            .build();
         self
     }
 }

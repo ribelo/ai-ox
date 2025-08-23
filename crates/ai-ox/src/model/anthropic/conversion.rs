@@ -1,8 +1,7 @@
 use anthropic_ox::{
-    message::{Message as AnthropicMessage, Messages as AnthropicMessages, Role as AnthropicRole, Content as AnthropicContent, Text as AnthropicText, message::{Image as AnthropicImage, ImageSource as AnthropicImageSource}},
+    message::{Message as AnthropicMessage, Messages as AnthropicMessages, Role as AnthropicRole, Content as AnthropicContent, Text as AnthropicText, ImageSource as AnthropicImageSource, ContentBlock},
     request::ChatRequest,
     response::{ChatResponse, StreamEvent as AnthropicStreamEvent, ContentBlockDelta, StopReason as AnthropicStopReason},
-    message::message::ContentBlock,
 };
 
 use crate::{
@@ -42,7 +41,7 @@ pub fn convert_request_to_anthropic(
     max_tokens: u32,
 ) -> Result<ChatRequest, GenerateContentError> {
     let mut anthropic_messages = AnthropicMessages::new();
-    let mut system_message = system_instruction;
+    let system_message = system_instruction;
     
     // Convert messages, handling system messages specially
     for message in request.messages {
@@ -66,7 +65,7 @@ pub fn convert_request_to_anthropic(
             .model(model)
             .messages(anthropic_messages)
             .max_tokens(max_tokens)
-            .maybe_system(system_message)
+            .maybe_system(system_message.map(Into::into))
             .tools(anthropic_tools)
             .build())
     } else {
@@ -74,7 +73,7 @@ pub fn convert_request_to_anthropic(
             .model(model)
             .messages(anthropic_messages)
             .max_tokens(max_tokens)
-            .maybe_system(system_message)
+            .maybe_system(system_message.map(Into::into))
             .build())
     }
 }
@@ -96,9 +95,9 @@ fn extract_content_from_parts(content: &[Part]) -> Result<Vec<AnthropicContent>,
                             media_type: media_type.clone(),
                             data: data.clone(),
                         };
-                        anthropic_content.push(AnthropicContent::Image(
-                            AnthropicImage::new(anthropic_source)
-                        ));
+                        anthropic_content.push(AnthropicContent::Image { 
+                            source: anthropic_source 
+                        });
                     }
                 }
             }
@@ -176,8 +175,8 @@ pub fn convert_anthropic_response_to_ai_ox(
             AnthropicContent::Text(text) => {
                 content_parts.push(Part::Text { text: text.text });
             }
-            AnthropicContent::Image(image) => {
-                let source = match image.source {
+            AnthropicContent::Image { source } => {
+                let source = match source {
                     AnthropicImageSource::Base64 { media_type, data } => {
                         crate::content::part::ImageSource::Base64 { media_type, data }
                     }
@@ -370,20 +369,23 @@ pub fn convert_stream_event_to_ai_ox(
 
 /// Convert ai-ox Tools to Anthropic Tools
 fn convert_tools_to_anthropic(tools: Vec<AiOxTool>) -> Result<Vec<anthropic_ox::tool::Tool>, GenerateContentError> {
+    #[cfg(feature = "schema")]
     let mut anthropic_tools = Vec::new();
+    #[cfg(not(feature = "schema"))]
+    let anthropic_tools = Vec::new();
     
     for tool in tools {
         match tool {
             AiOxTool::FunctionDeclarations(functions) => {
                 for func in functions {
-                    let anthropic_tool = anthropic_ox::tool::Tool::new(
+                    let _anthropic_tool = anthropic_ox::tool::Tool::new(
                         func.name.clone(),
                         func.description.clone().unwrap_or_default(),
                     );
                     
                     // Schema support requires schema feature to be enabled in anthropic-ox
                     #[cfg(feature = "schema")]
-                    let anthropic_tool = anthropic_tool.with_schema(func.parameters.clone());
+                    let anthropic_tool = _anthropic_tool.with_schema(func.parameters.clone());
                     
                     #[cfg(not(feature = "schema"))]
                     {
@@ -393,6 +395,7 @@ fn convert_tools_to_anthropic(tools: Vec<AiOxTool>) -> Result<Vec<anthropic_ox::
                         ));
                     }
                     
+                    #[cfg(feature = "schema")]
                     anthropic_tools.push(anthropic_tool);
                 }
             }
