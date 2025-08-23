@@ -1,11 +1,11 @@
 use bon::Builder;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use crate::{
-    message::{Message, Messages},
+    message::{Message, Messages, StringOrContents},
     tool::{Tool, ToolChoice},
 };
 
-#[derive(Debug, Clone, Serialize, Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 #[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
 pub struct ChatRequest {
     #[builder(field)]
@@ -13,7 +13,7 @@ pub struct ChatRequest {
     #[builder(into)]
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub system: Option<String>,
+    pub system: Option<StringOrContents>,
     #[builder(default = 4096)]
     pub max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
