@@ -151,23 +151,23 @@ pub struct FunctionCall {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct Usage {
-    pub prompt_tokens: i32,
-    pub completion_tokens: i32,
-    pub total_tokens: i32,
+    pub prompt_tokens: u32,
+    pub completion_tokens: u32,
+    pub total_tokens: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PromptTokensDetails {
-    pub cached_tokens: i32,
+    pub cached_tokens: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CompletionTokensDetails {
-    pub reasoning_tokens: i32,
-    pub accepted_prediction_tokens: i32,
-    pub rejected_prediction_tokens: i32,
+    pub reasoning_tokens: u32,
+    pub accepted_prediction_tokens: u32,
+    pub rejected_prediction_tokens: u32,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

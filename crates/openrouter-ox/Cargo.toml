@@ -29,6 +29,8 @@ derive_more = { workspace = true }
 schemars = { workspace = true, optional = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
+anthropic-ox = { path = "../anthropic-ox", features = ["schema"] }
+chrono = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }

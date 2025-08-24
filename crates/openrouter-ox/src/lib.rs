@@ -9,6 +9,7 @@ use async_stream::try_stream;
 use bon::Builder;
 use futures_util::stream::{BoxStream, StreamExt};
 
+pub mod conversion;
 pub mod error;
 pub mod message;
 pub mod models;
@@ -133,5 +134,6 @@ impl fmt::Debug for OpenRouter {
     }
 }
 
+pub use conversion::ConversionError;
 pub use error::OpenRouterRequestError;
 pub use request::ChatRequest;
