@@ -32,6 +32,7 @@ pub struct ModalityTokenCount {
 #[serde(rename_all = "camelCase")]
 pub struct UsageMetadata {
     /// Number of tokens in the prompt.
+    #[serde(default)]
     pub prompt_token_count: u32,
     /// Number of tokens in the cached part of the prompt (the cached content).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,6 +47,7 @@ pub struct UsageMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thoughts_token_count: Option<u32>,
     /// Total token count for the generation request (prompt + response candidates).
+    #[serde(default)]
     pub total_token_count: u32,
     /// Output only. List of modalities that were processed in the request input.
     #[serde(default, skip_serializing_if = "Option::is_none")]

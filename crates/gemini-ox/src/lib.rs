@@ -213,7 +213,11 @@ impl From<Model> for String {
 #[derive(Clone, Default, Builder)]
 pub struct Gemini {
     #[builder(into)]
-    pub(crate) api_key: String,
+    pub(crate) api_key: Option<String>,
+    #[builder(into)]
+    pub(crate) oauth_token: Option<String>,
+    #[builder(into)]
+    pub(crate) project_id: Option<String>,
     #[builder(default)]
     pub(crate) client: reqwest::Client,
     #[cfg(feature = "leaky-bucket")]
@@ -226,7 +230,38 @@ impl Gemini {
     /// Create a new Gemini client with the provided API key.
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
-            api_key: api_key.into(),
+            api_key: Some(api_key.into()),
+            oauth_token: None,
+            project_id: None,
+            client: reqwest::Client::new(),
+            #[cfg(feature = "leaky-bucket")]
+            leaky_bucket: None,
+            api_version: "v1beta".to_string(),
+        }
+    }
+
+    /// Create a new Gemini client with OAuth token.
+    pub fn with_oauth_token(oauth_token: impl Into<String>) -> Self {
+        Self {
+            api_key: None,
+            oauth_token: Some(oauth_token.into()),
+            project_id: None,
+            client: reqwest::Client::new(),
+            #[cfg(feature = "leaky-bucket")]
+            leaky_bucket: None,
+            api_version: "v1beta".to_string(),
+        }
+    }
+
+    /// Create a new Gemini client with OAuth token and project ID for Cloud Code Assist API.
+    pub fn with_oauth_token_and_project(
+        oauth_token: impl Into<String>,
+        project_id: impl Into<String>,
+    ) -> Self {
+        Self {
+            api_key: None,
+            oauth_token: Some(oauth_token.into()),
+            project_id: Some(project_id.into()),
             client: reqwest::Client::new(),
             #[cfg(feature = "leaky-bucket")]
             leaky_bucket: None,
@@ -239,6 +274,7 @@ impl Gemini {
             std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))?;
         Ok(Self::builder().api_key(api_key).build())
     }
+
 
     /// Create a Live API session builder
     ///
@@ -272,12 +308,30 @@ impl Gemini {
     pub fn caches(&self) -> crate::cache::Caches {
         crate::cache::Caches::new(self.clone())
     }
+
+    /// Returns the appropriate base URL based on authentication method.
+    /// OAuth tokens use Cloud Code Assist API, API keys use standard Gemini API.
+    pub(crate) fn base_url(&self) -> &'static str {
+        if self.oauth_token.is_some() {
+            "https://cloudcode-pa.googleapis.com"
+        } else {
+            "https://generativelanguage.googleapis.com"
+        }
+    }
+
+    /// Returns the current project ID if available.
+    pub fn project_id(&self) -> Option<&str> {
+        self.project_id.as_deref()
+    }
 }
+
 
 impl fmt::Debug for Gemini {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gemini")
             .field("api_key", &"[REDACTED]")
+            .field("oauth_token", &self.oauth_token.as_ref().map(|_| "[REDACTED]"))
+            .field("project_id", &self.project_id)
             .field("client", &self.client)
             .field("api_version", &self.api_version)
             .finish_non_exhaustive()
@@ -358,6 +412,9 @@ pub enum GeminiRequestError {
     #[error("Rate limit exceeded")]
     RateLimit,
 
+    /// Authentication is missing (no API key or OAuth token provided)
+    #[error("Authentication is missing: no API key or OAuth token provided")]
+    AuthenticationMissing,
     /// URL building error
     #[error("URL build failed: {0}")]
     UrlBuildError(String),
@@ -431,6 +488,11 @@ impl Serialize for GeminiRequestError {
                 state.serialize_field("type", "RateLimit")?;
                 state.end()
             }
+            GeminiRequestError::AuthenticationMissing => {
+                let mut state = serializer.serialize_struct("GeminiRequestError", 1)?;
+                state.serialize_field("type", "AuthenticationMissing")?;
+                state.end()
+            }
             GeminiRequestError::UrlBuildError(message) => {
                 let mut state = serializer.serialize_struct("GeminiRequestError", 2)?;
                 state.serialize_field("type", "UrlBuildError")?;
@@ -466,5 +528,61 @@ fn parse_error_response(status: reqwest::StatusCode, bytes: bytes::Bytes) -> Gem
             status.as_u16(),
             error_text
         ))
+    }
+}
+
+#[cfg(test)]
+mod oauth_tests {
+    use super::*;
+
+    #[test]
+    fn test_oauth_constructor() {
+        let gemini = Gemini::with_oauth_token("test-oauth-token");
+        assert_eq!(gemini.oauth_token, Some("test-oauth-token".to_string()));
+        assert_eq!(gemini.api_key, None);
+    }
+
+    #[test]
+    fn test_oauth_precedence_over_api_key() {
+        let gemini = Gemini::builder()
+            .api_key("test-api-key")
+            .oauth_token("test-oauth-token")
+            .build();
+        
+        // Both should be present, but OAuth takes precedence in actual requests
+        assert_eq!(gemini.oauth_token, Some("test-oauth-token".to_string()));
+        assert_eq!(gemini.api_key, Some("test-api-key".to_string()));
+    }
+
+    #[test]
+    fn test_api_key_fallback_when_no_oauth() {
+        let gemini = Gemini::builder()
+            .api_key("test-api-key")
+            .build();
+        
+        assert_eq!(gemini.oauth_token, None);
+        assert_eq!(gemini.api_key, Some("test-api-key".to_string()));
+    }
+
+    #[test]
+    fn test_no_auth_methods() {
+        let gemini = Gemini::builder().build();
+        
+        assert_eq!(gemini.oauth_token, None);
+        assert_eq!(gemini.api_key, None);
+    }
+
+    #[test]
+    #[ignore = "Requires GOOGLE_OAUTH_TOKEN environment variable and makes actual API calls"]
+    fn test_oauth_integration_with_real_token() {
+        let oauth_token = std::env::var("GOOGLE_OAUTH_TOKEN")
+            .expect("GOOGLE_OAUTH_TOKEN environment variable not set");
+        
+        let gemini = Gemini::with_oauth_token(oauth_token);
+        assert!(gemini.oauth_token.is_some());
+        assert!(gemini.api_key.is_none());
+        
+        // This would test actual API call with OAuth, but we'll keep it simple for now
+        // In the future we could add a real API call test here
     }
 }

@@ -148,12 +148,21 @@ impl EmbedContentRequest {
             .push("models")
             .push(&format!("{}:embedContent", self.model));
 
-        // Add the API key as a query parameter
-        url.query_pairs_mut()
-            .append_pair("key", &self.gemini.api_key);
-
+        // Handle authentication
+        let mut req = self.gemini.client.post(url);
+        
+        if let Some(oauth_token) = &self.gemini.oauth_token {
+            // OAuth: use Authorization header
+            req = req.header("authorization", format!("Bearer {}", oauth_token));
+        } else if let Some(api_key) = &self.gemini.api_key {
+            // API key: use query parameter
+            req = req.query(&[("key", api_key)]);
+        } else {
+            return Err(GeminiRequestError::AuthenticationMissing);
+        }
+        
         // Send the HTTP request
-        let res = self.gemini.client.post(url).json(self).send().await?;
+        let res = req.json(self).send().await?;
         let status = res.status();
 
         // Read the response body once
