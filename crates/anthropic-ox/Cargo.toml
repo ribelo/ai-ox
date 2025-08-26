@@ -9,8 +9,11 @@ keywords = ["anthropic", "claude", "ai", "client", "async"]
 description = "Anthropic API client for Rust"
 
 [features]
-default = []
+default = ["tokens", "models"]
 leaky-bucket = ["dep:leaky-bucket"]
+tokens = []
+models = []
+full = ["tokens", "models"]
 
 [dependencies]
 bon = "3.3"
