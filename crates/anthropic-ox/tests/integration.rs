@@ -42,74 +42,71 @@ async fn test_model_enum_conversion() {
 
 #[tokio::test]
 async fn test_chat_request_builder() {
-    use anthropic_ox::{ChatRequest, message::{Message, Messages, Role, Content}};
-    
+    use anthropic_ox::{message::{Message, Messages, Role, Content, StringOrContents, Text}, ChatRequest};
+
     // Create test messages
     let mut messages = Messages::new();
-    messages.push(Message::new(Role::User, vec![Content::text("Hello")]));
-    
+    messages.push(Message::new(Role::User, vec![Content::Text(Text::new("Hello".to_string()))]));
+
     // Test building a chat request
     let request = ChatRequest::builder()
         .model("claude-3-5-sonnet-20241022")
         .messages(messages.clone())
         .max_tokens(1000)
-        .maybe_system(Some("You are a helpful assistant".to_string()))
+        .maybe_system(Some(StringOrContents::String("You are a helpful assistant".to_string())))
         .build();
-    
+
     assert_eq!(request.model, "claude-3-5-sonnet-20241022");
     assert_eq!(request.max_tokens, 1000);
-    assert_eq!(request.system, Some("You are a helpful assistant".to_string()));
+    assert_eq!(request.system, Some(StringOrContents::String("You are a helpful assistant".to_string())));
     assert_eq!(request.messages.len(), 1);
-    
+
     // Test without system message
     let request_no_system = ChatRequest::builder()
         .model("claude-3-haiku-20240307")
         .messages(messages)
         .max_tokens(500)
         .build();
-    
+
     assert_eq!(request_no_system.model, "claude-3-haiku-20240307");
     assert_eq!(request_no_system.max_tokens, 500);
     assert_eq!(request_no_system.system, None);
-    
+
     println!("✅ ChatRequest builder works correctly");
 }
 
 #[tokio::test]
 async fn test_message_structures() {
-    use anthropic_ox::message::{Message, Messages, Role, Content, ImageSource, message::Image};
-    
+    use anthropic_ox::message::{Message, Messages, Role, Content, ImageSource, Text};
+
     // Test text content
-    let text_content = Content::text("Hello, world!");
-    assert!(text_content.as_text().is_some());
-    assert!(text_content.as_image().is_none());
-    
+    let text_content = Content::Text(Text::new("Hello, world!".to_string()));
+    assert!(matches!(text_content, Content::Text { .. }));
+
     // Test image content
     let image_source = ImageSource::Base64 {
         media_type: "image/png".to_string(),
         data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==".to_string(),
     };
-    let image = Image::new(image_source);
-    let image_content = Content::image(image.source);
-    assert!(image_content.as_image().is_some());
-    assert!(image_content.as_text().is_none());
-    
+    let image_content = Content::Image { source: image_source };
+    assert!(matches!(image_content, Content::Image { .. }));
+
     // Test message creation
-    let user_message = Message::user(vec!["Hello"]);
+    let user_message = Message::new(Role::User, vec![Content::Text(Text::new("Hello".to_string()))]);
     assert_eq!(user_message.role, Role::User);
-    assert_eq!(user_message.content.len(), 1);
-    
-    let assistant_message = Message::assistant(vec!["Hi there!"]);
+    assert_eq!(user_message.len(), 1);
+
+    let assistant_message = Message::new(Role::Assistant, vec![Content::Text(Text::new("Hi there!".to_string()))]);
     assert_eq!(assistant_message.role, Role::Assistant);
-    assert_eq!(assistant_message.content.len(), 1);
-    
+    assert_eq!(assistant_message.len(), 1);
+
     // Test messages collection
     let mut messages = Messages::new();
     messages.push(user_message);
     messages.push(assistant_message);
     assert_eq!(messages.len(), 2);
     assert!(!messages.is_empty());
-    
+
     println!("✅ Message structures work correctly");
 }
 
@@ -146,8 +143,8 @@ async fn test_error_types() {
 // Integration test that requires actual API key - will be skipped if not available
 #[tokio::test]
 async fn test_actual_api_call() {
-    use anthropic_ox::{ChatRequest, message::{Message, Messages, Role, Content}};
-    
+    use anthropic_ox::{ChatRequest, message::{Message, Messages, Role, Content, Text}};
+
     // Skip test if no API key is available
     let client = match Anthropic::load_from_env() {
         Ok(client) => client,
@@ -156,17 +153,17 @@ async fn test_actual_api_call() {
             return;
         }
     };
-    
+
     // Create a simple chat request
     let mut messages = Messages::new();
-    messages.push(Message::new(Role::User, vec![Content::text("Say 'Hello from Anthropic!'")]));
-    
+    messages.push(Message::new(Role::User, vec![Content::Text(Text::new("Say 'Hello from Anthropic!'".to_string()))]));
+
     let request = ChatRequest::builder()
         .model("claude-3-haiku-20240307")
         .messages(messages)
         .max_tokens(50)
         .build();
-    
+
     // Make the API call
     match client.send(&request).await {
         Ok(response) => {
@@ -175,9 +172,13 @@ async fn test_actual_api_call() {
             println!("   Model: {}", response.model);
             assert_eq!(response.role, Role::Assistant);
             assert!(!response.content.is_empty());
-            
+
             // Print first bit of response text
-            let text_content = response.text_content();
+            let text_content: Vec<String> = response.content.iter().filter_map(|c| match c {
+                Content::Text(text) => Some(text.text.clone()),
+                _ => None,
+            }).collect();
+
             if let Some(first_text) = text_content.first() {
                 println!("   Content preview: {}...", first_text.chars().take(50).collect::<String>());
             }

@@ -1,35 +1,42 @@
 use anthropic_ox::{
-    message::{Message as AnthropicMessage, Messages as AnthropicMessages, Role as AnthropicRole, Content as AnthropicContent, Text as AnthropicText, ImageSource as AnthropicImageSource, ContentBlock},
+    message::{
+        Content as AnthropicContent, ContentBlock, ImageSource as AnthropicImageSource,
+        Message as AnthropicMessage, Messages as AnthropicMessages, Role as AnthropicRole,
+        Text as AnthropicText,
+    },
     request::ChatRequest,
-    response::{ChatResponse, StreamEvent as AnthropicStreamEvent, ContentBlockDelta, StopReason as AnthropicStopReason},
+    response::{
+        ChatResponse, ContentBlockDelta, StopReason as AnthropicStopReason,
+        StreamEvent as AnthropicStreamEvent,
+    },
+    tool::{Tool, ToolChoice},
 };
 
 use crate::{
-    ModelResponse,
     content::{
-        delta::{StreamEvent, StreamStop, FinishReason},
-        message::{Message, MessageRole}, 
-        part::Part
+        delta::{FinishReason, StreamEvent, StreamStop},
+        message::{Message, MessageRole},
+        part::Part,
     },
     errors::GenerateContentError,
     model::ModelRequest,
-    tool::{Tool as AiOxTool},
+    tool::Tool as AiOxTool,
     usage::Usage,
+    ModelResponse,
 };
 
-
 /// Convert ai-ox ModelRequest to Anthropic ChatRequest
-/// 
+///
 /// # Arguments
 /// * `request` - The ai-ox model request to convert
 /// * `model` - The Anthropic model name to use
 /// * `system_instruction` - Optional system instruction to include
 /// * `max_tokens` - Maximum tokens for the response
-/// 
+///
 /// # Returns
 /// * `Ok(ChatRequest)` - Successfully converted request
 /// * `Err(GenerateContentError)` - If conversion fails due to unsupported content types
-/// 
+///
 /// # Notes
 /// - Tool schemas require the "schema" feature to be enabled
 /// - Gemini-specific tools are skipped during conversion
@@ -39,42 +46,52 @@ pub fn convert_request_to_anthropic(
     model: String,
     system_instruction: Option<String>,
     max_tokens: u32,
+    tools: Option<(Vec<Tool>, Option<ToolChoice>)>,
 ) -> Result<ChatRequest, GenerateContentError> {
     let mut anthropic_messages = AnthropicMessages::new();
     let system_message = system_instruction;
-    
+
     // Convert messages, handling system messages specially
     for message in request.messages {
-        match message.role {
-            MessageRole::User => {
-                let content = extract_content_from_parts(&message.content)?;
-                anthropic_messages.push(AnthropicMessage::new(AnthropicRole::User, content));
-            }
-            MessageRole::Assistant => {
-                let content = extract_content_from_parts(&message.content)?;
-                anthropic_messages.push(AnthropicMessage::new(AnthropicRole::Assistant, content));
-            }
-        }
+        let content = extract_content_from_parts(&message.content)?;
+        let role = match message.role {
+            MessageRole::User => AnthropicRole::User,
+            MessageRole::Assistant => AnthropicRole::Assistant,
+        };
+        anthropic_messages.push(AnthropicMessage::new(role, content));
     }
 
-    // Build the request conditionally based on whether tools are provided
-    if let Some(tools) = request.tools {
-        let anthropic_tools = convert_tools_to_anthropic(tools)?;
-        
-        Ok(ChatRequest::builder()
-            .model(model)
-            .messages(anthropic_messages)
-            .max_tokens(max_tokens)
-            .maybe_system(system_message.map(Into::into))
-            .tools(anthropic_tools)
-            .build())
+    let (tools, tool_choice) = if let Some((tools, tool_choice)) = tools {
+        (Some(tools), tool_choice)
+    } else if let Some(request_tools) = request.tools {
+        (Some(convert_tools_to_anthropic(request_tools)?), None)
     } else {
-        Ok(ChatRequest::builder()
-            .model(model)
-            .messages(anthropic_messages)
-            .max_tokens(max_tokens)
-            .maybe_system(system_message.map(Into::into))
-            .build())
+        (None, None)
+    };
+
+    Ok(ChatRequest::builder()
+        .model(model)
+        .messages(anthropic_messages)
+        .max_tokens(max_tokens)
+        .maybe_system(system_message.map(Into::into))
+        .maybe_tools(tools)
+        .maybe_tool_choice(tool_choice)
+        .build())
+}
+
+impl From<anthropic_ox::response::Usage> for Usage {
+    fn from(usage: anthropic_ox::response::Usage) -> Self {
+        let mut new_usage = Usage::new();
+        new_usage.requests = 1;
+        new_usage.input_tokens_by_modality.insert(
+            crate::usage::Modality::Text,
+            usage.input_tokens.unwrap_or(0) as u64,
+        );
+        new_usage.output_tokens_by_modality.insert(
+            crate::usage::Modality::Text,
+            usage.output_tokens.unwrap_or(0) as u64,
+        );
+        new_usage
     }
 }
 

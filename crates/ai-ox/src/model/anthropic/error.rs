@@ -15,6 +15,9 @@ pub enum AnthropicError {
 
     #[error("Message conversion error: {0}")]
     MessageConversion(String),
+
+    #[error("Invalid schema: {0}")]
+    InvalidSchema(String),
 }
 
 impl From<AnthropicError> for GenerateContentError {
@@ -24,6 +27,7 @@ impl From<AnthropicError> for GenerateContentError {
             AnthropicError::Api(e) => GenerateContentError::provider_error("anthropic", e.to_string()),
             AnthropicError::ResponseParsing(e) => GenerateContentError::response_parsing(e),
             AnthropicError::MessageConversion(e) => GenerateContentError::message_conversion(e),
+            AnthropicError::InvalidSchema(e) => GenerateContentError::configuration(format!("Invalid schema: {}", e)),
         }
     }
 }
