@@ -64,6 +64,8 @@ pub enum Content {
     ToolUse(ToolUse),
     #[serde(rename = "tool_result")]
     ToolResult(ToolResult),
+    #[serde(rename = "thinking")]
+    Thinking(ThinkingContent),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -79,9 +81,30 @@ pub struct Text {
     pub cache_control: Option<CacheControl>,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct ThinkingContent {
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+}
+
 impl Text {
     pub fn new(text: String) -> Self {
         Self { text, cache_control: None }
+    }
+    
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+}
+
+impl ThinkingContent {
+    pub fn new(text: String) -> Self {
+        Self { text, signature: None }
+    }
+    
+    pub fn with_signature(text: String, signature: String) -> Self {
+        Self { text, signature: Some(signature) }
     }
     
     pub fn as_str(&self) -> &str {
@@ -103,6 +126,11 @@ pub enum ContentBlock {
         id: String, 
         name: String, 
         input: serde_json::Value 
+    },
+    Thinking { 
+        text: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        signature: Option<String>,
     },
 }
 
@@ -127,6 +155,12 @@ impl From<Text> for Content {
     }
 }
 
+impl From<ThinkingContent> for Content {
+    fn from(thinking: ThinkingContent) -> Self {
+        Content::Thinking(thinking)
+    }
+}
+
 impl fmt::Display for Content {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -134,6 +168,13 @@ impl fmt::Display for Content {
             Content::Image { source } => write!(f, "[Image: {}]", source),
             Content::ToolUse(tool_use) => write!(f, "[Tool Use: {}]", tool_use.name),
             Content::ToolResult(tool_result) => write!(f, "[Tool Result: {}]", tool_result.tool_use_id),
+            Content::Thinking(thinking) => write!(f, "[Thinking: {}]", 
+                if thinking.text.len() > 50 { 
+                    format!("{}...", &thinking.text[..47]) 
+                } else { 
+                    thinking.text.clone() 
+                }
+            ),
         }
     }
 }
@@ -1097,5 +1138,166 @@ mod tests {
         let deserialized_array: Message = serde_json::from_str(&json_array).unwrap();
         
         assert_eq!(original_array, deserialized_array);
+    }
+
+    // Tests for thinking content functionality
+    
+    #[test]
+    fn test_thinking_content_creation() {
+        let thinking = ThinkingContent::new("Let me think about this problem...".to_string());
+        assert_eq!(thinking.text, "Let me think about this problem...");
+        assert_eq!(thinking.signature, None);
+        
+        let thinking_with_sig = ThinkingContent::with_signature(
+            "Complex reasoning here...".to_string(),
+            "signature123".to_string()
+        );
+        assert_eq!(thinking_with_sig.text, "Complex reasoning here...");
+        assert_eq!(thinking_with_sig.signature, Some("signature123".to_string()));
+    }
+    
+    #[test]
+    fn test_thinking_content_serialization() {
+        let thinking = ThinkingContent {
+            text: "I need to analyze this step by step.".to_string(),
+            signature: Some("sig_abc123".to_string()),
+        };
+        
+        let json = serde_json::to_string(&thinking).unwrap();
+        let deserialized: ThinkingContent = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(thinking, deserialized);
+    }
+    
+    #[test]
+    fn test_thinking_content_without_signature() {
+        let thinking = ThinkingContent {
+            text: "Simple thinking process.".to_string(),
+            signature: None,
+        };
+        
+        let json = serde_json::to_string(&thinking).unwrap();
+        assert!(!json.contains("signature"), "Signature should be omitted when None");
+        
+        let deserialized: ThinkingContent = serde_json::from_str(&json).unwrap();
+        assert_eq!(thinking, deserialized);
+    }
+    
+    #[test]
+    fn test_content_thinking_variant() {
+        let content = Content::Thinking(ThinkingContent::new("Reasoning...".to_string()));
+        
+        let json = serde_json::to_string(&content).unwrap();
+        let expected = r#"{"type":"thinking","text":"Reasoning..."}"#;
+        assert_eq!(json, expected);
+        
+        let deserialized: Content = serde_json::from_str(&json).unwrap();
+        assert_eq!(content, deserialized);
+    }
+    
+    #[test]
+    fn test_thinking_content_display() {
+        let content = Content::Thinking(ThinkingContent::new(
+            "This is a very long thinking process that should be truncated in display".to_string()
+        ));
+        
+        let display = format!("{}", content);
+        assert!(display.starts_with("[Thinking:"));
+        assert!(display.contains("..."));
+        assert!(display.len() < 100); // Should be truncated
+    }
+    
+    #[test]
+    fn test_content_block_thinking() {
+        let json = r#"{"type":"thinking","text":"Let me think about this...","signature":"sig123"}"#;
+        let content_block: ContentBlock = serde_json::from_str(json).unwrap();
+        
+        match content_block {
+            ContentBlock::Thinking { text, signature } => {
+                assert_eq!(text, "Let me think about this...");
+                assert_eq!(signature, Some("sig123".to_string()));
+            },
+            _ => panic!("Expected Thinking content block"),
+        }
+    }
+    
+    #[test]
+    fn test_assistant_message_with_thinking() {
+        let json = r#"{
+            "role": "assistant",
+            "content": [
+                {"type": "thinking", "text": "I need to solve this step by step..."},
+                {"type": "text", "text": "The answer is 42."}
+            ]
+        }"#;
+        
+        let message: Message = serde_json::from_str(json).unwrap();
+        assert_eq!(message.role, Role::Assistant);
+        
+        match message.content {
+            StringOrContents::Contents(contents) => {
+                assert_eq!(contents.len(), 2);
+                
+                match &contents[0] {
+                    Content::Thinking(thinking) => {
+                        assert_eq!(thinking.text, "I need to solve this step by step...");
+                        assert_eq!(thinking.signature, None);
+                    },
+                    _ => panic!("Expected thinking content first"),
+                }
+                
+                match &contents[1] {
+                    Content::Text(text) => {
+                        assert_eq!(text.text, "The answer is 42.");
+                    },
+                    _ => panic!("Expected text content second"),
+                }
+            },
+            _ => panic!("Expected contents array"),
+        }
+    }
+    
+    #[test]
+    fn test_thinking_content_from_conversion() {
+        let thinking = ThinkingContent::new("Test thinking".to_string());
+        let content: Content = thinking.clone().into();
+        
+        match content {
+            Content::Thinking(converted) => assert_eq!(converted, thinking),
+            _ => panic!("Expected thinking content"),
+        }
+    }
+    
+    #[test]
+    fn test_mixed_content_with_thinking() {
+        let json = r#"{
+            "role": "assistant",
+            "content": [
+                {"type": "text", "text": "Let me help you with that."},
+                {"type": "thinking", "text": "The user is asking about...", "signature": "analysis_1"},
+                {"type": "text", "text": "Here's my response."},
+                {"type": "thinking", "text": "I should also mention..."}
+            ]
+        }"#;
+        
+        let message: Message = serde_json::from_str(json).unwrap();
+        
+        match message.content {
+            StringOrContents::Contents(contents) => {
+                assert_eq!(contents.len(), 4);
+                
+                // Verify the sequence: text, thinking, text, thinking
+                assert!(matches!(contents[0], Content::Text(_)));
+                assert!(matches!(contents[1], Content::Thinking(_)));
+                assert!(matches!(contents[2], Content::Text(_)));
+                assert!(matches!(contents[3], Content::Thinking(_)));
+                
+                // Check the thinking content with signature
+                if let Content::Thinking(thinking) = &contents[1] {
+                    assert_eq!(thinking.signature, Some("analysis_1".to_string()));
+                }
+            },
+            _ => panic!("Expected contents array"),
+        }
     }
 }

@@ -33,7 +33,6 @@ use core::fmt;
 use bon::Builder;
 #[cfg(feature = "leaky-bucket")] // Add cfg attribute here
 use leaky_bucket::RateLimiter;
-#[cfg(feature = "schema")]
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 use serde_json::Value;
@@ -342,7 +341,6 @@ pub struct ResponseSchema;
 
 impl ResponseSchema {
     #[must_use]
-    #[cfg(feature = "schema")]
     pub fn from<T: JsonSchema>() -> Value {
         let settings = schemars::generate::SchemaSettings::openapi3().with(|s| {
             s.inline_subschemas = true;

@@ -13,7 +13,6 @@ description = "Google Gemini API client for Rust"
 # Default features - minimal build without media dependencies
 default = []
 leaky-bucket = ["dep:leaky-bucket"]
-schema = ["dep:schemars"]
 
 # Feature to enable the procedural macros (like #[toolbox])
 # macros = ["dep:gemini-ox-macros"]
@@ -33,7 +32,7 @@ video = ["dep:nokhwa", "dep:image"]
 [dependencies]
 # Use workspace dependencies where possible
 futures-util = { workspace = true }
-schemars = { workspace = true, optional = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

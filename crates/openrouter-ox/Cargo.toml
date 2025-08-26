@@ -14,7 +14,6 @@ keywords = ["openrouter", "ai", "api", "client", "async"]
 [features]
 default = []
 leaky-bucket = ["dep:leaky-bucket"]
-schema = ["dep:schemars"]
 
 [dependencies]
 reqwest = { workspace = true }
@@ -26,10 +25,10 @@ async-trait = { workspace = true }
 tokio = { workspace = true }
 bon = { workspace = true }
 derive_more = { workspace = true }
-schemars = { workspace = true, optional = true }
+schemars = { workspace = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
-anthropic-ox = { path = "../anthropic-ox", features = ["schema"] }
+anthropic-ox = { path = "../anthropic-ox" }
 chrono = { workspace = true }
 
 [dev-dependencies]

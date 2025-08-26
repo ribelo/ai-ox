@@ -357,12 +357,7 @@ impl From<AnthropicTool> for OpenRouterTool {
             function: FunctionMetadata {
                 name: anthropic_tool.name,
                 description: Some(anthropic_tool.description),
-                parameters: {
-                    #[cfg(feature = "schema")]
-                    { anthropic_tool.input_schema }
-                    #[cfg(not(feature = "schema"))]
-                    { serde_json::json!({}) }
-                },
+                parameters: anthropic_tool.input_schema,
             }
         }
     }
@@ -372,21 +367,11 @@ impl From<AnthropicTool> for OpenRouterTool {
 impl From<OpenRouterTool> for AnthropicTool {
     fn from(openrouter_tool: OpenRouterTool) -> Self {
         {
-            #[cfg(feature = "schema")]
-            {
-                AnthropicTool::new(
-                    openrouter_tool.function.name,
-                    openrouter_tool.function.description.unwrap_or_default(),
-                )
-                .with_schema(openrouter_tool.function.parameters)
-            }
-            #[cfg(not(feature = "schema"))]
-            {
-                AnthropicTool::new(
-                    openrouter_tool.function.name,
-                    openrouter_tool.function.description.unwrap_or_default(),
-                )
-            }
+            AnthropicTool::new(
+                openrouter_tool.function.name,
+                openrouter_tool.function.description.unwrap_or_default(),
+            )
+            .with_schema(openrouter_tool.function.parameters)
         }
     }
 }
@@ -659,17 +644,8 @@ mod tests {
 
     #[test]
     fn test_tool_conversions() {
-        let anthropic_tool = {
-            #[cfg(feature = "schema")]
-            {
-                AnthropicTool::new("test_function".to_string(), "A test function".to_string())
-                    .with_schema(json!({"type": "object", "properties": {}}))
-            }
-            #[cfg(not(feature = "schema"))]
-            {
-                AnthropicTool::new("test_function".to_string(), "A test function".to_string())
-            }
-        };
+        let anthropic_tool = AnthropicTool::new("test_function".to_string(), "A test function".to_string())
+            .with_schema(json!({"type": "object", "properties": {}}));
 
         let openrouter_tool: OpenRouterTool = anthropic_tool.clone().into();
         assert_eq!(openrouter_tool.function.name, "test_function");

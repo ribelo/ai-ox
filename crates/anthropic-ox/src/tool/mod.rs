@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use std::{collections::HashMap, fmt, sync::Arc};
 
@@ -15,7 +15,6 @@ pub enum ToolChoice {
 pub struct Tool {
     pub name: String,
     pub description: String,
-    #[cfg(feature = "schema")]
     pub input_schema: serde_json::Value,
 }
 
@@ -24,12 +23,10 @@ impl Tool {
         Self {
             name,
             description,
-            #[cfg(feature = "schema")]
             input_schema: serde_json::json!({}),
         }
     }
 
-    #[cfg(feature = "schema")]
     pub fn with_schema(mut self, schema: serde_json::Value) -> Self {
         self.input_schema = schema;
         self
@@ -41,11 +38,13 @@ pub struct ToolUse {
     pub id: String,
     pub name: String,
     pub input: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<crate::message::CacheControl>,
 }
 
 impl ToolUse {
     pub fn new(id: String, name: String, input: serde_json::Value) -> Self {
-        Self { id, name, input }
+        Self { id, name, input, cache_control: None }
     }
 }
 
@@ -81,16 +80,19 @@ impl ToolUseBuilder {
             id: self.id,
             name: self.name,
             input,
+            cache_control: None,
         })
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 pub struct ToolResult {
     pub tool_use_id: String,
     pub content: Vec<ToolResultContent>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<crate::message::CacheControl>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -100,12 +102,97 @@ pub enum ToolResultContent {
     Image { source: crate::message::ImageSource },
 }
 
+
+impl<'de> Deserialize<'de> for ToolResult {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        use serde::de::{Error, MapAccess, Visitor};
+        use std::fmt;
+
+        struct ToolResultVisitor;
+
+        impl<'de> Visitor<'de> for ToolResultVisitor {
+            type Value = ToolResult;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a ToolResult struct")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<ToolResult, V::Error>
+            where
+                V: MapAccess<'de>,
+            {
+                let mut tool_use_id = None;
+                let mut content = None;
+                let mut is_error = None;
+                let mut cache_control = None;
+
+                while let Some(key) = map.next_key()? {
+                    match key {
+                        "tool_use_id" => {
+                            tool_use_id = Some(map.next_value()?);
+                        }
+                        "content" => {
+                            content = Some(deserialize_tool_result_content_value(map.next_value()?)?);
+                        }
+                        "is_error" => {
+                            is_error = Some(map.next_value()?);
+                        }
+                        "cache_control" => {
+                            cache_control = Some(map.next_value()?);
+                        }
+                        _ => {
+                            let _: serde_json::Value = map.next_value()?;
+                        }
+                    }
+                }
+
+                let tool_use_id = tool_use_id.ok_or_else(|| Error::missing_field("tool_use_id"))?;
+                let content = content.ok_or_else(|| Error::missing_field("content"))?;
+
+                Ok(ToolResult {
+                    tool_use_id,
+                    content,
+                    is_error,
+                    cache_control,
+                })
+            }
+        }
+
+        deserializer.deserialize_struct("ToolResult", &["tool_use_id", "content", "is_error", "cache_control"], ToolResultVisitor)
+    }
+}
+
+fn deserialize_tool_result_content_value<E>(value: serde_json::Value) -> Result<Vec<ToolResultContent>, E>
+where
+    E: serde::de::Error,
+{
+    match value {
+        // Handle string format (Claude Code format)
+        serde_json::Value::String(text) => {
+            Ok(vec![ToolResultContent::Text { text }])
+        }
+        // Handle array format (standard Anthropic format)
+        serde_json::Value::Array(arr) => {
+            arr.into_iter()
+                .map(|item| {
+                    serde_json::from_value(item).map_err(E::custom)
+                })
+                .collect()
+        }
+        _ => Err(E::custom("content must be either a string or an array")),
+    }
+}
+
 impl ToolResult {
     pub fn new(tool_use_id: String, content: Vec<ToolResultContent>) -> Self {
         Self {
             tool_use_id,
             content,
             is_error: None,
+            cache_control: None,
         }
     }
 
@@ -114,6 +201,7 @@ impl ToolResult {
             tool_use_id,
             content: vec![ToolResultContent::Text { text }],
             is_error: None,
+            cache_control: None,
         }
     }
 
@@ -122,6 +210,7 @@ impl ToolResult {
             tool_use_id,
             content: vec![ToolResultContent::Text { text: error }],
             is_error: Some(true),
+            cache_control: None,
         }
     }
 }

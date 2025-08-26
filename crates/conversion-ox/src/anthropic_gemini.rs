@@ -212,6 +212,7 @@ fn convert_gemini_parts_to_anthropic_content(parts: &[GeminiPart]) -> Vec<Anthro
                     id: function_call.id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                     name: function_call.name.clone(),
                     input: function_call.args.clone().unwrap_or_default(),
+                    cache_control: None,
                 }))
             }
             PartData::FunctionResponse(_) => {
@@ -229,11 +230,103 @@ pub fn anthropic_tool_to_gemini_tool(anthropic_tool: AnthropicTool) -> GeminiToo
     GeminiTool::FunctionDeclarations(vec![FunctionMetadata {
         name: anthropic_tool.name,
         description: Some(anthropic_tool.description),
-        #[cfg(feature = "schema")]
-        parameters: anthropic_tool.input_schema,
-        #[cfg(not(feature = "schema"))]
-        parameters: serde_json::json!({}),
+        parameters: draft07_to_openapi3(anthropic_tool.input_schema),
     }])
+}
+
+/// Convert JSON Schema Draft-07 format to OpenAPI 3.0 format
+/// 
+/// Key transformations:
+/// - Remove Draft-07 meta fields ($schema, additionalProperties, etc.)  
+/// - Convert nullable: ["string", "null"] → "string" + nullable: true
+/// - Remove unsupported validation constraints
+/// - Recursively transform nested schemas
+pub fn draft07_to_openapi3(schema: serde_json::Value) -> serde_json::Value {
+    match schema {
+        serde_json::Value::Object(mut obj) => {
+            // 1. Remove Draft-07 specific meta fields
+            obj.remove("$schema");
+            obj.remove("additionalProperties");
+            obj.remove("default");
+            obj.remove("optional");
+            obj.remove("title");
+            
+            // 2. Remove unsupported validation constraints
+            obj.remove("maximum");
+            obj.remove("minimum");
+            obj.remove("exclusiveMaximum");
+            obj.remove("exclusiveMinimum");
+            obj.remove("multipleOf");
+            obj.remove("maxLength");
+            obj.remove("minLength");
+            obj.remove("pattern");
+            obj.remove("maxItems");
+            obj.remove("minItems");
+            obj.remove("uniqueItems");
+            obj.remove("maxProperties");
+            obj.remove("minProperties");
+            
+            // 3. Remove complex schema composition (not supported in OpenAPI 3.0)
+            obj.remove("oneOf");
+            obj.remove("anyOf");
+            obj.remove("allOf");
+            obj.remove("not");
+            obj.remove("if");
+            obj.remove("then");
+            obj.remove("else");
+            obj.remove("patternProperties");
+            obj.remove("dependencies");
+            obj.remove("additionalItems");
+            obj.remove("contains");
+            obj.remove("const");
+            
+            // 4. Convert nullable type arrays to OpenAPI 3.0 format
+            if let Some(type_value) = obj.get_mut("type") {
+                if let serde_json::Value::Array(type_array) = type_value {
+                    // Check if this is a nullable type like ["string", "null"]
+                    if type_array.len() == 2 && 
+                       type_array.contains(&serde_json::Value::String("null".to_string())) {
+                        
+                        // Extract the non-null type
+                        let non_null_type = type_array.iter()
+                            .find(|&t| t != &serde_json::Value::String("null".to_string()))
+                            .cloned()
+                            .unwrap_or_else(|| serde_json::Value::String("string".to_string()));
+                        
+                        // Set single type and add nullable property
+                        *type_value = non_null_type;
+                        obj.insert("nullable".to_string(), serde_json::Value::Bool(true));
+                    } else if type_array.len() == 1 {
+                        // Convert single-item array to string
+                        *type_value = type_array[0].clone();
+                    }
+                }
+            }
+            
+            // 5. Recursively transform nested schemas
+            if let Some(properties) = obj.get_mut("properties") {
+                if let serde_json::Value::Object(props) = properties {
+                    for (_, prop_value) in props.iter_mut() {
+                        *prop_value = draft07_to_openapi3(prop_value.clone());
+                    }
+                }
+            }
+            
+            // Transform array items
+            if let Some(items) = obj.get_mut("items") {
+                *items = draft07_to_openapi3(items.clone());
+            }
+            
+            // Transform additional items (though we remove additionalItems above)
+            if let Some(additional_items) = obj.get_mut("additionalItems") {
+                *additional_items = draft07_to_openapi3(additional_items.clone());
+            }
+            
+            serde_json::Value::Object(obj)
+        }
+        // For non-object values, return as-is
+        other => other,
+    }
 }
 
 /// Convert Gemini Tool to Anthropic Tool
@@ -242,14 +335,10 @@ pub fn gemini_tool_to_anthropic_tool(gemini_tool: GeminiTool) -> AnthropicTool {
         GeminiTool::FunctionDeclarations(functions) => {
             // Take the first function if multiple are present
             if let Some(func) = functions.into_iter().next() {
-                let mut tool = AnthropicTool::new(
+                let tool = AnthropicTool::new(
                     func.name,
                     func.description.unwrap_or_else(|| "Unknown function".to_string()),
-                );
-                #[cfg(feature = "schema")]
-                {
-                    tool.input_schema = func.parameters;
-                }
+                ).with_schema(func.parameters);
                 tool
             } else {
                 // Fallback for empty function list
