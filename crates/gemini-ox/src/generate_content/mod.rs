@@ -1,12 +1,11 @@
-use std::pin::Pin;
-
 use crate::{
     Gemini,
     content::{Content, Part, Role},
 };
 use async_stream::try_stream;
 use bon::Builder;
-use futures_util::{Stream, StreamExt};
+use futures_util::StreamExt;
+use futures_util::stream::BoxStream;
 use request::GenerateContentRequest;
 use response::GenerateContentResponse;
 use serde::{Deserialize, Serialize};
@@ -148,75 +147,56 @@ impl GenerateContentRequest {
     /// - `GeminiRequestError::InvalidEventData` - if the stream contains invalid UTF-8 or other stream format issues
     /// - `GeminiRequestError::UnexpectedResponse` - if the API returns an unexpected response format or error
     #[must_use] // Indicate that the returned stream should be consumed
-    pub fn stream<'a>(
-        &'a self,
-        gemini: &'a Gemini,
-    ) -> Pin<Box<dyn Stream<Item = Result<GenerateContentResponse, GeminiRequestError>> + Send + 'a>>
+    pub fn stream(
+        &self,
+        gemini: &Gemini,
+    ) -> BoxStream<'static, Result<GenerateContentResponse, GeminiRequestError>>
     {
-        // Use reqwest::Url for proper URL construction
+        // Clone all required data to make the stream 'static
         let client = gemini.client.clone();
+        let oauth_token = gemini.oauth_token.clone();
+        let api_key = gemini.api_key.clone();
+        let project_id = gemini.project_id.clone();
+        let api_version = gemini.api_version.clone();
+        let base_url = gemini.base_url().to_string();
+        let request_data = self.clone();
 
-        // NOTE: This implementation buffers data to handle lines split across network chunks
-        // and ensures proper UTF-8 decoding.
-
-        // Determine authentication method  
-        let is_oauth = gemini.oauth_token.is_some();
-        
-        // Build URL based on authentication method
-        let url = {
-            let mut url = match reqwest::Url::parse(gemini.base_url()) {
-                Ok(url) => url,
-                Err(e) => {
-                    let error = GeminiRequestError::UrlBuildError(e.to_string());
-                    return Box::pin(futures_util::stream::once(async { Err(error) }));
-                }
-            };
+        Box::pin(try_stream! {
+            // Determine authentication method  
+            let is_oauth = oauth_token.is_some();
+            
+            // Build URL based on authentication method
+            let mut url = reqwest::Url::parse(&base_url)
+                .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
 
             if is_oauth {
                 // OAuth uses Cloud Code Assist streaming API
-                if let Err(_) = url.path_segments_mut()
-                    .map_err(|_| ())
-                    .and_then(|mut segments| {
-                        segments.push("v1internal:streamGenerateContent");
-                        Ok(())
-                    }) {
-                    let error = GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string());
-                    return Box::pin(futures_util::stream::once(async { Err(error) }));
-                }
+                url.path_segments_mut()
+                    .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
+                    .push("v1internal:streamGenerateContent");
                 url.query_pairs_mut().append_pair("alt", "sse");
             } else {
                 // API key uses standard Gemini streaming API
-                if let Err(_) = url.path_segments_mut()
-                    .map_err(|_| ())
-                    .and_then(|mut segments| {
-                        segments.push(&gemini.api_version);
-                        segments.push("models");
-                        segments.push(&format!("{}:streamGenerateContent", self.model));
-                        Ok(())
-                    }) {
-                    let error = GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string());
-                    return Box::pin(futures_util::stream::once(async { Err(error) }));
-                }
+                url.path_segments_mut()
+                    .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
+                    .push(&api_version)
+                    .push("models")
+                    .push(&format!("{}:streamGenerateContent", request_data.model));
                 url.query_pairs_mut().append_pair("alt", "sse");
                 
                 // Add API key to query params
-                if let Some(api_key) = &gemini.api_key {
+                if let Some(ref api_key) = api_key {
                     url.query_pairs_mut().append_pair("key", api_key);
                 } else {
-                    let error = GeminiRequestError::AuthenticationMissing;
-                    return Box::pin(futures_util::stream::once(async { Err(error) }));
+                    Err(GeminiRequestError::AuthenticationMissing)?;
                 }
             }
-            
-            url
-        };
 
-        let stream = try_stream! {
             // Build the HTTP request
             let mut req = client.post(url);
             
             // Add OAuth header if using OAuth
-            if let Some(oauth_token) = &gemini.oauth_token {
+            if let Some(ref oauth_token) = oauth_token {
                 req = req.header("authorization", format!("Bearer {}", oauth_token));
             }
             
@@ -224,18 +204,18 @@ impl GenerateContentRequest {
             let request_body = if is_oauth {
                 // Cloud Code Assist API: wrapped format
                 let minimal_request = serde_json::json!({
-                    "contents": self.contents,
-                    "generationConfig": self.generation_config,
-                    "systemInstruction": self.system_instruction
+                    "contents": request_data.contents,
+                    "generationConfig": request_data.generation_config,
+                    "systemInstruction": request_data.system_instruction
                 });
                 serde_json::json!({
-                    "model": self.model.to_string(),
-                    "project": gemini.project_id,
+                    "model": request_data.model.to_string(),
+                    "project": project_id,
                     "request": minimal_request
                 })
             } else {
                 // Standard API: direct format
-                serde_json::to_value(&self)
+                serde_json::to_value(&request_data)
                     .map_err(GeminiRequestError::SerdeError)?
             };
             
@@ -287,6 +267,8 @@ impl GenerateContentRequest {
                                                      match serde_json::from_value::<GenerateContentResponse>(response.clone()) {
                                                          Ok(response) => yield response,
                                                          Err(e) => {
+                                                             // Log the problematic JSON for debugging
+                                                             eprintln!("DEBUG: Failed to deserialize Gemini OAuth response: {}", serde_json::to_string_pretty(&response).unwrap_or_else(|_| "<failed to pretty print>".to_string()));
                                                              Err(GeminiRequestError::JsonDeserializationError(e))?;
                                                          }
                                                      }
@@ -294,7 +276,8 @@ impl GenerateContentRequest {
                                                  // Ignore wrapped responses without "response" field
                                              }
                                              Err(e) => {
-                                                 // Propagate JSON deserialization errors
+                                                 // Log the raw JSON for debugging
+                                                 eprintln!("DEBUG: Failed to parse Gemini OAuth JSON: {}", trimmed_json_data);
                                                  Err(GeminiRequestError::JsonDeserializationError(e))?;
                                              }
                                          }
@@ -303,7 +286,8 @@ impl GenerateContentRequest {
                                          match serde_json::from_str::<GenerateContentResponse>(trimmed_json_data) {
                                              Ok(response) => yield response,
                                              Err(e) => {
-                                                 // Propagate JSON deserialization errors
+                                                 // Log the raw JSON for debugging
+                                                 eprintln!("DEBUG: Failed to deserialize Gemini API response: {}", trimmed_json_data);
                                                  Err(GeminiRequestError::JsonDeserializationError(e))?;
                                              }
                                          }
@@ -335,6 +319,8 @@ impl GenerateContentRequest {
                                                      match serde_json::from_value::<GenerateContentResponse>(response.clone()) {
                                                          Ok(response) => yield response,
                                                          Err(e) => {
+                                                             // Log the problematic JSON for debugging
+                                                             eprintln!("DEBUG: Failed to deserialize Gemini OAuth response: {}", serde_json::to_string_pretty(&response).unwrap_or_else(|_| "<failed to pretty print>".to_string()));
                                                              Err(GeminiRequestError::JsonDeserializationError(e))?;
                                                          }
                                                      }
@@ -342,6 +328,8 @@ impl GenerateContentRequest {
                                                  // Ignore wrapped responses without "response" field
                                              }
                                              Err(e) => {
+                                                 // Log the raw JSON for debugging
+                                                 eprintln!("DEBUG: Failed to parse Gemini OAuth JSON: {}", trimmed_json_data);
                                                  Err(GeminiRequestError::JsonDeserializationError(e))?;
                                              }
                                          }
@@ -350,7 +338,8 @@ impl GenerateContentRequest {
                                          match serde_json::from_str::<GenerateContentResponse>(trimmed_json_data) {
                                              Ok(response) => yield response,
                                              Err(e) => {
-                                                 // Propagate JSON deserialization errors
+                                                 // Log the raw JSON for debugging
+                                                 eprintln!("DEBUG: Failed to deserialize Gemini API response: {}", trimmed_json_data);
                                                  Err(GeminiRequestError::JsonDeserializationError(e))?;
                                              }
                                          }
@@ -367,8 +356,7 @@ impl GenerateContentRequest {
                      Err(parse_error_response(status, body_bytes))?
                  }
             }
-        };
-        Box::pin(stream)
+        })
     }
 
     #[must_use]

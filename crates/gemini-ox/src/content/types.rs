@@ -31,6 +31,7 @@ pub enum ContentError {
 pub struct Content {
     /// Ordered `Parts` that constitute a single message. Parts may have different MIME types.
     #[builder(field = Vec::new())] // Initialize with an empty Vec
+    #[serde(default)] // Use default (empty Vec) if field is missing during deserialization
     pub parts: Vec<Part>,
     /// Optional. The producer of the content. Must be either 'user' or 'model'.
     /// Useful to set for multi-turn conversations, otherwise can be left blank or unset.

@@ -7,7 +7,7 @@ use crate::tool::{Tool, config::ToolConfig};
 use super::{GenerationConfig, SafetySettings};
 use crate::content::Content;
 
-#[derive(Debug, Serialize, Builder)]
+#[derive(Debug, Clone, Serialize, Builder)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateContentRequest {
     #[builder(field)]

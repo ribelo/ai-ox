@@ -69,6 +69,9 @@ impl From<GeminiError> for GenerateContentError {
                     GeminiRequestError::IoError(io_error) => {
                         GenerateContentError::provider_error("gemini", format!("IO error: {}", io_error))
                     }
+                    GeminiRequestError::AuthenticationMissing => {
+                        GenerateContentError::configuration("Gemini authentication is missing: no API key or OAuth token provided")
+                    }
                 }
             }
             GeminiError::MissingApiKey => {
