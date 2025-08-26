@@ -585,4 +585,36 @@ Received {} events total",
             }
         }
     }
+
+    #[tokio::test]
+    #[ignore = "Requires ANTHROPIC_API_KEY environment variable and makes actual API calls"]
+    async fn test_anthropic_model_request_structured_simple() {
+        use crate::model::anthropic::AnthropicModel;
+
+        let model = AnthropicModel::new("claude-3-opus-20240229").await.unwrap();
+
+        let message = Message {
+            role: MessageRole::User,
+            content: vec![Part::Text {
+                text: "Return a JSON object with a cat named 'Fluffy'".to_string(),
+            }],
+            timestamp: chrono::Utc::now(),
+        };
+
+        let result: Result<StructuredResponse<Cat>, _> =
+            model.request_structured(vec![message]).await;
+
+        match result {
+            Ok(response) => {
+                assert!(!response.data.name.is_empty());
+                assert_eq!(response.vendor_name, "anthropic");
+                assert_eq!(response.model_name, "claude-3-opus-20240229");
+
+                println!("Generated cat: {:?}", response.data);
+            }
+            Err(e) => {
+                panic!("Integration test failed: {e:?}");
+            }
+        }
+    }
 }

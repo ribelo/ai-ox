@@ -4,15 +4,20 @@ mod error;
 pub use error::AnthropicError;
 
 use crate::{
-    ModelResponse,
     content::delta::StreamEvent,
     errors::GenerateContentError,
-    model::{Model, ModelRequest, ModelInfo, Provider, response::RawStructuredResponse},
+    model::{Model, ModelInfo, ModelRequest, Provider, response::RawStructuredResponse},
+    usage::Usage,
+    ModelResponse,
+};
+use anthropic_ox::{
+    message::Content,
+    tool::{Tool, ToolChoice},
+    Anthropic,
 };
 use async_stream::try_stream;
 use bon::Builder;
-use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
-use anthropic_ox::Anthropic;
+use futures_util::{future::BoxFuture, FutureExt, StreamExt};
 
 /// Default maximum tokens for Anthropic models
 const DEFAULT_MAX_TOKENS: u32 = 4096;
@@ -67,6 +72,8 @@ impl AnthropicModel {
     }
 }
 
+use futures_util::stream::BoxStream;
+
 impl Model for AnthropicModel {
     fn info(&self) -> ModelInfo<'_> {
         ModelInfo(Provider::Anthropic, &self.model)
@@ -87,15 +94,18 @@ impl Model for AnthropicModel {
                 self.model.clone(),
                 self.system_instruction.clone(),
                 self.max_tokens,
+                None, // No tools for standard request
             )?;
             let response = self.client
                 .send(&anthropic_request)
                 .await
                 .map_err(|e| AnthropicError::Api(e))
-                .map_err(|e| GenerateContentError::provider_error(
-                    "anthropic", 
-                    format!("Failed to send request for model {}: {}", self.model, e)
-                ))?;
+                .map_err(|e| {
+                    GenerateContentError::provider_error(
+                        "anthropic",
+                        format!("Failed to send request for model {}: {}", self.model, e),
+                    )
+                })?;
             conversion::convert_anthropic_response_to_ai_ox(response, self.model.clone())
         }
         .boxed()
@@ -114,6 +124,7 @@ impl Model for AnthropicModel {
                 self.model.clone(),
                 self.system_instruction.clone(),
                 self.max_tokens,
+                None, // No tools for streaming request
             )?;
             let mut response_stream = client.stream(&anthropic_request);
 
@@ -121,7 +132,7 @@ impl Model for AnthropicModel {
                 let response = response
                     .map_err(|e| AnthropicError::Api(e))
                     .map_err(|e| GenerateContentError::provider_error(
-                        "anthropic", 
+                        "anthropic",
                         format!("Stream error for model {}: {}", self.model, e)
                     ))?;
                 let events = conversion::convert_stream_event_to_ai_ox(response);
@@ -136,13 +147,51 @@ impl Model for AnthropicModel {
 
     fn request_structured_internal(
         &self,
-        _request: ModelRequest,
-        _schema: String,
+        request: ModelRequest,
+        schema: String,
     ) -> BoxFuture<'_, Result<RawStructuredResponse, GenerateContentError>> {
+        const TOOL_NAME: &str = "json_data";
+
         async move {
-            Err(GenerateContentError::UnsupportedFeature(
-                "AnthropicModel does not currently support structured generation.".to_string(),
-            ))
+            let schema_json: serde_json::Value =
+                serde_json::from_str(&schema).map_err(|e| AnthropicError::InvalidSchema(e.to_string()))?;
+
+            let tool = Tool {
+                name: TOOL_NAME.to_string(),
+                description: "Function call with a JSON schema for structured data extraction.".to_string(),
+                input_schema: schema_json,
+            };
+
+            let tool_choice = ToolChoice::Tool {
+                name: TOOL_NAME.to_string(),
+            };
+
+            let anthropic_request = conversion::convert_request_to_anthropic(
+                request,
+                self.model.clone(),
+                self.system_instruction.clone(),
+                self.max_tokens,
+                Some((vec![tool], Some(tool_choice))),
+            )?;
+
+            let response = self.client
+                .send(&anthropic_request)
+                .await
+                .map_err(|e| AnthropicError::Api(e))?;
+
+            let tool_use = response.content.iter().find_map(|c| match c {
+                Content::ToolUse(tool_use) => Some(tool_use),
+                _ => None,
+            }).ok_or_else(|| {
+                AnthropicError::ResponseParsing("No tool use content found in response".to_string())
+            })?;
+
+            Ok(RawStructuredResponse {
+                json: tool_use.input.clone(),
+                usage: response.usage.into(),
+                model_name: self.model.clone(),
+                vendor_name: "anthropic".to_string(),
+            })
         }
         .boxed()
     }
