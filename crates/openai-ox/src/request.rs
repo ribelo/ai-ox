@@ -1,18 +1,29 @@
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 
-use crate::{Message, Model, Tool, Usage};
+use crate::{Message, Tool};
 
 /// Request for chat completion
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+#[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
 pub struct ChatRequest {
+    /// List of messages in the conversation
+    #[builder(field)]
+    pub messages: Vec<Message>,
+
+    /// Tools available to the model
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(field)]
+    pub tools: Option<Vec<Tool>>,
+
+    /// User identifier for abuse monitoring
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(field)]
+    pub user: Option<String>,
+
     /// The model to use for completion
     #[builder(into)]
     pub model: String,
-
-    /// List of messages in the conversation
-    #[builder(default)]
-    pub messages: Vec<Message>,
 
     /// Maximum number of tokens to generate
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -46,10 +57,6 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f32>,
 
-    /// Tools available to the model
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Tool>>,
-
     /// Tool choice preference
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<String>,
@@ -61,10 +68,6 @@ pub struct ChatRequest {
     /// Random seed for deterministic output
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u64>,
-
-    /// User identifier for abuse monitoring
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub user: Option<String>,
 }
 
 impl ChatRequest {
@@ -91,46 +94,37 @@ impl ChatRequest {
 }
 
 // Builder extensions for convenience methods
-impl<S: ChatRequestBuilderState> ChatRequestBuilder<S> {
+impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
     /// Add a user message
-    pub fn user(mut self, content: impl Into<String>) -> Self {
-        self.messages.get_or_insert_default().push(Message::user(content));
+    pub fn user_message(mut self, content: impl Into<String>) -> Self {
+        self.messages.push(Message::user(content));
         self
     }
 
     /// Add an assistant message
-    pub fn assistant(mut self, content: impl Into<String>) -> Self {
-        self.messages.get_or_insert_default().push(Message::assistant(content));
+    pub fn assistant_message(mut self, content: impl Into<String>) -> Self {
+        self.messages.push(Message::assistant(content));
         self
     }
 
     /// Add a system message
-    pub fn system(mut self, content: impl Into<String>) -> Self {
-        self.messages.get_or_insert_default().push(Message::system(content));
+    pub fn system_message(mut self, content: impl Into<String>) -> Self {
+        self.messages.push(Message::system(content));
         self
     }
 
     /// Add a message
     pub fn message(mut self, message: Message) -> Self {
-        self.messages.get_or_insert_default().push(message);
-        self
-    }
-
-    /// Add multiple messages
-    pub fn messages(mut self, messages: impl IntoIterator<Item = Message>) -> Self {
-        self.messages.get_or_insert_default().extend(messages);
+        self.messages.push(message);
         self
     }
 
     /// Add a tool
     pub fn tool(mut self, tool: Tool) -> Self {
-        self.tools.get_or_insert_default().push(tool);
-        self
-    }
-
-    /// Add multiple tools
-    pub fn tools_list(mut self, tools: impl IntoIterator<Item = Tool>) -> Self {
-        self.tools.get_or_insert_default().extend(tools);
+        if self.tools.is_none() {
+            self.tools = Some(Vec::new());
+        }
+        self.tools.as_mut().unwrap().push(tool);
         self
     }
 }

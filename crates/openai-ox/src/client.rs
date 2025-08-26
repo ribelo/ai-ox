@@ -1,9 +1,7 @@
 use bon::Builder;
 use std::time::Duration;
 
-use crate::{OpenAIRequestError, ChatRequest, ChatResponse, request::ChatRequestBuilder};
-use futures_util::StreamExt;
-use tokio_util::codec::{BytesCodec, FramedRead};
+use crate::{OpenAIRequestError, ChatRequest, ChatResponse};
 
 /// OpenAI AI API client
 #[derive(Debug, Clone, Builder)]
@@ -50,7 +48,7 @@ impl OpenAI {
     }
 
     /// Create a chat request builder
-    pub fn chat(&self) -> ChatRequestBuilder {
+    pub fn chat(&self) -> crate::request::ChatRequestBuilder {
         ChatRequest::builder()
     }
 
@@ -81,55 +79,61 @@ impl OpenAI {
     }
 
     /// Send a chat request and get a streaming response
-    pub async fn stream(
+    pub fn stream(
         &self,
         request: &ChatRequest,
-    ) -> Result<impl futures_util::Stream<Item = Result<ChatResponse, OpenAIRequestError>>, OpenAIRequestError> {
-        #[cfg(feature = "leaky-bucket")]
-        if let Some(ref limiter) = self.rate_limiter {
-            limiter.acquire_one().await;
-        }
-
+    ) -> futures_util::stream::BoxStream<'static, Result<ChatResponse, OpenAIRequestError>> {
+        use async_stream::try_stream;
+        use futures_util::StreamExt;
+        
+        let client = self.client.clone();
+        let api_key = self.api_key.clone();
         let url = format!("{}/chat/completions", self.base_url);
+        let mut request_data = request.clone();
+        request_data.stream = Some(true);
 
-        let mut streaming_request = request.clone();
-        streaming_request.stream = Some(true);
+        #[cfg(feature = "leaky-bucket")]
+        let rate_limiter = self.rate_limiter.clone();
 
-        let response = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.api_key)
-            .json(&streaming_request)
-            .send()
-            .await?;
+        Box::pin(try_stream! {
+            #[cfg(feature = "leaky-bucket")]
+            if let Some(ref limiter) = rate_limiter {
+                limiter.acquire_one().await;
+            }
 
-        if !response.status().is_success() {
+            let response = client
+                .post(&url)
+                .bearer_auth(&api_key)
+                .json(&request_data)
+                .send()
+                .await?;
+
             let status = response.status();
-            let bytes = response.bytes().await?;
-            return Err(crate::error::parse_error_response(status, bytes));
-        }
 
-        Ok(async_stream::stream! {
-            let byte_stream = response.bytes_stream();
-            let mut framed = FramedRead::new(byte_stream.map(|r| r.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))), BytesCodec::new());
+            if !response.status().is_success() {
+                let bytes = response.bytes().await?;
+                Err(crate::error::parse_error_response(status, bytes))?
+            } else {
+                let mut byte_stream = response.bytes_stream();
 
-            while let Some(line_result) = framed.next().await {
-                match line_result {
-                    Ok(line) => {
-                        let line = String::from_utf8_lossy(&line);
+                while let Some(chunk_result) = byte_stream.next().await {
+                    let chunk = chunk_result?;
+                    let chunk_str = String::from_utf8(chunk.to_vec())
+                        .map_err(|e| OpenAIRequestError::InvalidEventData(format!("UTF-8 decode error: {e}")))?;
+
+                    for line in chunk_str.lines() {
                         if line.starts_with("data: ") {
                             let data = &line[6..];
                             if data == "[DONE]" {
-                                break;
+                                return;
                             }
 
                             match serde_json::from_str::<ChatResponse>(data) {
-                                Ok(response) => yield Ok(response),
-                                Err(e) => yield Err(OpenAIRequestError::SerdeError(e)),
+                                Ok(response) => yield response,
+                                Err(e) => Err(OpenAIRequestError::SerdeError(e))?,
                             }
                         }
                     }
-                    Err(e) => yield Err(OpenAIRequestError::InvalidEventData(e.to_string())),
                 }
             }
         })

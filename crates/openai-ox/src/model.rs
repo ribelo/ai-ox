@@ -1,17 +1,14 @@
 use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use strum::Display;
 
 /// Available models for OpenAI
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Display, EnumString)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, Display)]
 #[serde(rename_all = "kebab-case")]
-#[strum(serialize_all = "kebab-case")]
 pub enum Model {
     #[serde(rename = "gpt-3.5-turbo")]
-    #[strum(serialize = "gpt-3.5-turbo")]
     Gpt3_5Turbo,
 
     #[serde(rename = "gpt-4")]
-    #[strum(serialize = "gpt-4")]
     Gpt4,
 
     /// Custom model (for models not in this enum)

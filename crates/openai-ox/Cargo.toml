@@ -1,7 +1,7 @@
 [package]
 name = "openai-ox"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 description = "OpenAI AI API client for Rust"
 readme = "README.md"
@@ -17,7 +17,7 @@ schema = ["dep:schemars"]
 [dependencies]
 # Core dependencies - use workspace where possible
 async-stream = { workspace = true }
-bon = { workspace = true, features = ["builder"] }
+bon = { workspace = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 bytes = { workspace = true }
 chrono = { workspace = true }
