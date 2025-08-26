@@ -16,8 +16,17 @@ pub use errors::GenerateContentError;
 pub use model::response::{ModelResponse, StructuredResponse};
 
 // Re-export model implementations based on features
+#[cfg(feature = "anthropic")]
+pub use model::anthropic::AnthropicModel;
+
 #[cfg(feature = "gemini")]
 pub use model::gemini::GeminiModel;
+
+#[cfg(feature = "groq")]
+pub use model::groq::GroqModel;
+
+#[cfg(feature = "mistral")]
+pub use model::mistral::MistralModel;
 
 #[cfg(feature = "openrouter")]
 pub use model::openrouter::OpenRouterModel;

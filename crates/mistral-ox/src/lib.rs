@@ -64,6 +64,10 @@ impl Mistral {
 }
 
 impl Mistral {
+    // TODO(Jules): This `send` method contains boilerplate reqwest logic that is
+    // duplicated across all provider crates. This could be unified into a shared
+    // internal crate (e.g., `ai-ox-http-client`). See the code review report
+    // for a detailed proposal.
     pub async fn send(
         &self,
         request: &request::ChatRequest,
@@ -87,6 +91,10 @@ impl Mistral {
         }
     }
 
+    // TODO(Jules): This `stream` method contains boilerplate SSE (Server-Sent Events)
+    // handling logic that is duplicated across all provider crates. This could be
+    // unified into a shared internal crate (e.g., `ai-ox-http-client`). See the
+    // code review report for a detailed proposal.
     pub fn stream(
         &self,
         request: &request::ChatRequest,

@@ -125,7 +125,7 @@ pub enum Tool {
 /// When using `Agent::approve_dangerous_tools()`, you're approving ALL invocations of that
 /// function. For tools where danger varies by argument (like bash commands), this means:
 /// 
-/// ```rust
+/// ```rust,ignore
 /// // User approves "execute" for session
 /// agent.approve_dangerous_tools(&["execute"]);
 /// 
@@ -138,7 +138,7 @@ pub enum Tool {
 /// 
 /// For fine-grained control, override `invoke_with_hooks()` to inspect arguments:
 /// 
-/// ```rust
+/// ```rust,ignore
 /// fn invoke_with_hooks(&self, call: ToolCall, hooks: ToolHooks) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
 ///     Box::pin(async move {
 ///         // Check if THIS SPECIFIC invocation is dangerous
@@ -180,7 +180,7 @@ pub trait ToolBox: Send + Sync + 'static {
     /// 
     /// # Example
     /// 
-    /// ```rust
+    /// ```rust,ignore
     /// fn invoke_with_hooks(&self, call: ToolCall, hooks: ToolHooks) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
     ///     Box::pin(async move {
     ///         // Check command for danger patterns

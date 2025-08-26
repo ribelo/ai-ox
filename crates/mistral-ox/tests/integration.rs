@@ -11,7 +11,13 @@ fn get_test_client() -> Result<Mistral, Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
-    let client = get_test_client()?;
+    let client = match get_test_client() {
+        Ok(client) => client,
+        Err(_) => {
+            println!("ℹ️  Skipping test: MISTRAL_API_KEY not found");
+            return Ok(());
+        }
+    };
     
     let messages = Messages::new(vec![
         Message::user("What is 2+2? Reply with just the number.")
@@ -47,7 +53,13 @@ async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_system_message() -> Result<(), Box<dyn std::error::Error>> {
-    let client = get_test_client()?;
+    let client = match get_test_client() {
+        Ok(client) => client,
+        Err(_) => {
+            println!("ℹ️  Skipping test: MISTRAL_API_KEY not found");
+            return Ok(());
+        }
+    };
     
     let messages = Messages::new(vec![
         Message::system("You are a pirate. Always respond like a pirate would."),
@@ -87,7 +99,13 @@ async fn test_system_message() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_streaming() -> Result<(), Box<dyn std::error::Error>> {
-    let client = get_test_client()?;
+    let client = match get_test_client() {
+        Ok(client) => client,
+        Err(_) => {
+            println!("ℹ️  Skipping test: MISTRAL_API_KEY not found");
+            return Ok(());
+        }
+    };
     
     let messages = Messages::new(vec![
         Message::user("Count from 1 to 5, one number per line.")
@@ -129,7 +147,13 @@ async fn test_streaming() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_tool_calling() -> Result<(), Box<dyn std::error::Error>> {
-    let client = get_test_client()?;
+    let client = match get_test_client() {
+        Ok(client) => client,
+        Err(_) => {
+            println!("ℹ️  Skipping test: MISTRAL_API_KEY not found");
+            return Ok(());
+        }
+    };
     
     let weather_tool = Tool::new("get_weather", "Get the current weather for a location")
         .with_parameters(serde_json::json!({
@@ -188,7 +212,13 @@ async fn test_tool_calling() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_json_mode() -> Result<(), Box<dyn std::error::Error>> {
-    let client = get_test_client()?;
+    let client = match get_test_client() {
+        Ok(client) => client,
+        Err(_) => {
+            println!("ℹ️  Skipping test: MISTRAL_API_KEY not found");
+            return Ok(());
+        }
+    };
     
     let messages = Messages::new(vec![
         Message::user("Generate a JSON object with the following fields: name (string), age (number), city (string). Use realistic values.")
@@ -228,7 +258,13 @@ async fn test_json_mode() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_multiple_models() -> Result<(), Box<dyn std::error::Error>> {
-    let client = get_test_client()?;
+    let client = match get_test_client() {
+        Ok(client) => client,
+        Err(_) => {
+            println!("ℹ️  Skipping test: MISTRAL_API_KEY not found");
+            return Ok(());
+        }
+    };
     
     let models = vec![
         Model::MistralTiny,
@@ -271,7 +307,13 @@ async fn test_multiple_models() -> Result<(), Box<dyn std::error::Error>> {
 
 #[tokio::test]
 async fn test_error_handling() -> Result<(), Box<dyn std::error::Error>> {
-    let client = get_test_client()?;
+    let client = match get_test_client() {
+        Ok(client) => client,
+        Err(_) => {
+            println!("ℹ️  Skipping test: MISTRAL_API_KEY not found");
+            return Ok(());
+        }
+    };
     
     // Test with invalid model name
     let messages = Messages::new(vec![

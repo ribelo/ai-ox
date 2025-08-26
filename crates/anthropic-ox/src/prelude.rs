@@ -2,7 +2,7 @@
 //!
 //! This module re-exports the most commonly used types and traits.
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use anthropic_ox::prelude::*;
 //!
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {

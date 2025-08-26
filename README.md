@@ -4,14 +4,17 @@ A Rust workspace for AI model integrations with unified abstractions for multipl
 
 ## Overview
 
-ai-ox provides a unified interface for working with different AI models and providers through a common abstraction layer. The workspace currently supports Google Gemini and OpenRouter, with extensible architecture for additional providers.
+ai-ox provides a unified interface for working with different AI models and providers through a common abstraction layer. The workspace supports a growing list of providers, including Anthropic, Google Gemini, Groq, Mistral, and OpenRouter, with an extensible architecture for adding more.
 
 ## Workspace Structure
 
-- **`ai-ox`** - Core library with unified abstractions for AI models, agents, workflows, and tools
-- **`gemini-ox`** - Google Gemini API client with support for text generation, multimodal content, live sessions, and embeddings
-- **`openrouter-ox`** - OpenRouter API client for accessing multiple AI models through a single interface
-- **`ai-ox-macros`** - Procedural macros and code generation utilities
+- **`ai-ox`** - Core library with unified abstractions for AI models, agents, workflows, and tools.
+- **`ai-ox-macros`** - Procedural macros and code generation utilities.
+- **`anthropic-ox`** - Standalone client for the Anthropic API.
+- **`gemini-ox`** - Standalone client for the Google Gemini API.
+- **`groq-ox`** - Standalone client for the Groq API.
+- **`mistral-ox`** - Standalone client for the Mistral API.
+- **`openrouter-ox`** - Standalone client for the OpenRouter API.
 
 ## Features
 
@@ -36,7 +39,7 @@ Enable specific providers:
 
 ```toml
 [dependencies]
-ai-ox = { version = "0.1.0", features = ["gemini", "openrouter"] }
+ai-ox = { version = "0.1.0", features = ["anthropic", "gemini", "groq", "mistral", "openrouter"] }
 ```
 
 ## Usage

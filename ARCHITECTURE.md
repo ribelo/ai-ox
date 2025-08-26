@@ -1,5 +1,11 @@
 # ai-ox Architecture
 
+<!--
+TODO(Jules): This document has been updated to reflect the current architecture.
+It's crucial to keep this document in sync with any future architectural
+changes to ensure it remains a useful resource for developers.
+-->
+
 This document describes the architectural design and patterns used in the ai-ox Rust workspace.
 
 ## Overview
@@ -8,21 +14,27 @@ ai-ox is designed as a provider-agnostic AI integration framework with a unified
 
 ## Workspace Structure
 
+The workspace is organized into a core crate (`ai-ox`), several provider-specific client crates (`*-ox`), and a support crate for macros.
+
 ```
 ai-ox/
 ├── crates/
-│   ├── ai-ox/           # Core abstractions and unified API
-│   ├── ai-ox-macros/    # Procedural macros for tool definitions
-│   ├── gemini-ox/       # Google Gemini provider implementation
-│   └── openrouter-ox/   # OpenRouter provider implementation
+│   ├── ai-ox/           # Core abstractions, unified API, and provider adapters
+│   ├── ai-ox-macros/    # Procedural macros (e.g., #[toolbox])
+│   ├── anthropic-ox/    # Standalone client for Anthropic
+│   ├── gemini-ox/       # Standalone client for Google Gemini
+│   ├── groq-ox/         # Standalone client for Groq
+│   ├── mistral-ox/      # Standalone client for Mistral
+│   └── openrouter-ox/   # Standalone client for OpenRouter
 ```
 
-### Crate Dependencies
+### Crate Dependencies and Integration Pattern
 
-- **ai-ox** - Central orchestration layer, depends on provider crates conditionally
-- **ai-ox-macros** - Foundational macros used by ai-ox and providers
-- **gemini-ox** - Independent Gemini client, used by ai-ox when `gemini` feature enabled
-- **openrouter-ox** - Independent OpenRouter client, used by ai-ox when `openrouter` feature enabled
+The architecture uses an **Adapter Pattern**. The `ai-ox` crate acts as the central orchestrator and defines the core abstractions, primarily the `Model` trait.
+
+- **Provider Crates (`*-ox`)**: These are completely standalone SDKs. They do **not** depend on `ai-ox` and have no knowledge of its traits or abstractions. Their responsibility is to provide a pure, provider-specific Rust API.
+- **`ai-ox` Crate**: This crate conditionally depends on the provider crates via feature flags (e.g., `features = ["anthropic"]`). For each supported provider, `ai-ox` contains a private "adapter" module (e.g., `ai-ox/src/model/anthropic/`).
+- **Adapter Modules**: This is where the integration happens. Each adapter module defines a wrapper struct (e.g., `AnthropicModel`) that contains an instance of the standalone provider client. This wrapper struct then implements the `ai-ox::model::Model` trait, "adapting" the provider-specific client to the unified `ai-ox` interface.
 
 ## Core Architecture Patterns
 
@@ -57,18 +69,24 @@ pub struct ModelRequest {
 
 ### 3. Provider Abstraction Layer
 
-Each provider implements common traits while maintaining provider-specific optimizations:
+The `ai-ox` core abstracts away provider-specific details using the `Model` trait and the adapter pattern. The dependency flow is from the core to the provider clients, with the integration logic residing within the core itself.
 
 ```
-┌─────────────────┐    ┌─────────────────┐
-│   ai-ox Core    │    │   ai-ox Core    │
-│   Agent/Model   │    │   Agent/Model   │
-└─────────┬───────┘    └─────────┬───────┘
-          │                      │
-    ┌─────▼──────┐         ┌─────▼──────┐
-    │ Gemini     │         │ OpenRouter │
-    │ Provider   │         │ Provider   │
-    └────────────┘         └────────────┘
+                                 ┌──────────────────────────┐
+                                 │        ai-ox Core        │
+                                 │ (Defines `Model` Trait)  │
+                                 └───────────┬──────────────┘
+                                             │
+                                ┌────────────▼────────────┐
+                                │   Provider Adapters     │
+                                │ (Inside ai-ox::model::*)│
+                                └────────────┬────────────┘
+     ┌───────────────────────────────────────┤
+     │                  │                    │
+┌────▼─────┐     ┌──────▼───────┐     ┌──────▼───────┐
+│ anthropic-ox │     │  gemini-ox   │     │  mistral-ox  │
+│ (Standalone) │     │ (Standalone) │     │ (Standalone) │
+└──────────────┘     └──────────────┘     └──────────────┘
 ```
 
 ## Agent System Architecture
@@ -129,10 +147,13 @@ pub trait Model: Send + Sync + 'static {
 
 ### Provider Implementations
 
-Each provider implements the Model trait with provider-specific optimizations:
+The `Model` trait is implemented on **wrapper structs** inside the `ai-ox` crate's provider modules (e.g., `ai_ox::model::anthropic::AnthropicModel`). These implementations use a conversion layer to map between the generic `ai-ox` types and the provider-specific types from the standalone client crates.
 
-- **Gemini Model** - Direct Google AI API integration with multimodal support
-- **OpenRouter Model** - Multi-provider routing with fallback mechanisms
+- **AnthropicModel** - Adapter for the `anthropic-ox` client.
+- **GeminiModel** - Adapter for the `gemini-ox` client.
+- **GroqModel** - Adapter for the `groq-ox` client.
+- **MistralModel** - Adapter for the `mistral-ox` client.
+- **OpenRouterModel** - Adapter for the `openrouter-ox` client.
 
 ### Request/Response Pattern
 
@@ -292,21 +313,19 @@ Workflow::run() → initial_node.run() → NextNode::Continue(node_b) → node_b
 
 ## Provider Integration Patterns
 
-### Conversion Layer Pattern
+### Adapter and Conversion Layer Pattern
 
-Each provider implements a conversion layer to map between provider-specific and common formats:
+The core integration pattern is the **Adapter Pattern**. For each provider, `ai-ox` provides an adapter module that is responsible for bridging the gap between the generic `ai-ox` interfaces and the specific provider's SDK.
+
+A key part of this adapter is the **Conversion Layer**. Each adapter module (`ai-ox/src/model/{provider}/`) contains a `conversion.rs` file. This file is responsible for mapping data structures between the `ai-ox` core types (e.g., `ModelRequest`) and the provider-specific types (e.g., `anthropic_ox::ChatRequest`).
 
 ```rust
-// In gemini-ox
-pub mod conversion {
-    pub fn to_gemini_request(request: &ModelRequest) -> GeminiRequest;
-    pub fn from_gemini_response(response: GeminiResponse) -> ModelResponse;
-}
+// In ai-ox/src/model/anthropic/conversion.rs
+use crate::model::ModelRequest;
+use anthropic_ox::request::ChatRequest as AnthropicRequest;
 
-// In openrouter-ox  
-pub mod conversion {
-    pub fn to_openrouter_request(request: &ModelRequest) -> OpenRouterRequest;
-    pub fn from_openrouter_response(response: OpenRouterResponse) -> ModelResponse;
+pub fn convert_request_to_anthropic(request: ModelRequest) -> AnthropicRequest {
+    // ... conversion logic ...
 }
 ```
 
@@ -317,11 +336,7 @@ pub mod conversion {
 
 ### Extensibility
 
-New providers can be added by:
-1. Creating a new crate following the pattern
-2. Implementing the `Model` trait
-3. Adding conversion layer for request/response mapping
-4. Updating ai-ox features and dependencies
+The steps to add a new provider have been refined based on this adapter pattern. The goal is to keep the provider-specific crate as a simple, standalone SDK and place all the integration logic within `ai-ox`.
 
 ## Error Handling Architecture
 
@@ -408,11 +423,16 @@ Tool Calls → Tool Execution → Tool Results
 
 ### Adding New Providers
 
-1. Create new crate following naming convention (`provider-ox`)
-2. Implement `Model` trait for the provider
-3. Add conversion layer for request/response mapping
-4. Update ai-ox dependencies and features
-5. Add integration tests
+1.  **Create a Standalone Provider Crate**: Create a new crate (e.g., `my-provider-ox`). This crate should handle all API communication for the target provider but should **not** depend on `ai-ox`. It should define its own request/response structs.
+2.  **Add Crate to Workspace**: Add the new crate to the `Cargo.toml` workspace members.
+3.  **Create Adapter Module in `ai-ox`**: Inside `crates/ai-ox/src/model/`, create a new module for the provider (e.g., `my_provider`).
+4.  **Implement the Adapter**: Within this new module:
+    a.  Create a wrapper struct (e.g., `MyProviderModel`) that contains the client from `my-provider-ox`.
+    b.  Create a `conversion.rs` submodule to map between `ai-ox` types and `my-provider-ox` types.
+    c.  Implement the `ai_ox::model::Model` trait for your `MyProviderModel` wrapper struct, using the conversion functions.
+5.  **Add Feature Flag**: Add a new feature flag for the provider in `crates/ai-ox/Cargo.toml` and make the dependency on `my-provider-ox` optional.
+6.  **Update `ai-ox`**: Wire up the new module in `crates/ai-ox/src/model/mod.rs` under the new feature flag.
+7.  **Add Integration Tests**: Add tests to verify the integration works as expected.
 
 ### Custom Tool Development
 
