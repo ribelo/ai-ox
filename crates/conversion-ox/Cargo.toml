@@ -28,7 +28,7 @@ futures-util = { workspace = true }
 chrono = { workspace = true }
 
 # Provider crates (optional)
-anthropic-ox = { path = "../anthropic-ox", optional = true }
+anthropic-ox = { path = "../anthropic-ox", optional = true, features = ["full"] }
 openrouter-ox = { path = "../openrouter-ox", optional = true }
 gemini-ox = { path = "../gemini-ox", optional = true }
 

@@ -9,8 +9,8 @@
 //! let client = Anthropic::new("your-api-key");
 //! let request = ChatRequest::builder()
 //!     .model(Model::Claude35Haiku20241022)
-//!     .message(Message::user("Hello!"))
-//!     .temp(0.7)
+//!     .messages(vec![Message::from("Hello!")])
+//!     .temperature(0.7)
 //!     .build();
 //! 
 //! let response = client.send(&request).await?;
