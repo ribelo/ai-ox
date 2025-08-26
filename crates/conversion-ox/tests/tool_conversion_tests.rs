@@ -118,6 +118,7 @@ fn test_cache_control_is_dropped_in_conversion() {
         stop_sequences: None,
         tools: None,
         tool_choice: None,
+        thinking: None,
     };
     
     // Convert to Gemini request

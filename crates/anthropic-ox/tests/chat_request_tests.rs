@@ -291,6 +291,7 @@ fn test_serialization_roundtrip_string_content() {
         tools: None,
         top_k: None,
         top_p: None,
+        thinking: None,
     };
     
     let json = serde_json::to_string(&original).unwrap();
@@ -328,6 +329,7 @@ fn test_serialization_roundtrip_array_content() {
         tools: None,
         top_k: None,
         top_p: None,
+        thinking: None,
     };
     
     let json = serde_json::to_string(&original).unwrap();

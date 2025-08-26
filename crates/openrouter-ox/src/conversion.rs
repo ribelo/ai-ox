@@ -191,6 +191,10 @@ impl From<AnthropicResponse> for OpenRouterResponse {
                     // Tool results are not part of assistant message content in OpenRouter
                     None
                 }
+                AnthropicContent::Thinking(_) => {
+                    // Thinking content is not exposed in OpenRouter format - it's internal reasoning
+                    None
+                }
             })
             .collect();
 
@@ -425,6 +429,9 @@ fn convert_anthropic_messages_to_openrouter(
                         AnthropicContent::ToolUse(_) => {
                             // Tool use should not appear in user messages
                         }
+                        AnthropicContent::Thinking(_) => {
+                            // Thinking content does not appear in user messages
+                        }
                     }
                 }
 
@@ -472,6 +479,9 @@ fn convert_anthropic_messages_to_openrouter(
                         }
                         AnthropicContent::ToolResult(_) => {
                             // Tool results should not appear in assistant messages
+                        }
+                        AnthropicContent::Thinking(_) => {
+                            // Thinking content is internal reasoning, not exposed in OpenRouter format
                         }
                     }
                 }

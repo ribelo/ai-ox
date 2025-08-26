@@ -187,6 +187,10 @@ fn convert_anthropic_content_to_parts(content: &[AnthropicContent]) -> Vec<Gemin
                     scheduling: None,
                 })))
             }
+            AnthropicContent::Thinking(_) => {
+                // Thinking content is internal reasoning, not exposed in Gemini format
+                None
+            }
         })
         .collect()
 }
