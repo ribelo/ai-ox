@@ -25,6 +25,7 @@ tokio = { workspace = true }
 # Optional dependencies
 leaky-bucket = { workspace = true, optional = true }
 schemars = { workspace = true, optional = true }
+ai-ox-common = { workspace = true }
 
 [dev-dependencies]
 tokio = { version = "1.42", features = ["full", "test-util"] }

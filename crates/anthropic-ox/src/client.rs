@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::{
     error::{self, AnthropicRequestError},
+    internal::{RequestBuilder, Endpoint, HttpMethod},
     request,
     response::{self, StreamEvent},
 };
@@ -69,6 +70,59 @@ pub struct Anthropic {
 }
 
 impl Anthropic {
+    /// Create a RequestBuilder instance for this client
+    fn request_builder(&self) -> RequestBuilder<'_> {
+        RequestBuilder::new(
+            &self.client,
+            &self.base_url,
+            &self.api_key,
+            &self.oauth_token,
+            &self.api_version,
+            &self.headers,
+        )
+    }
+
+    /// Generic method for API requests that return JSON
+    async fn api_request<T: serde::de::DeserializeOwned>(
+        &self,
+        endpoint: Endpoint,
+    ) -> Result<T, AnthropicRequestError> {
+        let builder = self.request_builder();
+        builder.request(&endpoint).await
+    }
+
+    /// Generic method for API requests with JSON body
+    async fn api_request_with_body<T: serde::de::DeserializeOwned, B: serde::Serialize>(
+        &self,
+        endpoint: Endpoint,
+        body: &B,
+    ) -> Result<T, AnthropicRequestError> {
+        let builder = self.request_builder();
+        builder.request_json(&endpoint, Some(body)).await
+    }
+
+    /// Generic method for delete requests
+    async fn api_delete(&self, endpoint: Endpoint) -> Result<(), AnthropicRequestError> {
+        let builder = self.request_builder();
+        builder.request_unit(&endpoint).await
+    }
+
+    /// Generic method for requests that return raw bytes
+    async fn api_request_bytes(&self, endpoint: Endpoint) -> Result<bytes::Bytes, AnthropicRequestError> {
+        let builder = self.request_builder();
+        builder.request_bytes(&endpoint).await
+    }
+
+    /// Generic method for streaming requests
+    fn api_stream<T, B>(&self, endpoint: Endpoint, body: Option<&B>) -> BoxStream<'static, Result<T, AnthropicRequestError>>
+    where
+        T: serde::de::DeserializeOwned + Send + 'static,
+        B: serde::Serialize,
+    {
+        let builder = self.request_builder();
+        builder.stream(&endpoint, body)
+    }
+
     /// Create a new Anthropic client with the provided API key.
     pub fn new(api_key: impl Into<String>) -> Self {
         Self {
@@ -124,79 +178,28 @@ impl Anthropic {
         before_id: Option<&str>,
         after_id: Option<&str>,
     ) -> Result<ModelsListResponse, AnthropicRequestError> {
-        let url = format!("{}/{}", self.base_url, MODELS_URL);
         let mut query_params = Vec::new();
         if let Some(limit) = limit {
-            query_params.push(("limit", limit.to_string()));
+            query_params.push(("limit".to_string(), limit.to_string()));
         }
         if let Some(before_id) = before_id {
-            query_params.push(("before_id", before_id.to_string()));
+            query_params.push(("before_id".to_string(), before_id.to_string()));
         }
         if let Some(after_id) = after_id {
-            query_params.push(("after_id", after_id.to_string()));
+            query_params.push(("after_id".to_string(), after_id.to_string()));
         }
 
-        let mut req = self.client.get(&url).query(&query_params);
+        let endpoint = Endpoint::new(MODELS_URL, HttpMethod::Get)
+            .with_query_params(query_params);
 
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("content-type", "application/json");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<ModelsListResponse>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        self.api_request(endpoint).await
     }
 
     /// Retrieves a specific model by its ID.
     #[cfg(feature = "models")]
     pub async fn get_model(&self, model_id: &str) -> Result<ModelInfo, AnthropicRequestError> {
-        let url = format!("{}/{}/{}", self.base_url, MODELS_URL, model_id);
-
-        let mut req = self.client.get(&url);
-
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("content-type", "application/json");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<ModelInfo>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(format!("{}/{}", MODELS_URL, model_id), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Counts the number of tokens in a message.
@@ -205,143 +208,24 @@ impl Anthropic {
         &self,
         request: &TokenCountRequest,
     ) -> Result<TokenCountResponse, AnthropicRequestError> {
-        let url = format!("{}/{}", self.base_url, TOKENS_URL);
-
-        let mut req = self.client.post(&url);
-
-        // Use OAuth token if available, otherwise fall back to API key
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("content-type", "application/json");
-
-        // Apply custom headers
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.json(request).send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<TokenCountResponse>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(TOKENS_URL, HttpMethod::Post);
+        self.api_request_with_body(endpoint, request).await
     }
 
     pub async fn send(
         &self,
         request: &request::ChatRequest,
     ) -> Result<response::ChatResponse, AnthropicRequestError> {
-        let url = format!("{}/{}", self.base_url, CHAT_URL);
-
-        let mut req = self.client.post(&url);
-
-        // Use OAuth token if available, otherwise fall back to API key
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("content-type", "application/json");
-
-        // Apply custom headers
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.json(request).send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<response::ChatResponse>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(CHAT_URL, HttpMethod::Post);
+        self.api_request_with_body(endpoint, request).await
     }
 
     pub fn stream(
         &self,
         request: &request::ChatRequest,
     ) -> BoxStream<'static, Result<StreamEvent, AnthropicRequestError>> {
-        use async_stream::try_stream;
-        use futures_util::StreamExt;
-
-        let client = self.client.clone();
-        let api_key = self.api_key.clone();
-        let oauth_token = self.oauth_token.clone();
-        let api_version = self.api_version.clone();
-        let headers = self.headers.clone();
-        let url = format!("{}/{}", self.base_url, CHAT_URL);
-        let mut request_data = request.clone();
-        request_data.stream = Some(true);
-
-        Box::pin(try_stream! {
-            let mut req = client.post(&url);
-
-            // Use OAuth token if available, otherwise fall back to API key
-            if let Some(token) = &oauth_token {
-                req = req.header("authorization", format!("Bearer {}", token));
-            } else if let Some(key) = &api_key {
-                req = req.header("x-api-key", key);
-            } else {
-                Err(AnthropicRequestError::AuthenticationMissing)?;
-            }
-
-            let mut req_with_headers = req
-                .header("anthropic-version", &api_version)
-                .header("content-type", "application/json");
-
-            // Apply custom headers
-            for (key, value) in &headers {
-                req_with_headers = req_with_headers.header(key, value);
-            }
-
-            let response = req_with_headers
-                .json(&request_data)
-                .send()
-                .await?;
-
-            let status = response.status();
-
-            if !response.status().is_success() {
-                let bytes = response.bytes().await?;
-                Err(error::parse_error_response(status, bytes))?
-            } else {
-                let mut byte_stream = response.bytes_stream();
-
-                while let Some(chunk_result) = byte_stream.next().await {
-                    let chunk = chunk_result?;
-                    let chunk_str = String::from_utf8(chunk.to_vec())
-                        .map_err(|e| AnthropicRequestError::InvalidEventData(format!("UTF-8 decode error: {e}")))?;
-
-                    for line in chunk_str.lines() {
-                        if line.starts_with("data: ") {
-                            let json_data = line.trim_start_matches("data: ");
-                            if json_data != "[DONE]" {
-                                let event: response::StreamEvent = serde_json::from_str(json_data)?;
-                                yield event;
-                            }
-                        }
-                    }
-                }
-            }
-        })
+        let endpoint = Endpoint::new(CHAT_URL, HttpMethod::Post);
+        self.api_stream(endpoint, Some(request))
     }
 
     /// Creates a new message batch.
@@ -350,34 +234,8 @@ impl Anthropic {
         &self,
         request: &MessageBatchRequest,
     ) -> Result<MessageBatch, AnthropicRequestError> {
-        let url = format!("{}/{}", self.base_url, BATCHES_URL);
-        let mut req = self.client.post(&url);
-
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("content-type", "application/json");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.json(request).send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<MessageBatch>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(BATCHES_URL, HttpMethod::Post);
+        self.api_request_with_body(endpoint, request).await
     }
 
     /// Retrieves a message batch.
@@ -386,34 +244,8 @@ impl Anthropic {
         &self,
         batch_id: &str,
     ) -> Result<MessageBatch, AnthropicRequestError> {
-        let url = format!("{}/{}/{}", self.base_url, BATCHES_URL, batch_id);
-        let mut req = self.client.get(&url);
-
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("content-type", "application/json");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<MessageBatch>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(format!("{}/{}", BATCHES_URL, batch_id), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Lists message batches.
@@ -423,42 +255,18 @@ impl Anthropic {
         limit: Option<u32>,
         after: Option<&str>,
     ) -> Result<BatchListResponse, AnthropicRequestError> {
-        let url = format!("{}/{}", self.base_url, BATCHES_URL);
         let mut query_params = Vec::new();
         if let Some(limit) = limit {
-            query_params.push(("limit", limit.to_string()));
+            query_params.push(("limit".to_string(), limit.to_string()));
         }
         if let Some(after) = after {
-            query_params.push(("after", after.to_string()));
+            query_params.push(("after".to_string(), after.to_string()));
         }
 
-        let mut req = self.client.get(&url).query(&query_params);
+        let endpoint = Endpoint::new(BATCHES_URL, HttpMethod::Get)
+            .with_query_params(query_params);
 
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("content-type", "application/json");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<BatchListResponse>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        self.api_request(endpoint).await
     }
 
     /// Cancels a message batch.
@@ -467,34 +275,10 @@ impl Anthropic {
         &self,
         batch_id: &str,
     ) -> Result<MessageBatch, AnthropicRequestError> {
-        let url = format!("{}/{}/{}/cancel", self.base_url, BATCHES_URL, batch_id);
-        let mut req = self.client.post(&url);
-
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("content-type", "application/json");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<MessageBatch>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(format!("{}/{}/cancel", BATCHES_URL, batch_id), HttpMethod::Post);
+        // For POST requests that need empty body
+        let empty_body = serde_json::json!({});
+        self.api_request_with_body(endpoint, &empty_body).await
     }
 
     /// Retrieves the results of a message batch.
@@ -503,68 +287,8 @@ impl Anthropic {
         &self,
         batch_id: &str,
     ) -> BoxStream<'static, Result<crate::batches::BatchResult, AnthropicRequestError>> {
-        use async_stream::try_stream;
-        use futures_util::StreamExt;
-
-        let client = self.client.clone();
-        let api_key = self.api_key.clone();
-        let oauth_token = self.oauth_token.clone();
-        let api_version = self.api_version.clone();
-        let headers = self.headers.clone();
-        let url = format!("{}/{}/{}/results", self.base_url, BATCHES_URL, batch_id);
-
-        Box::pin(try_stream! {
-            let mut req = client.get(&url);
-
-            if let Some(token) = &oauth_token {
-                req = req.header("authorization", format!("Bearer {}", token));
-            } else if let Some(key) = &api_key {
-                req = req.header("x-api-key", key);
-            } else {
-                Err(AnthropicRequestError::AuthenticationMissing)?;
-            }
-
-            let mut req_with_headers = req
-                .header("anthropic-version", &api_version);
-
-            for (key, value) in &headers {
-                req_with_headers = req_with_headers.header(key, value);
-            }
-
-            let response = req_with_headers.send().await?;
-            let status = response.status();
-
-            if !status.is_success() {
-                let bytes = response.bytes().await?;
-                Err(error::parse_error_response(status, bytes))?;
-            } else {
-                let mut byte_stream = response.bytes_stream();
-                let mut buffer = Vec::new();
-
-                while let Some(chunk_result) = byte_stream.next().await {
-                    let chunk = chunk_result?;
-                    buffer.extend_from_slice(&chunk);
-
-                    // Process lines from buffer
-                    while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
-                        let line_bytes = buffer.drain(..=pos).collect::<Vec<u8>>();
-                        let line = String::from_utf8(line_bytes)?;
-                        if !line.trim().is_empty() {
-                            let result: crate::batches::BatchResult = serde_json::from_str(&line)?;
-                            yield result;
-                        }
-                    }
-                }
-                // Process any remaining data in the buffer
-                if !buffer.is_empty() {
-                    let line = String::from_utf8(buffer)?;
-                     if !line.trim().is_empty() {
-                        let result: crate::batches::BatchResult = serde_json::from_str(&line)?;
-                        yield result;
-                    }
-                }
-            }
-        })
+        let endpoint = Endpoint::new(format!("{}/{}/results", BATCHES_URL, batch_id), HttpMethod::Get);
+        self.request_builder().stream_jsonl(&endpoint)
     }
 
     /// Uploads a file to the server.
@@ -618,144 +342,45 @@ impl Anthropic {
         before_id: Option<&str>,
         after_id: Option<&str>,
     ) -> Result<FileListResponse, AnthropicRequestError> {
-        let url = format!("{}/{}", self.base_url, FILES_URL);
         let mut query_params = Vec::new();
         if let Some(limit) = limit {
-            query_params.push(("limit", limit.to_string()));
+            query_params.push(("limit".to_string(), limit.to_string()));
         }
         if let Some(before_id) = before_id {
-            query_params.push(("before_id", before_id.to_string()));
+            query_params.push(("before_id".to_string(), before_id.to_string()));
         }
         if let Some(after_id) = after_id {
-            query_params.push(("after_id", after_id.to_string()));
+            query_params.push(("after_id".to_string(), after_id.to_string()));
         }
 
-        let mut req = self.client.get(&url).query(&query_params);
-
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("anthropic-beta", "files-api-2025-04-14");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<FileListResponse>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(FILES_URL, HttpMethod::Get)
+            .with_beta("files-api-2025-04-14")
+            .with_query_params(query_params);
+        self.api_request(endpoint).await
     }
 
     /// Retrieves metadata for a specific file.
     #[cfg(feature = "files")]
     pub async fn get_file(&self, file_id: &str) -> Result<FileInfo, AnthropicRequestError> {
-        let url = format!("{}/{}/{}", self.base_url, FILES_URL, file_id);
-        let mut req = self.client.get(&url);
-
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("anthropic-beta", "files-api-2025-04-14");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<FileInfo>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(format!("{}/{}", FILES_URL, file_id), HttpMethod::Get)
+            .with_beta("files-api-2025-04-14");
+        self.api_request(endpoint).await
     }
 
     /// Deletes a file from the server.
     #[cfg(feature = "files")]
     pub async fn delete_file(&self, file_id: &str) -> Result<(), AnthropicRequestError> {
-        let url = format!("{}/{}/{}", self.base_url, FILES_URL, file_id);
-        let mut req = self.client.delete(&url);
-
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("anthropic-beta", "files-api-2025-04-14");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(())
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(format!("{}/{}", FILES_URL, file_id), HttpMethod::Delete)
+            .with_beta("files-api-2025-04-14");
+        self.api_delete(endpoint).await
     }
 
     /// Downloads a file from the server.
     #[cfg(feature = "files")]
     pub async fn download_file(&self, file_id: &str) -> Result<bytes::Bytes, AnthropicRequestError> {
-        let url = format!("{}/{}/{}/content", self.base_url, FILES_URL, file_id);
-        let mut req = self.client.get(&url);
-
-        if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        } else {
-            return Err(AnthropicRequestError::AuthenticationMissing);
-        }
-
-        let mut req_with_headers = req
-            .header("anthropic-version", &self.api_version)
-            .header("anthropic-beta", "files-api-2025-04-14");
-
-        for (key, value) in &self.headers {
-            req_with_headers = req_with_headers.header(key, value);
-        }
-
-        let res = req_with_headers.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.bytes().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        let endpoint = Endpoint::new(format!("{}/{}/content", FILES_URL, file_id), HttpMethod::Get)
+            .with_beta("files-api-2025-04-14");
+        self.api_request_bytes(endpoint).await
     }
 }
 
@@ -765,155 +390,112 @@ impl Anthropic {
     // Organization Users
     /// Lists the users in the organization.
     pub async fn list_organization_users(&self) -> Result<UserListResponse, AnthropicRequestError> {
-        let url = format!("{}/{}/users", self.base_url, ADMIN_ORGANIZATIONS_URL);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/users", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Retrieves a specific user by their ID.
     pub async fn get_organization_user(&self, user_id: &str) -> Result<User, AnthropicRequestError> {
-        let url = format!("{}/{}/users/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, user_id);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/users/{}", ADMIN_ORGANIZATIONS_URL, user_id), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Updates a user's role in the organization.
     pub async fn update_organization_user(&self, user_id: &str, role: &crate::admin::users::UserRole) -> Result<User, AnthropicRequestError> {
-        let url = format!("{}/{}/users/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, user_id);
+        let endpoint = Endpoint::new(format!("{}/users/{}", ADMIN_ORGANIZATIONS_URL, user_id), HttpMethod::Post);
         let body = serde_json::json!({ "role": role });
-        self.post(&url, &body).await
+        self.api_request_with_body(endpoint, &body).await
     }
 
     /// Removes a user from the organization.
     pub async fn remove_organization_user(&self, user_id: &str) -> Result<(), AnthropicRequestError> {
-        let url = format!("{}/{}/users/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, user_id);
-        self.delete(&url).await
+        let endpoint = Endpoint::new(format!("{}/users/{}", ADMIN_ORGANIZATIONS_URL, user_id), HttpMethod::Delete);
+        self.api_delete(endpoint).await
     }
 
     // Organization Invites
     /// Lists the pending invitations for the organization.
     pub async fn list_organization_invites(&self) -> Result<InviteListResponse, AnthropicRequestError> {
-        let url = format!("{}/{}/invites", self.base_url, ADMIN_ORGANIZATIONS_URL);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/invites", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Creates a new invitation to the organization.
     pub async fn create_organization_invite(&self, request: &CreateInviteRequest) -> Result<Invite, AnthropicRequestError> {
-        let url = format!("{}/{}/invites", self.base_url, ADMIN_ORGANIZATIONS_URL);
-        self.post(&url, request).await
+        let endpoint = Endpoint::new(format!("{}/invites", ADMIN_ORGANIZATIONS_URL), HttpMethod::Post);
+        self.api_request_with_body(endpoint, request).await
     }
 
     /// Deletes a pending invitation to the organization.
     pub async fn delete_organization_invite(&self, invite_id: &str) -> Result<(), AnthropicRequestError> {
-        let url = format!("{}/{}/invites/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, invite_id);
-        self.delete(&url).await
+        let endpoint = Endpoint::new(format!("{}/invites/{}", ADMIN_ORGANIZATIONS_URL, invite_id), HttpMethod::Delete);
+        self.api_delete(endpoint).await
     }
 
     // Workspaces
     /// Lists the workspaces in the organization.
     pub async fn list_workspaces(&self) -> Result<WorkspaceListResponse, AnthropicRequestError> {
-        let url = format!("{}/{}/workspaces", self.base_url, ADMIN_ORGANIZATIONS_URL);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/workspaces", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Retrieves a specific workspace by its ID.
     pub async fn get_workspace(&self, workspace_id: &str) -> Result<Workspace, AnthropicRequestError> {
-        let url = format!("{}/{}/workspaces/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, workspace_id);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/workspaces/{}", ADMIN_ORGANIZATIONS_URL, workspace_id), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Creates a new workspace in the organization.
     pub async fn create_workspace(&self, request: &CreateWorkspaceRequest) -> Result<Workspace, AnthropicRequestError> {
-        let url = format!("{}/{}/workspaces", self.base_url, ADMIN_ORGANIZATIONS_URL);
-        self.post(&url, request).await
+        let endpoint = Endpoint::new(format!("{}/workspaces", ADMIN_ORGANIZATIONS_URL), HttpMethod::Post);
+        self.api_request_with_body(endpoint, request).await
     }
 
     /// Updates a workspace.
     pub async fn update_workspace(&self, workspace_id: &str, request: &UpdateWorkspaceRequest) -> Result<Workspace, AnthropicRequestError> {
-        let url = format!("{}/{}/workspaces/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, workspace_id);
-        self.post(&url, request).await
+        let endpoint = Endpoint::new(format!("{}/workspaces/{}", ADMIN_ORGANIZATIONS_URL, workspace_id), HttpMethod::Post);
+        self.api_request_with_body(endpoint, request).await
     }
 
     /// Archives a workspace.
     pub async fn archive_workspace(&self, workspace_id: &str) -> Result<Workspace, AnthropicRequestError> {
-        let url = format!("{}/{}/workspaces/{}/archive", self.base_url, ADMIN_ORGANIZATIONS_URL, workspace_id);
-        self.post(&url, &serde_json::json!({})).await
+        let endpoint = Endpoint::new(format!("{}/workspaces/{}/archive", ADMIN_ORGANIZATIONS_URL, workspace_id), HttpMethod::Post);
+        let empty_body = serde_json::json!({});
+        self.api_request_with_body(endpoint, &empty_body).await
     }
 
     // API Keys
     /// Lists the API keys in the organization.
     pub async fn list_api_keys(&self) -> Result<ApiKeyListResponse, AnthropicRequestError> {
-        let url = format!("{}/{}/api_keys", self.base_url, ADMIN_ORGANIZATIONS_URL);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/api_keys", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Retrieves a specific API key by its ID.
     pub async fn get_api_key(&self, api_key_id: &str) -> Result<ApiKey, AnthropicRequestError> {
-        let url = format!("{}/{}/api_keys/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, api_key_id);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/api_keys/{}", ADMIN_ORGANIZATIONS_URL, api_key_id), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Updates an API key.
     pub async fn update_api_key(&self, api_key_id: &str, request: &UpdateApiKeyRequest) -> Result<ApiKey, AnthropicRequestError> {
-        let url = format!("{}/{}/api_keys/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, api_key_id);
-        self.post(&url, request).await
+        let endpoint = Endpoint::new(format!("{}/api_keys/{}", ADMIN_ORGANIZATIONS_URL, api_key_id), HttpMethod::Post);
+        self.api_request_with_body(endpoint, request).await
     }
 
     // Usage and Cost
     /// Retrieves a usage report for the organization.
     pub async fn get_usage_report(&self) -> Result<UsageReportResponse, AnthropicRequestError> {
-        let url = format!("{}/{}/usage_report/messages", self.base_url, ADMIN_ORGANIZATIONS_URL);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/usage_report/messages", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
     /// Retrieves a cost report for the organization.
     pub async fn get_cost_report(&self) -> Result<CostReportResponse, AnthropicRequestError> {
-        let url = format!("{}/{}/cost_report", self.base_url, ADMIN_ORGANIZATIONS_URL);
-        self.get(&url).await
+        let endpoint = Endpoint::new(format!("{}/cost_report", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        self.api_request(endpoint).await
     }
 
-    // Generic helpers for GET and POST requests
-    #[doc(hidden)]
-    pub async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, AnthropicRequestError> {
-        let mut req = self.client.get(url);
-        req = self.add_auth_headers(req);
-        let res = req.send().await?;
-        self.handle_response(res).await
-    }
-
-    #[doc(hidden)]
-    pub async fn post<T: serde::de::DeserializeOwned, B: Serialize>(&self, url: &str, body: &B) -> Result<T, AnthropicRequestError> {
-        let mut req = self.client.post(url);
-        req = self.add_auth_headers(req);
-        let res = req.json(body).send().await?;
-        self.handle_response(res).await
-    }
-
-    async fn delete<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, AnthropicRequestError> {
-        let mut req = self.client.delete(url);
-        req = self.add_auth_headers(req);
-        let res = req.send().await?;
-        self.handle_response(res).await
-    }
-
-    #[doc(hidden)]
-    pub fn add_auth_headers(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
-        let mut req = req.header("anthropic-version", &self.api_version);
-        if let Some(api_key) = &self.api_key {
-            req = req.header("x-api-key", api_key);
-        }
-        // Note: Admin API doesn't use OAuth tokens, so we don't handle them here.
-        req
-    }
-
-    #[doc(hidden)]
-    pub async fn handle_response<T: serde::de::DeserializeOwned>(&self, res: reqwest::Response) -> Result<T, AnthropicRequestError> {
-        if res.status().is_success() {
-            Ok(res.json::<T>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
-    }
 }
 
 impl fmt::Debug for Anthropic {

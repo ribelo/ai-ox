@@ -29,6 +29,7 @@ tokio = { workspace = true }
 url = { workspace = true }
 anyhow = { workspace = true }
 leaky-bucket = { workspace = true, optional = true }
+ai-ox-common = { workspace = true }
 
 [features]
 default = []

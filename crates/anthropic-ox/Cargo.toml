@@ -9,15 +9,22 @@ keywords = ["anthropic", "claude", "ai", "client", "async"]
 description = "Anthropic API client for Rust"
 
 [features]
-default = ["tokens", "models"]
+default = ["core", "data-processing"]
 leaky-bucket = ["dep:leaky-bucket"]
+# Core messaging and basic functionality
+core = ["tokens", "models"]
+# Data processing APIs (batches, files)
+data-processing = ["batches", "files"] 
+# Administrative and management APIs
+admin = []
+# Experimental and beta features
+experimental = []
+# Granular feature control for backwards compatibility
 tokens = []
 models = []
 batches = []
 files = []
-admin = []
-experimental = []
-full = ["tokens", "models", "batches", "files", "admin", "experimental"]
+full = ["core", "data-processing", "admin", "experimental"]
 
 [dependencies]
 bon = "3.3"

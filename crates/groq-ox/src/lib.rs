@@ -7,6 +7,7 @@
 
 pub mod audio;
 pub mod error;
+mod internal;
 pub mod message;
 pub mod model;
 pub mod models;
@@ -30,8 +31,9 @@ use leaky_bucket::RateLimiter;
 #[cfg(feature = "leaky-bucket")]
 use std::sync::Arc;
 
+use crate::internal::GroqRequestHelper;
+
 const BASE_URL: &str = "https://api.groq.com";
-const CHAT_URL: &str = "openai/v1/chat/completions";
 
 #[derive(Clone, Default, Builder)]
 pub struct Groq {
@@ -61,6 +63,11 @@ impl Groq {
         let api_key = std::env::var("GROQ_API_KEY")?;
         Ok(Self::builder().api_key(api_key).build())
     }
+
+    /// Create request helper for internal use
+    fn request_helper(&self) -> GroqRequestHelper {
+        GroqRequestHelper::new(self.client.clone(), &self.base_url, &self.api_key)
+    }
 }
 
 impl Groq {
@@ -68,23 +75,12 @@ impl Groq {
         &self,
         request: &request::ChatRequest,
     ) -> Result<response::ChatResponse, GroqRequestError> {
-        let url = format!("{}/{}", self.base_url, CHAT_URL);
-
-        let res = self
-            .client
-            .post(&url)
-            .bearer_auth(&self.api_key)
-            .json(request)
-            .send()
-            .await?;
-
-        if res.status().is_success() {
-            Ok(res.json::<response::ChatResponse>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
+        #[cfg(feature = "leaky-bucket")]
+        if let Some(ref limiter) = self.leaky_bucket {
+            limiter.acquire_one().await;
         }
+
+        self.request_helper().send_chat_request(request).await
     }
 
     pub fn stream(
@@ -92,39 +88,25 @@ impl Groq {
         request: &request::ChatRequest,
     ) -> BoxStream<'static, Result<response::ChatCompletionChunk, GroqRequestError>> {
         use async_stream::try_stream;
-        use futures_util::StreamExt;
         
-        let client = self.client.clone();
-        let api_key = self.api_key.clone();
-        let url = format!("{}/{}", self.base_url, CHAT_URL);
+        let helper = self.request_helper();
         let mut request_data = request.clone();
         request_data.stream = Some(true);
 
+        #[cfg(feature = "leaky-bucket")]
+        let rate_limiter = self.leaky_bucket.clone();
+
         Box::pin(try_stream! {
-            let response = client
-                .post(&url)
-                .bearer_auth(&api_key)
-                .json(&request_data)
-                .send()
-                .await?;
+            #[cfg(feature = "leaky-bucket")]
+            if let Some(ref limiter) = rate_limiter {
+                limiter.acquire_one().await;
+            }
 
-            let status = response.status();
-
-            if !response.status().is_success() {
-                let bytes = response.bytes().await?;
-                Err(error::parse_error_response(status, bytes))?
-            } else {
-                let mut byte_stream = response.bytes_stream();
-
-                while let Some(chunk_result) = byte_stream.next().await {
-                    let chunk = chunk_result?;
-                    let chunk_str = String::from_utf8(chunk.to_vec())
-                        .map_err(|e| GroqRequestError::InvalidEventData(format!("UTF-8 decode error: {e}")))?;
-
-                    for parse_result in response::ChatCompletionChunk::from_streaming_data(&chunk_str) {
-                        yield parse_result?;
-                    }
-                }
+            let mut stream = helper.stream_chat_request(&request_data);
+            use futures_util::StreamExt;
+            
+            while let Some(result) = stream.next().await {
+                yield result?;
             }
         })
     }

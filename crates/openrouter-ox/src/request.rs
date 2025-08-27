@@ -22,7 +22,7 @@ pub struct Prediction {
     pub content: String,
 }
 
-#[derive(Debug, Clone, Serialize, Builder)]
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 #[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
 pub struct ChatRequest {
     #[builder(field)]
@@ -80,6 +80,8 @@ pub struct ChatRequest {
     pub provider: Option<ProviderPreferences>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub include_reasoning: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<bool>,
 }
 
 impl<S: chat_request_builder::State> ChatRequestBuilder<S> {

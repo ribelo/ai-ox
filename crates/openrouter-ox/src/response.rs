@@ -316,3 +316,93 @@ pub struct Delta {
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCall>>,
 }
+
+// Additional API endpoint response types
+
+/// Response from the models API endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelsResponse {
+    pub data: Vec<ModelInfo>,
+    pub object: String,
+}
+
+/// Information about a single model from the models API
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    pub id: String,
+    pub object: String,
+    pub created: Option<i64>,
+    pub owned_by: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub pricing: ModelPricing,
+    pub context_length: i32,
+    pub architecture: ModelArchitecture,
+    pub top_provider: ModelProvider,
+    pub per_request_limits: Option<Value>,
+}
+
+/// Pricing information for a model
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelPricing {
+    pub prompt: String,
+    pub completion: String,
+    pub image: Option<String>,
+    pub request: Option<String>,
+}
+
+/// Model architecture information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelArchitecture {
+    pub modality: String,
+    pub tokenizer: Option<String>,
+    pub instruct_type: Option<String>,
+}
+
+/// Top provider information for a model
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelProvider {
+    pub max_completion_tokens: Option<i32>,
+    pub is_moderated: Option<bool>,
+}
+
+/// Response from the generation info API endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenerationInfo {
+    pub id: String,
+    pub model: String,
+    pub streamed: bool,
+    pub generation_time: Option<f64>,
+    pub created_at: String,
+    pub provider_name: String,
+    pub tokens_prompt: i32,
+    pub tokens_completion: i32,
+    pub native_tokens_prompt: Option<i32>,
+    pub native_tokens_completion: Option<i32>,
+    pub num_media: Option<i32>,
+    pub origin: String,
+    pub total_cost: String,
+}
+
+/// Response from the API key status endpoint
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyStatus {
+    pub data: KeyStatusData,
+}
+
+/// API key status details
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyStatusData {
+    pub label: Option<String>,
+    pub usage: f64,
+    pub limit: Option<f64>,
+    pub is_free_tier: bool,
+    pub rate_limit: KeyRateLimit,
+}
+
+/// Rate limit information for API key
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeyRateLimit {
+    pub requests: i32,
+    pub interval: String,
+}

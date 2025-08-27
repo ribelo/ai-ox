@@ -47,6 +47,14 @@ pub enum OpenRouterRequestError {
     /// Stream error
     #[error("Stream error: {0}")]
     Stream(String),
+
+    /// Missing API key
+    #[error("Missing API key")]
+    MissingApiKey,
+
+    /// Invalid model
+    #[error("Invalid model: {0}")]
+    InvalidModel(String),
 }
 
 impl Serialize for OpenRouterRequestError {
@@ -129,6 +137,17 @@ impl Serialize for OpenRouterRequestError {
                 let mut state = serializer.serialize_struct("OpenRouterRequestError", 2)?;
                 state.serialize_field("type", "Stream")?;
                 state.serialize_field("message", message)?;
+                state.end()
+            }
+            OpenRouterRequestError::MissingApiKey => {
+                let mut state = serializer.serialize_struct("OpenRouterRequestError", 1)?;
+                state.serialize_field("type", "MissingApiKey")?;
+                state.end()
+            }
+            OpenRouterRequestError::InvalidModel(model) => {
+                let mut state = serializer.serialize_struct("OpenRouterRequestError", 2)?;
+                state.serialize_field("type", "InvalidModel")?;
+                state.serialize_field("model", model)?;
                 state.end()
             }
         }

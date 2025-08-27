@@ -128,3 +128,163 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
         self
     }
 }
+
+/// Request for embeddings endpoint
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+pub struct EmbeddingsRequest {
+    /// Text or array of texts to embed
+    #[serde(rename = "input")]
+    pub input: EmbeddingInput,
+    
+    /// Model to use for embeddings
+    pub model: String,
+    
+    /// Encoding format for embeddings
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoding_format: Option<String>,
+    
+    /// User identifier for abuse monitoring
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+/// Input for embeddings (can be string or array of strings)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum EmbeddingInput {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+/// Request for moderation endpoint
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+pub struct ModerationRequest {
+    /// Text or array of texts to moderate
+    #[serde(rename = "input")]
+    pub input: ModerationInput,
+    
+    /// Model to use for moderation (defaults to text-moderation-latest)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+}
+
+/// Input for moderation (can be string or array of strings)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ModerationInput {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
+/// Request for image generation
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+pub struct ImageRequest {
+    /// Text description of the desired image
+    pub prompt: String,
+    
+    /// Model to use for image generation
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    
+    /// Number of images to generate
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub n: Option<u32>,
+    
+    /// Image quality (standard or hd)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<String>,
+    
+    /// Response format (url or b64_json)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_format: Option<String>,
+    
+    /// Image size
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size: Option<String>,
+    
+    /// Image style (vivid or natural)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub style: Option<String>,
+    
+    /// User identifier for abuse monitoring
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user: Option<String>,
+}
+
+/// Request for audio transcription/translation
+#[derive(Debug, Clone, Builder)]
+pub struct AudioRequest {
+    /// Audio file to transcribe/translate
+    pub file: Vec<u8>,
+    
+    /// Filename of the audio file
+    pub filename: String,
+    
+    /// Model to use (whisper-1)
+    pub model: String,
+    
+    /// Language of the input audio (for transcription)
+    pub language: Option<String>,
+    
+    /// Optional text prompt to guide the model's style
+    pub prompt: Option<String>,
+    
+    /// Response format (json, text, srt, verbose_json, vtt)
+    pub response_format: Option<String>,
+    
+    /// Sampling temperature
+    pub temperature: Option<f32>,
+}
+
+/// Request for fine-tuning job creation
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+pub struct FineTuningRequest {
+    /// Model to fine-tune
+    pub model: String,
+    
+    /// Training data file ID
+    pub training_file: String,
+    
+    /// Validation data file ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub validation_file: Option<String>,
+    
+    /// Hyperparameters for fine-tuning
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hyperparameters: Option<serde_json::Value>,
+    
+    /// Suffix for fine-tuned model name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suffix: Option<String>,
+}
+
+/// Request for assistant creation
+#[derive(Debug, Clone, Serialize, Deserialize, Builder)]
+pub struct AssistantRequest {
+    /// Model to use
+    pub model: String,
+    
+    /// Name of the assistant
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    
+    /// Description of the assistant
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    
+    /// System instructions for the assistant
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+    
+    /// Tools available to the assistant
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
+    
+    /// File IDs available to the assistant
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_ids: Option<Vec<String>>,
+    
+    /// Metadata for the assistant
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<serde_json::Value>,
+}

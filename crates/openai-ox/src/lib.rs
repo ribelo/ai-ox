@@ -1,8 +1,15 @@
 //! OpenAI AI API client for Rust
 //!
 //! This crate provides a Rust client for the OpenAI AI API, with support for:
-//! - Chat completions
-//! - Streaming responses
+//! - Chat completions and streaming
+//! - Model listing
+//! - Text embeddings
+//! - Content moderation  
+//! - Image generation (DALL-E)
+//! - Audio transcription/translation (Whisper)
+//! - File management
+//! - Fine-tuning jobs
+//! - Assistants API
 //! - Tool/function calling
 //! - Error handling and rate limiting
 //!
@@ -30,6 +37,7 @@
 
 pub mod client;
 pub mod error;
+mod internal;
 pub mod message;
 pub mod model;
 pub mod request;
@@ -42,7 +50,20 @@ pub use client::OpenAI;
 pub use error::OpenAIRequestError;
 pub use message::Message;
 pub use model::Model;
-pub use request::ChatRequest;
-pub use response::ChatResponse;
 pub use tool::Tool;
 pub use usage::Usage;
+
+// Re-export request types
+pub use request::{
+    ChatRequest, EmbeddingsRequest, ModerationRequest, ImageRequest, 
+    AudioRequest, FineTuningRequest, AssistantRequest,
+    EmbeddingInput, ModerationInput
+};
+
+// Re-export response types  
+pub use response::{
+    ChatResponse, ModelsResponse, EmbeddingsResponse, ModerationResponse,
+    ImageResponse, AudioResponse, FilesResponse, FileInfo, FileUploadResponse,
+    FineTuningJobsResponse, FineTuningJob, AssistantsResponse, AssistantInfo,
+    ModelInfo, EmbeddingData, ModerationResult, ImageData, AudioSegment
+};

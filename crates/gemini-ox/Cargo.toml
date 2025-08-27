@@ -53,6 +53,7 @@ rustls = { workspace = true }
 url = { workspace = true }
 http = { workspace = true }
 anyhow = { workspace = true }
+ai-ox-common = { workspace = true }
 
 # Optional dependencies for audio and video features
 cpal = { version = "0.15", optional = true }

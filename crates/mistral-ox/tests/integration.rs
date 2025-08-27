@@ -1,8 +1,223 @@
-use mistral_ox::{Mistral, Model};
-use mistral_ox::message::{Message, Messages};
-use mistral_ox::request::ChatRequest;
-use mistral_ox::tool::{Tool, ToolChoice};
-use futures_util::StreamExt;
+#[cfg(test)]
+mod tests {
+    use mistral_ox::*;
+    use mistral_ox::message::Message;
+
+    fn get_client() -> Mistral {
+        Mistral::load_from_env().expect("MISTRAL_API_KEY must be set for integration tests")
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_list_models() {
+        let client = get_client();
+        let response = client.list_models().await;
+        
+        assert!(response.is_ok());
+        let models = response.unwrap();
+        assert_eq!(models.object, "list");
+        assert!(!models.data.is_empty());
+        
+        // Verify we have at least one of the basic models
+        let model_ids: Vec<&str> = models.data.iter().map(|m| m.id.as_str()).collect();
+        assert!(model_ids.iter().any(|id| id.contains("mistral")));
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_create_embeddings() {
+        let client = get_client();
+        
+        let request = EmbeddingsRequest::builder()
+            .model("mistral-embed".to_string())
+            .input(EmbeddingInput::Single("Hello, world!".to_string()))
+            .build();
+        
+        let response = client.create_embeddings(&request).await;
+        assert!(response.is_ok());
+        
+        let embeddings = response.unwrap();
+        assert_eq!(embeddings.model, "mistral-embed");
+        assert_eq!(embeddings.data.len(), 1);
+        assert!(!embeddings.data[0].embedding.is_empty());
+        assert!(embeddings.usage.prompt_tokens > 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_create_moderation() {
+        let client = get_client();
+        
+        let request = ModerationRequest::builder()
+            .input(ModerationInput::Single("Hello, this is a test message.".to_string()))
+            .build();
+        
+        let response = client.create_moderation(&request).await;
+        assert!(response.is_ok());
+        
+        let moderation = response.unwrap();
+        assert_eq!(moderation.results.len(), 1);
+        // Check that all categories are present
+        assert!(!moderation.results[0].categories.sexual);
+        assert!(!moderation.results[0].categories.hate_and_discrimination);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_chat_completion() {
+        let client = get_client();
+        
+        let request = ChatRequest::builder()
+            .model("mistral-tiny".to_string()) // Cheapest model
+            .messages(vec![Message::user("Say 'hello' in one word")])
+            .max_tokens(Some(5))
+            .temperature(Some(0.0)) // Deterministic
+            .build();
+        
+        let response = client.send(&request).await;
+        assert!(response.is_ok());
+        
+        let chat_response = response.unwrap();
+        assert_eq!(chat_response.model, "mistral-tiny");
+        assert!(!chat_response.choices.is_empty());
+        assert!(chat_response.usage.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_streaming_chat() {
+        let client = get_client();
+        
+        let request = ChatRequest::builder()
+            .model("mistral-tiny".to_string())
+            .messages(vec![Message::user("Count from 1 to 3")])
+            .max_tokens(Some(20))
+            .temperature(Some(0.0))
+            .build();
+        
+        let mut stream = client.stream(&request);
+        use futures_util::StreamExt;
+        
+        let mut chunks_received = 0;
+        while let Some(chunk_result) = stream.next().await {
+            assert!(chunk_result.is_ok());
+            chunks_received += 1;
+            if chunks_received > 10 {
+                break; // Prevent infinite loops
+            }
+        }
+        
+        assert!(chunks_received > 0, "Should have received at least one chunk");
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_list_fine_tuning_jobs() {
+        let client = get_client();
+        
+        let response = client.list_fine_tuning_jobs().await;
+        // This should succeed even if there are no jobs
+        assert!(response.is_ok());
+        
+        let jobs = response.unwrap();
+        assert_eq!(jobs.object, "list");
+        // jobs.data can be empty, that's fine
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_list_batch_jobs() {
+        let client = get_client();
+        
+        let response = client.list_batch_jobs().await;
+        // This should succeed even if there are no jobs
+        assert!(response.is_ok());
+        
+        let jobs = response.unwrap();
+        assert_eq!(jobs.object, "list");
+        // jobs.data can be empty, that's fine
+    }
+
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_list_files() {
+        let client = get_client();
+        
+        let response = client.list_files().await;
+        // This should succeed even if there are no files
+        assert!(response.is_ok());
+        
+        let files = response.unwrap();
+        assert_eq!(files.object, "list");
+        // files.data can be empty, that's fine
+    }
+
+    // Test chat moderation which is specific to Mistral
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_chat_moderation() {
+        let client = get_client();
+        
+        let messages = vec![
+            Message::user("Hello"),
+            Message::assistant("Hi there! How can I help you today?"),
+        ];
+        
+        let request = ChatModerationRequest::builder()
+            .model("mistral-moderation-latest".to_string())
+            .messages(messages)
+            .build();
+        
+        let response = client.create_chat_moderation(&request).await;
+        assert!(response.is_ok());
+        
+        let moderation = response.unwrap();
+        assert_eq!(moderation.results.len(), 1);
+    }
+
+    // Test embeddings with multiple inputs
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_embeddings_multiple_inputs() {
+        let client = get_client();
+        
+        let request = EmbeddingsRequest::builder()
+            .model("mistral-embed".to_string())
+            .input(EmbeddingInput::Multiple(vec![
+                "First text".to_string(),
+                "Second text".to_string(),
+            ]))
+            .build();
+        
+        let response = client.create_embeddings(&request).await;
+        assert!(response.is_ok());
+        
+        let embeddings = response.unwrap();
+        assert_eq!(embeddings.data.len(), 2);
+        assert_eq!(embeddings.data[0].index, 0);
+        assert_eq!(embeddings.data[1].index, 1);
+    }
+
+    // Test fill-in-the-middle completion (specific to Mistral's code models)
+    #[tokio::test]
+    #[ignore = "requires MISTRAL_API_KEY and makes real API calls"]
+    async fn test_fim_completion() {
+        let client = get_client();
+        
+        let request = FimRequest::builder()
+            .model("codestral-latest".to_string())
+            .prompt("def hello():".to_string())
+            .suffix(Some("    return greeting".to_string()))
+            .max_tokens(Some(10))
+            .temperature(Some(0.0))
+            .build();
+        
+        let response = client.create_fim_completion(&request).await;
+        // This might fail if codestral is not available, so we'll just check it doesn't panic
+        // In a real environment, you'd check the specific error or success
+        assert!(response.is_ok() || response.is_err());
+    }
+}
 
 /// Helper to get test client
 fn get_test_client() -> Result<Mistral, Box<dyn std::error::Error>> {

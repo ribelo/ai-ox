@@ -7,6 +7,8 @@
 
 pub mod client;
 pub mod error;
+#[doc(hidden)]
+pub mod internal;
 pub mod message;
 pub mod model;
 #[cfg(feature = "models")]

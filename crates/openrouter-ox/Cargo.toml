@@ -30,6 +30,7 @@ async-stream = { workspace = true }
 futures-util = { workspace = true }
 anthropic-ox = { path = "../anthropic-ox" }
 chrono = { workspace = true }
+ai-ox-common = { workspace = true }
 
 [dev-dependencies]
 base64 = { workspace = true }

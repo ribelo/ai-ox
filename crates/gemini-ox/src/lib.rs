@@ -11,6 +11,7 @@ pub mod content;
 // pub mod files;
 pub mod embedding;
 pub mod generate_content;
+mod internal;
 pub mod live;
 pub mod model;
 pub mod request;

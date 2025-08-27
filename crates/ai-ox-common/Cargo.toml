@@ -1,0 +1,34 @@
+[package]
+name = "ai-ox-common"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/ribelo/ai-ox"
+categories = ["api-bindings", "asynchronous"]
+keywords = ["ai", "http", "client", "async", "streaming"]
+description = "Shared HTTP client abstractions for ai-ox provider ecosystem"
+
+[features]
+default = []
+leaky-bucket = ["dep:leaky-bucket"]
+
+[dependencies]
+reqwest = { version = "0.12", default-features = false, features = [
+    "http2",
+    "charset", 
+    "json",
+    "rustls-tls",
+    "stream",
+    "multipart",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+async-stream = "0.3"
+async-trait = "0.1"
+bytes = "1.0"
+leaky-bucket = { version = "1.1", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }

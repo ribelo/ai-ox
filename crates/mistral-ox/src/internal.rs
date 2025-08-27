@@ -1,0 +1,172 @@
+use ai_ox_common::{
+    request_builder::{RequestBuilder, RequestConfig, Endpoint, HttpMethod, AuthMethod},
+    CommonRequestError, BoxStream
+};
+use futures_util::stream::BoxStream as FuturesBoxStream;
+use crate::{MistralRequestError, ChatRequest, ChatResponse, response::ChatCompletionChunk};
+
+/// Convert CommonRequestError to MistralRequestError
+impl From<CommonRequestError> for MistralRequestError {
+    fn from(err: CommonRequestError) -> Self {
+        match err {
+            CommonRequestError::Http(e) => MistralRequestError::ReqwestError(e),
+            CommonRequestError::Json(e) => MistralRequestError::SerdeError(e),
+            CommonRequestError::InvalidEventData(msg) => MistralRequestError::InvalidEventData(msg),
+            CommonRequestError::AuthenticationMissing => MistralRequestError::MissingApiKey,
+            CommonRequestError::InvalidMimeType(msg) => MistralRequestError::InvalidEventData(msg),
+            CommonRequestError::Utf8Error(e) => MistralRequestError::InvalidEventData(e.to_string()),
+        }
+    }
+}
+
+/// Mistral client helper methods using the common RequestBuilder
+pub struct MistralRequestHelper {
+    request_builder: RequestBuilder,
+}
+
+impl MistralRequestHelper {
+    pub fn new(client: reqwest::Client, base_url: &str, api_key: &str) -> Self {
+        let config = RequestConfig::new(base_url)
+            .with_auth(AuthMethod::Bearer(api_key.to_string()))
+            .with_header("content-type", "application/json");
+
+        let request_builder = RequestBuilder::new(client, config);
+
+        Self { request_builder }
+    }
+
+    /// Send a chat completion request
+    pub async fn send_chat_request(&self, request: &ChatRequest) -> Result<ChatResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/chat/completions", HttpMethod::Post);
+        
+        Ok(self.request_builder
+            .request_json(&endpoint, Some(request))
+            .await?)
+    }
+
+    /// Stream a chat completion request
+    pub fn stream_chat_request(
+        &self, 
+        request: &ChatRequest
+    ) -> FuturesBoxStream<'static, Result<ChatCompletionChunk, MistralRequestError>> {
+        let endpoint = Endpoint::new("v1/chat/completions", HttpMethod::Post);
+        
+        // Use the common streaming implementation and convert errors
+        let common_stream: BoxStream<'static, Result<ChatCompletionChunk, CommonRequestError>> = 
+            self.request_builder.stream(&endpoint, Some(request));
+        
+        Box::pin(async_stream::try_stream! {
+            use futures_util::StreamExt;
+            
+            let mut stream = common_stream;
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(response) => yield response,
+                    Err(e) => yield Err(MistralRequestError::from(e))?,
+                }
+            }
+        })
+    }
+
+    /// List available models
+    pub async fn list_models(&self) -> Result<crate::response::ModelsResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/models", HttpMethod::Get);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// Generate embeddings
+    pub async fn create_embeddings(&self, request: &crate::request::EmbeddingsRequest) -> Result<crate::response::EmbeddingsResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/embeddings", HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, Some(request)).await?)
+    }
+
+    /// Moderate content
+    pub async fn create_moderation(&self, request: &crate::request::ModerationRequest) -> Result<crate::response::ModerationResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/moderations", HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, Some(request)).await?)
+    }
+
+    /// Moderate chat content
+    pub async fn create_chat_moderation(&self, request: &crate::request::ChatModerationRequest) -> Result<crate::response::ModerationResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/chat/moderations", HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, Some(request)).await?)
+    }
+
+    /// List fine-tuning jobs
+    pub async fn list_fine_tuning_jobs(&self) -> Result<crate::response::FineTuningJobsResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/fine_tuning/jobs", HttpMethod::Get);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// Create fine-tuning job
+    pub async fn create_fine_tuning_job(&self, request: &crate::request::FineTuningRequest) -> Result<crate::response::FineTuningJob, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/fine_tuning/jobs", HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, Some(request)).await?)
+    }
+
+    /// Get fine-tuning job
+    pub async fn retrieve_fine_tuning_job(&self, job_id: &str) -> Result<crate::response::FineTuningJob, MistralRequestError> {
+        let endpoint = Endpoint::new(format!("v1/fine_tuning/jobs/{}", job_id), HttpMethod::Get);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// Cancel fine-tuning job
+    pub async fn cancel_fine_tuning_job(&self, job_id: &str) -> Result<crate::response::FineTuningJob, MistralRequestError> {
+        let endpoint = Endpoint::new(format!("v1/fine_tuning/jobs/{}/cancel", job_id), HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// List batch jobs
+    pub async fn list_batch_jobs(&self) -> Result<crate::response::BatchJobsResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/batch/jobs", HttpMethod::Get);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// Create batch job
+    pub async fn create_batch_job(&self, request: &crate::request::BatchJobRequest) -> Result<crate::response::BatchJob, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/batch/jobs", HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, Some(request)).await?)
+    }
+
+    /// Get batch job
+    pub async fn retrieve_batch_job(&self, job_id: &str) -> Result<crate::response::BatchJob, MistralRequestError> {
+        let endpoint = Endpoint::new(format!("v1/batch/jobs/{}", job_id), HttpMethod::Get);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// Cancel batch job
+    pub async fn cancel_batch_job(&self, job_id: &str) -> Result<crate::response::BatchJob, MistralRequestError> {
+        let endpoint = Endpoint::new(format!("v1/batch/jobs/{}/cancel", job_id), HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// List files
+    pub async fn list_files(&self) -> Result<crate::response::FilesResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/files", HttpMethod::Get);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// Get file information
+    pub async fn retrieve_file(&self, file_id: &str) -> Result<crate::response::FileInfo, MistralRequestError> {
+        let endpoint = Endpoint::new(format!("v1/files/{}", file_id), HttpMethod::Get);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// Delete file
+    pub async fn delete_file(&self, file_id: &str) -> Result<crate::response::FileDeleteResponse, MistralRequestError> {
+        let endpoint = Endpoint::new(format!("v1/files/{}", file_id), HttpMethod::Delete);
+        Ok(self.request_builder.request_json(&endpoint, None::<&()>).await?)
+    }
+
+    /// Fill-in-the-middle completion
+    pub async fn create_fim_completion(&self, request: &crate::request::FimRequest) -> Result<crate::response::ChatResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/fim/completions", HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, Some(request)).await?)
+    }
+
+    /// Agents completion
+    pub async fn create_agents_completion(&self, request: &crate::request::AgentsRequest) -> Result<crate::response::ChatResponse, MistralRequestError> {
+        let endpoint = Endpoint::new("v1/agents/completions", HttpMethod::Post);
+        Ok(self.request_builder.request_json(&endpoint, Some(request)).await?)
+    }
+}
