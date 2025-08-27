@@ -107,6 +107,16 @@ pub enum AnthropicRequestError {
     /// Unknown event type
     #[error("Unknown event type: {0}")]
     UnknownEventType(String),
+
+    /// Invalid UTF-8 sequence
+    #[error("Invalid UTF-8 sequence: {0}")]
+    InvalidUtf8(String),
+}
+
+impl From<std::string::FromUtf8Error> for AnthropicRequestError {
+    fn from(error: std::string::FromUtf8Error) -> Self {
+        Self::InvalidUtf8(error.to_string())
+    }
 }
 
 impl AnthropicRequestError {
@@ -125,8 +135,12 @@ impl AnthropicRequestError {
                 }
             }
             Self::Generic(_) | Self::UnexpectedResponse(_) => ErrorKind::ServiceUnavailable,
-            Self::SerdeError(_) | Self::InvalidEventData(_) | Self::Stream(_) 
-            | Self::Deserialization(_) | Self::UnknownEventType(_) => ErrorKind::Other,
+            Self::SerdeError(_)
+            | Self::InvalidEventData(_)
+            | Self::Stream(_)
+            | Self::Deserialization(_)
+            | Self::UnknownEventType(_)
+            | Self::InvalidUtf8(_) => ErrorKind::Other,
         }
     }
     

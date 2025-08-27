@@ -1,8 +1,11 @@
+#![cfg(any(feature = "tokens", feature = "models"))]
+
 use anthropic_ox::{Anthropic, Model};
 use anthropic_ox::tokens::TokenCountRequest;
 use anthropic_ox::message::{Message, Messages, Role, Content, Text};
 
 // Integration test for list_models endpoint
+#[cfg(feature = "models")]
 #[tokio::test]
 async fn test_list_models_api() {
     let client = match Anthropic::load_from_env() {
@@ -26,6 +29,7 @@ async fn test_list_models_api() {
 }
 
 // Integration test for get_model endpoint
+#[cfg(feature = "models")]
 #[tokio::test]
 async fn test_get_model_api() {
     let client = match Anthropic::load_from_env() {
@@ -52,6 +56,7 @@ async fn test_get_model_api() {
 }
 
 // Integration test for count_tokens endpoint
+#[cfg(feature = "tokens")]
 #[tokio::test]
 async fn test_count_tokens_api() {
     let client = match Anthropic::load_from_env() {
