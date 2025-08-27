@@ -15,15 +15,25 @@ pub enum Role {
     Tool,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Builder, Deref)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Builder)]
+pub struct CacheControl {
+    pub r#type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Builder)]
 pub struct TextContent {
     pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
 }
 
 impl TextContent {
     #[must_use]
     pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into() }
+        Self {
+            text: text.into(),
+            cache_control: None,
+        }
     }
 }
 
@@ -102,7 +112,10 @@ impl ContentPart {
 
 impl<T: Into<String>> From<T> for ContentPart {
     fn from(s: T) -> Self {
-        ContentPart::Text(TextContent { text: s.into() })
+        ContentPart::Text(TextContent {
+            text: s.into(),
+            cache_control: None,
+        })
     }
 }
 
@@ -132,7 +145,10 @@ where
 
 impl From<String> for Content {
     fn from(content: String) -> Self {
-        Self(vec![ContentPart::Text(TextContent { text: content })])
+        Self(vec![ContentPart::Text(TextContent {
+            text: content,
+            cache_control: None,
+        })])
     }
 }
 
@@ -140,6 +156,7 @@ impl From<&str> for Content {
     fn from(content: &str) -> Self {
         Self(vec![ContentPart::Text(TextContent {
             text: content.to_string(),
+            cache_control: None,
         })])
     }
 }
