@@ -68,9 +68,13 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transforms: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
     pub models: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub route: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(into)]
+    pub preset: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(into)]
     pub provider: Option<ProviderPreferences>,
@@ -95,7 +99,7 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
         let json_schema = schema_generator.into_root_schema_for::<T>();
         let response_format = json!({
             "type": "json_schema",
-            "json_schema": {"name": type_name, "schema": json_schema},
+            "json_schema": {"name": type_name, "schema": json_schema, "strict": true},
         });
         self.response_format = Some(response_format);
         self

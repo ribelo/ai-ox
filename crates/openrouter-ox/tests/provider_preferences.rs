@@ -27,6 +27,8 @@ fn test_provider_preferences_serialization() {
         .model("anthropic/claude-3-opus")
         .messages(Vec::<openrouter_ox::message::Message>::new())
         .provider(preferences)
+        .preset("my-preset".to_string())
+        .models(vec!["model1".to_string(), "model2".to_string()])
         .build();
 
     let json = serde_json::to_string_pretty(&request).unwrap();
@@ -34,6 +36,8 @@ fn test_provider_preferences_serialization() {
     let expected_json = serde_json::json!({
       "messages": [],
       "model": "anthropic/claude-3-opus",
+      "preset": "my-preset",
+      "models": ["model1", "model2"],
       "provider": {
         "allow_fallbacks": false,
         "require_parameters": true,
@@ -57,6 +61,81 @@ fn test_provider_preferences_serialization() {
           "completion": 1.5
         }
       }
+    });
+
+    let expected_str = serde_json::to_string_pretty(&expected_json).unwrap();
+
+    let actual_value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let expected_value: serde_json::Value = serde_json::from_str(&expected_str).unwrap();
+
+    assert_eq!(actual_value, expected_value);
+}
+
+#[test]
+fn test_structured_output_serialization() {
+    #[derive(serde::Deserialize, schemars::JsonSchema)]
+    struct MyStruct {
+        foo: String,
+    }
+
+    let request = ChatRequest::builder()
+        .model("anthropic/claude-3-opus")
+        .messages(Vec::<openrouter_ox::message::Message>::new())
+        .response_format::<MyStruct>()
+        .build();
+
+    let json = serde_json::to_value(&request).unwrap();
+    let strict = json["response_format"]["json_schema"]["strict"].as_bool().unwrap();
+
+    assert!(strict);
+}
+
+#[test]
+fn test_prompt_caching_serialization() {
+    let message = openrouter_ox::message::UserMessage::new(vec![
+        openrouter_ox::message::ContentPart::from("Given the book below:"),
+        openrouter_ox::message::ContentPart::Text(
+            openrouter_ox::message::TextContent::builder()
+                .text("HUGE TEXT BODY".to_string())
+                .cache_control(openrouter_ox::message::CacheControl {
+                    r#type: "ephemeral".to_string(),
+                })
+                .build(),
+        ),
+        openrouter_ox::message::ContentPart::from("Name all the characters in the above book"),
+    ]);
+
+    let request = ChatRequest::builder()
+        .model("anthropic/claude-3-opus")
+        .messages(vec![openrouter_ox::message::Message::from(message)])
+        .build();
+
+    let json = serde_json::to_string_pretty(&request).unwrap();
+
+    let expected_json = serde_json::json!({
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Given the book below:"
+            },
+            {
+              "type": "text",
+              "text": "HUGE TEXT BODY",
+              "cache_control": {
+                "type": "ephemeral"
+              }
+            },
+            {
+              "type": "text",
+              "text": "Name all the characters in the above book"
+            }
+          ]
+        }
+      ],
+      "model": "anthropic/claude-3-opus"
     });
 
     let expected_str = serde_json::to_string_pretty(&expected_json).unwrap();
