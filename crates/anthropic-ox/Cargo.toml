@@ -15,7 +15,9 @@ tokens = []
 models = []
 batches = []
 files = []
-full = ["tokens", "models", "batches", "files"]
+admin = []
+experimental = []
+full = ["tokens", "models", "batches", "files", "admin", "experimental"]
 
 [dependencies]
 bon = "3.3"

@@ -66,6 +66,32 @@ pub enum Content {
     ToolResult(ToolResult),
     #[serde(rename = "thinking")]
     Thinking(ThinkingContent),
+    #[serde(rename = "search_result")]
+    SearchResult(SearchResult),
+}
+
+/// A content block representing a search result.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct SearchResult {
+    /// The source of the search result.
+    pub source: String,
+    /// The title of the search result.
+    pub title: String,
+    /// The content of the search result.
+    pub content: Vec<Text>,
+    /// Configuration for citations.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub citations: Option<Citations>,
+    /// Cache control settings for the search result.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cache_control: Option<CacheControl>,
+}
+
+/// Configuration for citations.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct Citations {
+    /// Whether citations are enabled.
+    pub enabled: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -175,6 +201,7 @@ impl fmt::Display for Content {
                     thinking.text.clone() 
                 }
             ),
+            Content::SearchResult(result) => write!(f, "[Search Result: {}]", result.title),
         }
     }
 }

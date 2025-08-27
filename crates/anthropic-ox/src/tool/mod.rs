@@ -11,16 +11,38 @@ pub enum ToolChoice {
     Tool { name: String },
 }
 
+/// Represents a tool that can be used by the model.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct Tool {
+#[serde(untagged)]
+pub enum Tool {
+    /// A custom tool defined by the user.
+    Custom(CustomTool),
+    /// The built-in computer use tool.
+    Computer(ComputerTool),
+}
+
+/// A custom tool defined by the user.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomTool {
+    /// The type of the tool, which is always "custom".
+    #[serde(rename = "type", default = "default_tool_type")]
+    pub object_type: String,
+    /// The name of the tool.
     pub name: String,
+    /// A description of the tool.
     pub description: String,
+    /// The input schema for the tool.
     pub input_schema: serde_json::Value,
 }
 
-impl Tool {
+fn default_tool_type() -> String {
+    "custom".to_string()
+}
+
+impl CustomTool {
     pub fn new(name: String, description: String) -> Self {
         Self {
+            object_type: "custom".to_string(),
             name,
             description,
             input_schema: serde_json::json!({}),
@@ -31,6 +53,23 @@ impl Tool {
         self.input_schema = schema;
         self
     }
+}
+
+/// The built-in computer use tool.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ComputerTool {
+    /// The type of the tool, e.g., "computer_20250124".
+    #[serde(rename = "type")]
+    pub object_type: String,
+    /// The name of the tool, which is always "computer".
+    pub name: String,
+    /// The width of the display in pixels.
+    pub display_width_px: u32,
+    /// The height of the display in pixels.
+    pub display_height_px: u32,
+    /// The display number for X11 environments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub display_number: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

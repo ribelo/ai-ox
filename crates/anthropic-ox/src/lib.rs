@@ -15,6 +15,8 @@ pub mod models;
 pub mod batches;
 #[cfg(feature = "files")]
 pub mod files;
+#[cfg(feature = "admin")]
+pub mod admin;
 pub mod prelude;
 pub mod request;
 pub mod response;

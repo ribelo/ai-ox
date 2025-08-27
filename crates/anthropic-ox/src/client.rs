@@ -1,6 +1,7 @@
 use bon::Builder;
 use core::fmt;
 use futures_util::stream::BoxStream;
+use serde::Serialize;
 #[cfg(feature = "leaky-bucket")]
 use leaky_bucket::RateLimiter;
 #[cfg(feature = "leaky-bucket")]
@@ -20,6 +21,14 @@ use crate::tokens::{TokenCountRequest, TokenCountResponse};
 use crate::batches::{BatchListResponse, MessageBatch, MessageBatchRequest};
 #[cfg(feature = "files")]
 use crate::files::{FileInfo, FileListResponse, FileUploadRequest};
+#[cfg(feature = "admin")]
+use crate::admin::{
+    api_keys::{ApiKey, ApiKeyListResponse, UpdateApiKeyRequest},
+    invites::{CreateInviteRequest, Invite, InviteListResponse},
+    usage::{CostReportResponse, UsageReportResponse},
+    users::{User, UserListResponse},
+    workspaces::{CreateWorkspaceRequest, UpdateWorkspaceRequest, Workspace, WorkspaceListResponse},
+};
 
 const BASE_URL: &str = "https://api.anthropic.com";
 const CHAT_URL: &str = "v1/messages";
@@ -27,6 +36,7 @@ const TOKENS_URL: &str = "v1/messages/count-tokens";
 const MODELS_URL: &str = "v1/models";
 const BATCHES_URL: &str = "v1/message_batches";
 const FILES_URL: &str = "v1/files";
+const ADMIN_ORGANIZATIONS_URL: &str = "v1/organizations";
 const API_VERSION: &str = "2023-06-01";
 
 /// A struct to configure beta features for the Anthropic API.
@@ -36,6 +46,8 @@ pub struct BetaFeatures {
     pub fine_grained_tool_streaming: bool,
     /// Enables interleaved thinking.
     pub interleaved_thinking: bool,
+    /// Enables the computer use tool.
+    pub computer_use: bool,
 }
 
 #[derive(Clone, Default, Builder)]
@@ -90,6 +102,9 @@ impl Anthropic {
         }
         if features.interleaved_thinking {
             beta_headers.push("interleaved-thinking-2025-05-14");
+        }
+        if features.computer_use {
+            beta_headers.push("computer-use-2025-01-24");
         }
 
         if !beta_headers.is_empty() {
@@ -736,6 +751,163 @@ impl Anthropic {
 
         if res.status().is_success() {
             Ok(res.bytes().await?)
+        } else {
+            let status = res.status();
+            let bytes = res.bytes().await?;
+            Err(error::parse_error_response(status, bytes))
+        }
+    }
+}
+
+// Admin API methods
+#[cfg(feature = "admin")]
+impl Anthropic {
+    // Organization Users
+    /// Lists the users in the organization.
+    pub async fn list_organization_users(&self) -> Result<UserListResponse, AnthropicRequestError> {
+        let url = format!("{}/{}/users", self.base_url, ADMIN_ORGANIZATIONS_URL);
+        self.get(&url).await
+    }
+
+    /// Retrieves a specific user by their ID.
+    pub async fn get_organization_user(&self, user_id: &str) -> Result<User, AnthropicRequestError> {
+        let url = format!("{}/{}/users/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, user_id);
+        self.get(&url).await
+    }
+
+    /// Updates a user's role in the organization.
+    pub async fn update_organization_user(&self, user_id: &str, role: &crate::admin::users::UserRole) -> Result<User, AnthropicRequestError> {
+        let url = format!("{}/{}/users/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, user_id);
+        let body = serde_json::json!({ "role": role });
+        self.post(&url, &body).await
+    }
+
+    /// Removes a user from the organization.
+    pub async fn remove_organization_user(&self, user_id: &str) -> Result<(), AnthropicRequestError> {
+        let url = format!("{}/{}/users/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, user_id);
+        self.delete(&url).await
+    }
+
+    // Organization Invites
+    /// Lists the pending invitations for the organization.
+    pub async fn list_organization_invites(&self) -> Result<InviteListResponse, AnthropicRequestError> {
+        let url = format!("{}/{}/invites", self.base_url, ADMIN_ORGANIZATIONS_URL);
+        self.get(&url).await
+    }
+
+    /// Creates a new invitation to the organization.
+    pub async fn create_organization_invite(&self, request: &CreateInviteRequest) -> Result<Invite, AnthropicRequestError> {
+        let url = format!("{}/{}/invites", self.base_url, ADMIN_ORGANIZATIONS_URL);
+        self.post(&url, request).await
+    }
+
+    /// Deletes a pending invitation to the organization.
+    pub async fn delete_organization_invite(&self, invite_id: &str) -> Result<(), AnthropicRequestError> {
+        let url = format!("{}/{}/invites/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, invite_id);
+        self.delete(&url).await
+    }
+
+    // Workspaces
+    /// Lists the workspaces in the organization.
+    pub async fn list_workspaces(&self) -> Result<WorkspaceListResponse, AnthropicRequestError> {
+        let url = format!("{}/{}/workspaces", self.base_url, ADMIN_ORGANIZATIONS_URL);
+        self.get(&url).await
+    }
+
+    /// Retrieves a specific workspace by its ID.
+    pub async fn get_workspace(&self, workspace_id: &str) -> Result<Workspace, AnthropicRequestError> {
+        let url = format!("{}/{}/workspaces/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, workspace_id);
+        self.get(&url).await
+    }
+
+    /// Creates a new workspace in the organization.
+    pub async fn create_workspace(&self, request: &CreateWorkspaceRequest) -> Result<Workspace, AnthropicRequestError> {
+        let url = format!("{}/{}/workspaces", self.base_url, ADMIN_ORGANIZATIONS_URL);
+        self.post(&url, request).await
+    }
+
+    /// Updates a workspace.
+    pub async fn update_workspace(&self, workspace_id: &str, request: &UpdateWorkspaceRequest) -> Result<Workspace, AnthropicRequestError> {
+        let url = format!("{}/{}/workspaces/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, workspace_id);
+        self.post(&url, request).await
+    }
+
+    /// Archives a workspace.
+    pub async fn archive_workspace(&self, workspace_id: &str) -> Result<Workspace, AnthropicRequestError> {
+        let url = format!("{}/{}/workspaces/{}/archive", self.base_url, ADMIN_ORGANIZATIONS_URL, workspace_id);
+        self.post(&url, &serde_json::json!({})).await
+    }
+
+    // API Keys
+    /// Lists the API keys in the organization.
+    pub async fn list_api_keys(&self) -> Result<ApiKeyListResponse, AnthropicRequestError> {
+        let url = format!("{}/{}/api_keys", self.base_url, ADMIN_ORGANIZATIONS_URL);
+        self.get(&url).await
+    }
+
+    /// Retrieves a specific API key by its ID.
+    pub async fn get_api_key(&self, api_key_id: &str) -> Result<ApiKey, AnthropicRequestError> {
+        let url = format!("{}/{}/api_keys/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, api_key_id);
+        self.get(&url).await
+    }
+
+    /// Updates an API key.
+    pub async fn update_api_key(&self, api_key_id: &str, request: &UpdateApiKeyRequest) -> Result<ApiKey, AnthropicRequestError> {
+        let url = format!("{}/{}/api_keys/{}", self.base_url, ADMIN_ORGANIZATIONS_URL, api_key_id);
+        self.post(&url, request).await
+    }
+
+    // Usage and Cost
+    /// Retrieves a usage report for the organization.
+    pub async fn get_usage_report(&self) -> Result<UsageReportResponse, AnthropicRequestError> {
+        let url = format!("{}/{}/usage_report/messages", self.base_url, ADMIN_ORGANIZATIONS_URL);
+        self.get(&url).await
+    }
+
+    /// Retrieves a cost report for the organization.
+    pub async fn get_cost_report(&self) -> Result<CostReportResponse, AnthropicRequestError> {
+        let url = format!("{}/{}/cost_report", self.base_url, ADMIN_ORGANIZATIONS_URL);
+        self.get(&url).await
+    }
+
+    // Generic helpers for GET and POST requests
+    #[doc(hidden)]
+    pub async fn get<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, AnthropicRequestError> {
+        let mut req = self.client.get(url);
+        req = self.add_auth_headers(req);
+        let res = req.send().await?;
+        self.handle_response(res).await
+    }
+
+    #[doc(hidden)]
+    pub async fn post<T: serde::de::DeserializeOwned, B: Serialize>(&self, url: &str, body: &B) -> Result<T, AnthropicRequestError> {
+        let mut req = self.client.post(url);
+        req = self.add_auth_headers(req);
+        let res = req.json(body).send().await?;
+        self.handle_response(res).await
+    }
+
+    async fn delete<T: serde::de::DeserializeOwned>(&self, url: &str) -> Result<T, AnthropicRequestError> {
+        let mut req = self.client.delete(url);
+        req = self.add_auth_headers(req);
+        let res = req.send().await?;
+        self.handle_response(res).await
+    }
+
+    #[doc(hidden)]
+    pub fn add_auth_headers(&self, req: reqwest::RequestBuilder) -> reqwest::RequestBuilder {
+        let mut req = req.header("anthropic-version", &self.api_version);
+        if let Some(api_key) = &self.api_key {
+            req = req.header("x-api-key", api_key);
+        }
+        // Note: Admin API doesn't use OAuth tokens, so we don't handle them here.
+        req
+    }
+
+    #[doc(hidden)]
+    pub async fn handle_response<T: serde::de::DeserializeOwned>(&self, res: reqwest::Response) -> Result<T, AnthropicRequestError> {
+        if res.status().is_success() {
+            Ok(res.json::<T>().await?)
         } else {
             let status = res.status();
             let bytes = res.bytes().await?;
