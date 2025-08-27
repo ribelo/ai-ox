@@ -11,6 +11,10 @@ pub mod message;
 pub mod model;
 #[cfg(feature = "models")]
 pub mod models;
+#[cfg(feature = "batches")]
+pub mod batches;
+#[cfg(feature = "files")]
+pub mod files;
 pub mod prelude;
 pub mod request;
 pub mod response;

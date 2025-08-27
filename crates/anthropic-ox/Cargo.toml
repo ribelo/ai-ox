@@ -13,7 +13,9 @@ default = ["tokens", "models"]
 leaky-bucket = ["dep:leaky-bucket"]
 tokens = []
 models = []
-full = ["tokens", "models"]
+batches = []
+files = []
+full = ["tokens", "models", "batches", "files"]
 
 [dependencies]
 bon = "3.3"
