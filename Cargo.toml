@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/gemini-ox", "crates/ai-ox", "crates/ai-ox-macros", "crates/openrouter-ox", "crates/mistral-ox", "crates/groq-ox", "crates/anthropic-ox", "crates/conversion-ox", "crates/openai-ox", "crates/ai-ox-common"]
+members = ["crates/gemini-ox", "crates/ai-ox", "crates/ai-ox-macros", "crates/openrouter-ox", "crates/mistral-ox", "crates/groq-ox", "crates/anthropic-ox", "crates/openai-ox", "crates/ai-ox-common", "crates/conversion-ox"]
 
 resolver = "2"
 
@@ -12,7 +12,6 @@ mime = "0.3.17"
 strum = { version = "0.27", features = ["derive"] }
 bon = "3.6.0"
 mistral-ox = { path = "crates/mistral-ox" }
-conversion-ox = { path = "crates/conversion-ox" }
 ai-ox-common = { path = "crates/ai-ox-common" }
 derive_more = { version = "2.0", features = [
     "deref",

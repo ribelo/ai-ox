@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod tests {
     use groq_ox::*;
-    use groq_ox::message::{Message, UserMessage, SystemMessage};
-    use groq_ox::tool::{Tool, ToolChoice};
+    use ai_ox_common::openai_format::{Tool, ToolChoice};
     use groq_ox::{Groq, ChatRequest};
+    use ai_ox_common::openai_format::Message;
 
     fn get_client() -> Groq {
         Groq::load_from_env().expect("GROQ_API_KEY must be set for integration tests")
@@ -32,7 +32,7 @@ mod tests {
         
         let request = ChatRequest::builder()
             .model("llama3-8b-8192") // Fast and free Groq model
-            .messages(vec![Message::User(UserMessage::new("Say 'hello' in one word"))])
+            .messages(vec![Message::user("Say 'hello' in one word")])
             .max_completion_tokens(5)
             .temperature(0.0) // Deterministic
             .build();
@@ -53,7 +53,7 @@ mod tests {
         
         let request = ChatRequest::builder()
             .model("llama3-8b-8192")
-            .messages(vec![Message::User(UserMessage::new("Count from 1 to 3"))])
+            .messages(vec![Message::user("Count from 1 to 3")])
             .max_completion_tokens(20)
             .temperature(0.0)
             .build();
@@ -81,8 +81,8 @@ mod tests {
         let request = ChatRequest::builder()
             .model("llama3-8b-8192")
             .messages(vec![
-                Message::System(SystemMessage::new("You are a helpful assistant that responds very briefly.")),
-                Message::User(UserMessage::new("What is 2+2?"))
+                Message::system("You are a helpful assistant that responds very briefly."),
+                Message::user("What is 2+2?")
             ])
             .max_completion_tokens(10)
             .build();
@@ -122,7 +122,7 @@ mod tests {
         
         let request = ChatRequest::builder()
             .model("llama3-groq-70b-8192-tool-use-preview") // Model with tool support
-            .messages(vec![Message::User(UserMessage::new("What's the weather like in Tokyo?"))])
+            .messages(vec![Message::user("What's the weather like in Tokyo?")])
             .tools(vec![weather_tool])
             .tool_choice(ToolChoice::Auto)
             .max_completion_tokens(100)
@@ -165,7 +165,7 @@ mod tests {
             
             let request = ChatRequest::builder()
                 .model(model)
-                .messages(vec![Message::User(UserMessage::new("Say 'Hello' in one word."))])
+                .messages(vec![Message::user("Say 'Hello' in one word.")])
                 .max_completion_tokens(5)
                 .build();
             
@@ -191,7 +191,7 @@ mod tests {
         // Test with invalid model name
         let request = ChatRequest::builder()
             .model("invalid-groq-model")
-            .messages(vec![Message::User(UserMessage::new("Hello"))])
+            .messages(vec![Message::user("Hello")])
             .build();
         
         let result = client.send(&request).await;
@@ -205,7 +205,7 @@ mod tests {
         
         let request = ChatRequest::builder()
             .model("llama3-8b-8192")
-            .messages(vec![Message::User(UserMessage::new("Say hello"))])
+            .messages(vec![Message::user("Say hello")])
             .temperature(0.0) // Deterministic
             .max_completion_tokens(10)
             .build();
@@ -229,11 +229,10 @@ async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
     let client = get_test_client()?;
     
     use groq_ox::{ChatRequest};
-    use groq_ox::message::{Message, UserMessage};
     
     let request = ChatRequest::builder()
         .model("llama3-8b-8192")
-        .messages(vec![Message::User(UserMessage::new("What is 2+2? Reply with just the number."))])
+        .messages(vec![Message::user("What is 2+2? Reply with just the number.")])
         .max_completion_tokens(10)
         .build();
     
@@ -267,11 +266,10 @@ async fn test_streaming() -> Result<(), Box<dyn std::error::Error>> {
     let client = get_test_client()?;
     
     use groq_ox::{ChatRequest};
-    use groq_ox::message::{Message, UserMessage};
     
     let request = ChatRequest::builder()
         .model("llama3-8b-8192")
-        .messages(vec![Message::User(UserMessage::new("Count from 1 to 5, one number per line."))])
+        .messages(vec![Message::user("Count from 1 to 5, one number per line.")])
         .build();
     
     let mut stream = client.stream(&request);

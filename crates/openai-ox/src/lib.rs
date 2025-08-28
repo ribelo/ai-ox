@@ -38,20 +38,19 @@
 pub mod client;
 pub mod error;
 mod internal;
-pub mod message;
 pub mod model;
 pub mod request;
 pub mod response;
-pub mod tool;
 pub mod usage;
 
 // Re-export main types
 pub use client::OpenAI;
 pub use error::OpenAIRequestError;
-pub use message::Message;
 pub use model::Model;
-pub use tool::Tool;
 pub use usage::Usage;
+
+// Re-export shared types from ai-ox-common
+pub use ai_ox_common::openai_format::{Message, Tool, ToolChoice, ToolCall};
 
 // Re-export request types
 pub use request::{
