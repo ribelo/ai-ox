@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
+use ai_ox_common::openai_format::{Message, ToolCall};
 use crate::{
-    message::AssistantMessage,
-    tool::ToolCall,
     usage::Usage,
     error::GroqRequestError,
 };
@@ -22,7 +21,7 @@ pub struct ChatResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Choice {
     pub index: u32,
-    pub message: AssistantMessage,
+    pub message: Message,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub finish_reason: Option<String>,
 }

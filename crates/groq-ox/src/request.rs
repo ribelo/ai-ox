@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 use serde_json::Value;
 
 // Import base OpenAI format types
-use ai_ox_common::openai_format::{BaseMessage, BaseTool, BaseToolChoice};
+use ai_ox_common::openai_format::{Message, Tool, ToolChoice};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -29,7 +29,7 @@ pub enum ResponseFormat {
 pub struct ChatRequest {
     // Core OpenAI-format fields (using shared base types from ai-ox-common)
     #[builder(field)]
-    pub messages: Vec<BaseMessage>,
+    pub messages: Vec<Message>,
     #[builder(into)]
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41,9 +41,9 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<BaseTool>>,
+    pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<BaseToolChoice>,
+    pub tool_choice: Option<ToolChoice>,
     
     // Groq-specific extensions beyond base OpenAI format
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -64,7 +64,7 @@ pub struct ChatRequest {
 
 impl ChatRequest {
     /// Create a simple chat request with model and messages
-    pub fn new(model: impl Into<String>, messages: Vec<BaseMessage>) -> Self {
+    pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {
             model: model.into(),
             messages,
@@ -84,7 +84,7 @@ impl ChatRequest {
     }
     
     /// Create a chat request with JSON response format
-    pub fn with_json_response(model: impl Into<String>, messages: Vec<BaseMessage>) -> Self {
+    pub fn with_json_response(model: impl Into<String>, messages: Vec<Message>) -> Self {
         let mut request = Self::new(model, messages);
         request.response_format = Some(ResponseFormat::JsonObject);
         request
@@ -93,23 +93,23 @@ impl ChatRequest {
 
 // Builder extension methods
 impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
-    pub fn messages(mut self, messages: impl IntoIterator<Item = BaseMessage>) -> Self {
+    pub fn messages(mut self, messages: impl IntoIterator<Item = Message>) -> Self {
         self.messages = messages.into_iter().collect();
         self
     }
     
-    pub fn message(mut self, message: BaseMessage) -> Self {
+    pub fn message(mut self, message: Message) -> Self {
         self.messages.push(message);
         self
     }
     
     pub fn user_message(mut self, content: impl Into<String>) -> Self {
-        self.messages.push(BaseMessage::user(content));
+        self.messages.push(Message::user(content));
         self
     }
     
     pub fn system_message(mut self, content: impl Into<String>) -> Self {
-        self.messages.push(BaseMessage::system(content));
+        self.messages.push(Message::system(content));
         self
     }
 }

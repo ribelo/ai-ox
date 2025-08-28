@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::message::Messages;
 
 // Import base OpenAI format types
-use ai_ox_common::openai_format::{BaseMessage, BaseTool, BaseToolChoice};
+use ai_ox_common::openai_format::{Message, Tool, ToolChoice};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -20,7 +20,7 @@ pub enum ResponseFormat {
 #[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
 pub struct ChatRequest {
     #[builder(field)]
-    pub messages: Vec<BaseMessage>,
+    pub messages: Vec<Message>,
     #[builder(field)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<Value>,
@@ -42,31 +42,31 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub random_seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<BaseTool>>,
+    pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<BaseToolChoice>,
+    pub tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safe_prompt: Option<bool>,
 }
 
 impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
-    pub fn messages(mut self, messages: impl IntoIterator<Item = BaseMessage>) -> Self {
+    pub fn messages(mut self, messages: impl IntoIterator<Item = Message>) -> Self {
         self.messages = messages.into_iter().collect();
         self
     }
     
-    pub fn message(mut self, message: BaseMessage) -> Self {
+    pub fn message(mut self, message: Message) -> Self {
         self.messages.push(message);
         self
     }
     
     pub fn user_message(mut self, content: impl Into<String>) -> Self {
-        self.messages.push(BaseMessage::user(content));
+        self.messages.push(Message::user(content));
         self
     }
     
     pub fn system_message(mut self, content: impl Into<String>) -> Self {
-        self.messages.push(BaseMessage::system(content));
+        self.messages.push(Message::system(content));
         self
     }
     
@@ -86,7 +86,7 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
 }
 
 impl ChatRequest {
-    pub fn push_message(&mut self, message: BaseMessage) {
+    pub fn push_message(&mut self, message: Message) {
         self.messages.push(message);
     }
 }

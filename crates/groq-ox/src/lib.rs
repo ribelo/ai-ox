@@ -8,12 +8,10 @@
 pub mod audio;
 pub mod error;
 mod internal;
-pub mod message;
 pub mod model;
 pub mod models;
 pub mod request;
 pub mod response;
-pub mod tool;
 pub mod usage;
 
 // Re-export main types

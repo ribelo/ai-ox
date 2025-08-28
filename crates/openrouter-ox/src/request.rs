@@ -7,7 +7,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 
 // Import base OpenAI format types
-use ai_ox_common::openai_format::{BaseMessage, BaseTool, BaseToolChoice};
+use ai_ox_common::openai_format::{Message, Tool, ToolChoice};
 
 use crate::provider_preference::ProviderPreferences;
 
@@ -33,7 +33,7 @@ pub struct Prediction {
 pub struct ChatRequest {
     // Core OpenAI-format fields (using shared base types from ai-ox-common)  
     #[builder(field)]
-    pub messages: Vec<BaseMessage>,
+    pub messages: Vec<Message>,
     #[builder(field)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<Value>,
@@ -51,9 +51,9 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<BaseTool>>,
+    pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<BaseToolChoice>,
+    pub tool_choice: Option<ToolChoice>,
     
     // OpenRouter-specific extensions (LOTS of them!)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -97,23 +97,23 @@ pub struct ChatRequest {
 
 // Builder extension methods (same pattern as Groq/Mistral)
 impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
-    pub fn messages(mut self, messages: impl IntoIterator<Item = BaseMessage>) -> Self {
+    pub fn messages(mut self, messages: impl IntoIterator<Item = Message>) -> Self {
         self.messages = messages.into_iter().collect();
         self
     }
     
-    pub fn message(mut self, message: BaseMessage) -> Self {
+    pub fn message(mut self, message: Message) -> Self {
         self.messages.push(message);
         self
     }
     
     pub fn user_message(mut self, content: impl Into<String>) -> Self {
-        self.messages.push(BaseMessage::user(content));
+        self.messages.push(Message::user(content));
         self
     }
     
     pub fn system_message(mut self, content: impl Into<String>) -> Self {
-        self.messages.push(BaseMessage::system(content));
+        self.messages.push(Message::system(content));
         self
     }
     
@@ -134,7 +134,7 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
 
 impl ChatRequest {
     /// Create a simple chat request with model and messages
-    pub fn new(model: impl Into<String>, messages: Vec<BaseMessage>) -> Self {
+    pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {
             model: model.into(),
             messages,

@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // Import base OpenAI format types  
-use ai_ox_common::openai_format::{BaseMessage, BaseTool, BaseToolChoice};
+use ai_ox_common::openai_format::{Message, Tool, ToolChoice};
 
 /// Request for chat completion - uses base OpenAI format with OpenAI-specific extensions
 /// 
@@ -17,10 +17,10 @@ use ai_ox_common::openai_format::{BaseMessage, BaseTool, BaseToolChoice};
 pub struct ChatRequest {
     // Core OpenAI-format fields (using shared base types from ai-ox-common)
     #[builder(field)]
-    pub messages: Vec<BaseMessage>,
+    pub messages: Vec<Message>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(field)]
-    pub tools: Option<Vec<BaseTool>>,
+    pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(field)]
     pub user: Option<String>,
@@ -51,7 +51,7 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<BaseToolChoice>,
+    pub tool_choice: Option<ToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parallel_tool_calls: Option<bool>,
 }
@@ -218,7 +218,7 @@ pub struct AssistantRequest {
     
     /// Tools available to assistant
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<BaseTool>>,
+    pub tools: Option<Vec<Tool>>,
     
     /// File IDs accessible to assistant
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -231,23 +231,23 @@ pub struct AssistantRequest {
 
 // Builder extension methods (same pattern as other providers)
 impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
-    pub fn messages(mut self, messages: impl IntoIterator<Item = BaseMessage>) -> Self {
+    pub fn messages(mut self, messages: impl IntoIterator<Item = Message>) -> Self {
         self.messages = messages.into_iter().collect();
         self
     }
     
-    pub fn message(mut self, message: BaseMessage) -> Self {
+    pub fn message(mut self, message: Message) -> Self {
         self.messages.push(message);
         self
     }
     
     pub fn user_message(mut self, content: impl Into<String>) -> Self {
-        self.messages.push(BaseMessage::user(content));
+        self.messages.push(Message::user(content));
         self
     }
     
     pub fn system_message(mut self, content: impl Into<String>) -> Self {
-        self.messages.push(BaseMessage::system(content));
+        self.messages.push(Message::system(content));
         self
     }
 }

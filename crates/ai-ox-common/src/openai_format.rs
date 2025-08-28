@@ -17,7 +17,7 @@ pub enum MessageRole {
 
 /// Base message structure used across all OpenAI-format providers
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseMessage {
+pub struct Message {
     pub role: MessageRole,
     pub content: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -45,14 +45,14 @@ pub struct FunctionCall {
 
 /// Tool definition structure (identical across providers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseTool {
+pub struct Tool {
     pub r#type: String, // Usually "function"
-    pub function: BaseFunction,
+    pub function: Function,
 }
 
 /// Function definition (identical across providers) 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseFunction {
+pub struct Function {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -63,20 +63,20 @@ pub struct BaseFunction {
 /// Tool choice options (identical across providers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum BaseToolChoice {
+pub enum ToolChoice {
     None,
     Auto,
     Required,
-    Specific { r#type: String, function: BaseFunction },
+    Specific { r#type: String, function: Function },
 }
 
 /// Core chat request fields present in ALL OpenAI-format providers
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 #[builder(builder_type(vis = "pub"))]
-pub struct BaseChatRequest {
+pub struct ChatRequest {
     /// Messages in the conversation
     #[builder(field)]
-    pub messages: Vec<BaseMessage>,
+    pub messages: Vec<Message>,
     
     /// Model identifier
     #[builder(into)]
@@ -104,16 +104,16 @@ pub struct BaseChatRequest {
     
     /// Available tools
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<BaseTool>>,
+    pub tools: Option<Vec<Tool>>,
     
     /// Tool choice strategy
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<BaseToolChoice>,
+    pub tool_choice: Option<ToolChoice>,
 }
 
 /// Usage statistics (identical across providers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseUsage {
+pub struct Usage {
     pub prompt_tokens: u32,
     pub completion_tokens: u32,
     pub total_tokens: u32,
@@ -121,26 +121,26 @@ pub struct BaseUsage {
 
 /// Base chat response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseChatResponse {
+pub struct ChatResponse {
     pub id: String,
     pub object: String, // "chat.completion"
     pub created: u64,
     pub model: String,
-    pub choices: Vec<BaseChoice>,
-    pub usage: BaseUsage,
+    pub choices: Vec<Choice>,
+    pub usage: Usage,
 }
 
 /// Response choice structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseChoice {
+pub struct Choice {
     pub index: u32,
-    pub message: BaseMessage,
+    pub message: Message,
     pub finish_reason: Option<String>,
 }
 
 /// Streaming response delta
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseDelta {
+pub struct Delta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<MessageRole>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -151,25 +151,25 @@ pub struct BaseDelta {
 
 /// Streaming choice structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseStreamChoice {
+pub struct StreamChoice {
     pub index: u32,
-    pub delta: BaseDelta,
+    pub delta: Delta,
     pub finish_reason: Option<String>,
 }
 
 /// Streaming response chunk
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BaseStreamResponse {
+pub struct StreamResponse {
     pub id: String,
     pub object: String, // "chat.completion.chunk"
     pub created: u64,
     pub model: String,
-    pub choices: Vec<BaseStreamChoice>,
+    pub choices: Vec<StreamChoice>,
 }
 
-impl BaseChatRequest {
+impl ChatRequest {
     /// Create a new chat request with minimal required fields
-    pub fn new(model: impl Into<String>, messages: Vec<BaseMessage>) -> Self {
+    pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
         Self {
             messages,
             model: model.into(),
@@ -184,7 +184,7 @@ impl BaseChatRequest {
     }
 }
 
-impl BaseMessage {
+impl Message {
     /// Create a user message
     pub fn user(content: impl Into<String>) -> Self {
         Self {
