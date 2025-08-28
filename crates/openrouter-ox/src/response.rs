@@ -236,13 +236,12 @@ impl ChatCompletionChunk {
 
             // Some providers might send error JSON directly without the 'data:' prefix
             if let Ok(err) = serde_json::from_str::<ErrorResponse>(trimmed) {
-                results.push(Err(OpenRouterRequestError::InvalidRequestError {
+                results.push(Err(OpenRouterRequestError::InvalidRequest {
                     code: Some(err.error.code.to_string()),
                     message: err.error.message,
-                    status: None,
-                    details: serde_json::json!({
+                    details: Some(serde_json::json!({
                         "user_id": err.user_id
-                    }),
+                    })),
                 }));
                 continue;
             }
@@ -274,13 +273,12 @@ impl ChatCompletionChunk {
                     // as some APIs might send errors within the 'data:' payload.
                     match serde_json::from_str::<ErrorResponse>(data) {
                         Ok(error_response) => {
-                            results.push(Err(OpenRouterRequestError::InvalidRequestError {
+                            results.push(Err(OpenRouterRequestError::InvalidRequest {
                                 code: Some(error_response.error.code.to_string()),
                                 message: error_response.error.message,
-                                status: None,
-                                details: serde_json::json!({
+                                details: Some(serde_json::json!({
                                     "user_id": error_response.user_id
-                                }),
+                                })),
                             }));
                         }
                         Err(_) => {

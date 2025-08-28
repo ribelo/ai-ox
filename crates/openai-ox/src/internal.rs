@@ -1,23 +1,9 @@
 use ai_ox_common::{
     request_builder::{RequestBuilder, RequestConfig, Endpoint, HttpMethod, AuthMethod, MultipartForm},
-    CommonRequestError, BoxStream
+    error::ProviderError, BoxStream
 };
 use futures_util::stream::BoxStream as FuturesBoxStream;
 use crate::{OpenAIRequestError, ChatRequest, ChatResponse};
-
-/// Convert CommonRequestError to OpenAIRequestError
-impl From<CommonRequestError> for OpenAIRequestError {
-    fn from(err: CommonRequestError) -> Self {
-        match err {
-            CommonRequestError::Http(e) => OpenAIRequestError::ReqwestError(e),
-            CommonRequestError::Json(e) => OpenAIRequestError::SerdeError(e),
-            CommonRequestError::InvalidEventData(msg) => OpenAIRequestError::InvalidEventData(msg),
-            CommonRequestError::AuthenticationMissing => OpenAIRequestError::MissingApiKey,
-            CommonRequestError::InvalidMimeType(msg) => OpenAIRequestError::InvalidEventData(msg),
-            CommonRequestError::Utf8Error(e) => OpenAIRequestError::InvalidEventData(e.to_string()),
-        }
-    }
-}
 
 /// OpenAI client helper methods using the common RequestBuilder
 pub struct OpenAIRequestHelper {
@@ -51,21 +37,12 @@ impl OpenAIRequestHelper {
     ) -> FuturesBoxStream<'static, Result<ChatResponse, OpenAIRequestError>> {
         let endpoint = Endpoint::new("chat/completions", HttpMethod::Post);
         
-        // Use the common streaming implementation and convert errors
-        let common_stream: BoxStream<'static, Result<ChatResponse, CommonRequestError>> = 
+        // Use the common streaming implementation (no conversion needed - same type)
+        let stream: BoxStream<'static, Result<ChatResponse, ProviderError>> = 
             self.request_builder.stream(&endpoint, Some(request));
         
-        Box::pin(async_stream::try_stream! {
-            use futures_util::StreamExt;
-            
-            let mut stream = common_stream;
-            while let Some(result) = stream.next().await {
-                match result {
-                    Ok(response) => yield response,
-                    Err(e) => yield Err(OpenAIRequestError::from(e))?,
-                }
-            }
-        })
+        // Direct cast since OpenAIRequestError = ProviderError
+        stream
     }
 
     /// List available models

@@ -48,7 +48,7 @@ impl OpenAI {
     /// Create a new OpenAI client from environment variable
     pub fn from_env() -> Result<Self, OpenAIRequestError> {
         let api_key = std::env::var("OPENAI_API_KEY")
-            .map_err(|_| OpenAIRequestError::MissingApiKey)?;
+            .map_err(|_| OpenAIRequestError::AuthenticationMissing)?;
         Ok(Self::new(api_key))
     }
 

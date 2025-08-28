@@ -128,10 +128,10 @@ impl crate::Groq {
         // Validate that timestamp_granularities requires verbose_json format
         if request.timestamp_granularities.is_some() 
             && request.response_format != Some(TranscriptionFormat::VerboseJson) {
-            return Err(GroqRequestError::InvalidRequestError {
+            return Err(GroqRequestError::InvalidRequest {
                 code: None,
                 message: "`timestamp_granularities` requires `response_format = verbose_json`".into(),
-                r#type: Some("validation_error".into()),
+                details: Some(serde_json::json!({"type": "validation_error"})),
             });
         }
         

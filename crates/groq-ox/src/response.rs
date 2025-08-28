@@ -84,7 +84,7 @@ impl ChatCompletionChunk {
                 // Try to parse the JSON
                 match serde_json::from_str::<ChatCompletionChunk>(data_content) {
                     Ok(chunk) => chunks.push(Ok(chunk)),
-                    Err(e) => chunks.push(Err(GroqRequestError::JsonDeserializationError(e))),
+                    Err(e) => chunks.push(Err(GroqRequestError::JsonDeserializationError(e.to_string()))),
                 }
             }
         }
