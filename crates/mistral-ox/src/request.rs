@@ -4,10 +4,10 @@ use schemars::{generate::SchemaSettings, JsonSchema};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::message::Messages;
+use crate::message::{Messages, Message};
 
-// Import base OpenAI format types
-use ai_ox_common::openai_format::{Message, Tool, ToolChoice};
+// Import base OpenAI format types for tools
+use ai_ox_common::openai_format::{Tool, ToolChoice};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
