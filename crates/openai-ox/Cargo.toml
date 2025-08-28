@@ -12,7 +12,6 @@ keywords = ["openai", "ai", "api", "client", "async"]
 [features]
 default = []
 leaky-bucket = ["dep:leaky-bucket"]
-schema = ["dep:schemars"]
 
 [dependencies]
 # Core dependencies - use workspace where possible

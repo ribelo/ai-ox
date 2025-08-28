@@ -168,7 +168,7 @@ pub struct FineTuningRequest {
 }
 
 /// Training file reference
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TrainingFile {
     pub file_id: String,
     pub weight: Option<f64>,

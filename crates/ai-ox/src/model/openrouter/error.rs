@@ -63,6 +63,12 @@ impl From<OpenRouterError> for GenerateContentError {
                     OpenRouterRequestError::IoError(io_error) => {
                         GenerateContentError::provider_error("openrouter", format!("I/O error: {}", io_error))
                     }
+                    OpenRouterRequestError::MissingApiKey => {
+                        GenerateContentError::configuration("OpenRouter API key is missing".to_string())
+                    }
+                    OpenRouterRequestError::InvalidModel(model) => {
+                        GenerateContentError::configuration(format!("OpenRouter invalid model: {}", model))
+                    }
                 }
             }
             OpenRouterError::Env(var_error) => {

@@ -28,13 +28,5 @@ pub enum ConversionError {
     UnsupportedConversion(String),
 }
 
-/// Re-export types and traits from provider crates
-#[cfg(feature = "anthropic-openrouter")]
-pub mod anthropic_openrouter {
-    // Re-export the original conversion traits from openrouter-ox
-    pub use openrouter_ox::conversion::*;
-    pub use openrouter_ox::conversion::streaming::*;
-}
-
 #[cfg(feature = "anthropic-gemini")]
 pub mod anthropic_gemini;

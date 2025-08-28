@@ -1,4 +1,7 @@
-use anthropic_ox::{Anthropic, Model};
+use anthropic_ox::prelude::*;
+use futures_util::StreamExt;
+use anthropic_ox::tool::CustomTool;
+use anthropic_ox::response::{StreamEvent, ContentBlockDelta, StopReason};
 
 #[tokio::test]
 async fn test_anthropic_client_initialization() {
@@ -42,8 +45,6 @@ async fn test_model_enum_conversion() {
 
 #[tokio::test]
 async fn test_chat_request_builder() {
-    use anthropic_ox::{message::{Message, Messages, Role, Content, StringOrContents, Text}, ChatRequest};
-
     // Create test messages
     let mut messages = Messages::new();
     messages.push(Message::new(Role::User, vec![Content::Text(Text::new("Hello".to_string()))]));
@@ -53,12 +54,12 @@ async fn test_chat_request_builder() {
         .model("claude-3-5-sonnet-20241022")
         .messages(messages.clone())
         .max_tokens(1000)
-        .maybe_system(Some(StringOrContents::String("You are a helpful assistant".to_string())))
+        .system("You are a helpful assistant".into())
         .build();
 
     assert_eq!(request.model, "claude-3-5-sonnet-20241022");
     assert_eq!(request.max_tokens, 1000);
-    assert_eq!(request.system, Some(StringOrContents::String("You are a helpful assistant".to_string())));
+    assert_eq!(request.system, Some("You are a helpful assistant".into()));
     assert_eq!(request.messages.len(), 1);
 
     // Test without system message
@@ -77,8 +78,6 @@ async fn test_chat_request_builder() {
 
 #[tokio::test]
 async fn test_message_structures() {
-    use anthropic_ox::message::{Message, Messages, Role, Content, ImageSource, Text};
-
     // Test text content
     let text_content = Content::Text(Text::new("Hello, world!".to_string()));
     assert!(matches!(text_content, Content::Text { .. }));
@@ -112,7 +111,7 @@ async fn test_message_structures() {
 
 #[tokio::test]
 async fn test_error_types() {
-    use anthropic_ox::{AnthropicRequestError, error::ErrorInfo};
+    use anthropic_ox::error::ErrorInfo;
     
     // Test error conversion from ErrorInfo
     let error_info = ErrorInfo {
@@ -143,7 +142,6 @@ async fn test_error_types() {
 // Real integration tests using actual API calls
 mod real_api_tests {
     use super::*;
-    use anthropic_ox::{ChatRequest, message::{Message, Messages, Role, Content, Text, Tool}};
 
     fn get_client() -> Anthropic {
         Anthropic::load_from_env().expect("ANTHROPIC_API_KEY must be set for integration tests")
@@ -169,7 +167,7 @@ mod real_api_tests {
         let chat_response = response.unwrap();
         assert_eq!(chat_response.model, "claude-3-haiku-20240307");
         assert!(!chat_response.content.is_empty());
-        assert!(chat_response.usage.is_some());
+        assert!(chat_response.usage.input_tokens > Some(0));
     }
 
     #[tokio::test]
@@ -187,7 +185,6 @@ mod real_api_tests {
             .build();
         
         let mut stream = client.stream(&request);
-        use futures_util::StreamExt;
         
         let mut chunks_received = 0;
         while let Some(chunk_result) = stream.next().await {
@@ -211,7 +208,7 @@ mod real_api_tests {
         
         let request = ChatRequest::builder()
             .model("claude-3-haiku-20240307")
-            .system("You are a helpful assistant that responds very briefly.")
+            .system("You are a helpful assistant that responds very briefly.".into())
             .messages(messages)
             .max_tokens(10)
             .build();
@@ -221,7 +218,7 @@ mod real_api_tests {
         
         let chat_response = response.unwrap();
         assert!(!chat_response.content.is_empty());
-        assert!(chat_response.usage.is_some());
+        assert!(chat_response.usage.input_tokens > Some(0));
     }
 
     #[tokio::test]
@@ -229,8 +226,8 @@ mod real_api_tests {
     async fn test_tool_calling() {
         let client = get_client();
         
-        let weather_tool = Tool::new("get_weather", "Get the current weather for a location")
-            .with_input_schema(serde_json::json!({
+        let weather_tool = Tool::Custom(CustomTool::new("get_weather".to_string(), "Get the current weather for a location".to_string())
+            .with_schema(serde_json::json!({
                 "type": "object",
                 "properties": {
                     "location": {
@@ -239,7 +236,7 @@ mod real_api_tests {
                     }
                 },
                 "required": ["location"]
-            }));
+            })));
         
         let mut messages = Messages::new();
         messages.push(Message::new(Role::User, vec![Content::Text(Text::new("What's the weather like in Tokyo?".to_string()))]));
@@ -256,7 +253,7 @@ mod real_api_tests {
         
         let chat_response = response.unwrap();
         // Claude might or might not call the tool, both are valid responses
-        assert!(!chat_response.content.is_empty() || !chat_response.tool_use.is_empty());
+        assert!(!chat_response.content.is_empty() || chat_response.stop_reason == Some(StopReason::ToolUse));
     }
 
     #[tokio::test]
@@ -349,10 +346,9 @@ async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!response.content.is_empty());
     
     // Check usage if present
-    if let Some(usage) = &response.usage {
-        assert!(usage.input_tokens > 0);
-        assert!(usage.output_tokens > 0);
-    }
+    let usage = &response.usage;
+    assert!(usage.input_tokens > Some(0));
+    assert!(usage.output_tokens > Some(0));
     
     println!("Basic chat test passed");
     Ok(())
@@ -371,7 +367,6 @@ async fn test_streaming() -> Result<(), Box<dyn std::error::Error>> {
         .build();
     
     let mut stream = client.stream(&request);
-    use futures_util::StreamExt;
     let mut chunks_received = 0;
     let mut content = String::new();
     let mut finish_reason_received = false;
@@ -380,14 +375,16 @@ async fn test_streaming() -> Result<(), Box<dyn std::error::Error>> {
         let chunk = chunk_result?;
         chunks_received += 1;
         
-        if let Some(delta) = &chunk.delta {
-            if let Some(text) = &delta.text {
-                content.push_str(text);
+        match chunk {
+            StreamEvent::ContentBlockDelta { delta, .. } => {
+                if let ContentBlockDelta::TextDelta { text } = delta {
+                    content.push_str(&text);
+                }
             }
-        }
-        
-        if chunk.r#type == "message_stop" {
-            finish_reason_received = true;
+            StreamEvent::MessageStop => {
+                finish_reason_received = true;
+            }
+            _ => {}
         }
     }
     

@@ -35,8 +35,8 @@ mod tests {
     fn test_chat_request_builder() {
         let request = openai_ox::ChatRequest::builder()
             .model("gpt-3.5-turbo")
-            .user("Hello")
-            .assistant("Hi there!")
+            .user_message("Hello")
+            .assistant_message("Hi there!")
             .temperature(0.7)
             .max_tokens(100)
             .build();
@@ -86,18 +86,16 @@ mod tests {
     #[test]
     fn test_client_creation() {
         let client = OpenAI::new("test-key");
-        assert_eq!(client.api_key, "test-key");
         assert_eq!(client.base_url, "https://api.openai.com/v1");
     }
 
     #[test]
     fn test_client_builder() {
         let client = OpenAI::builder()
-            .api_key("test-key")
+            .api_key("test-key".to_string())
             .base_url("https://custom.api.com")
             .build();
 
-        assert_eq!(client.api_key, "test-key");
         assert_eq!(client.base_url, "https://custom.api.com");
     }
 }

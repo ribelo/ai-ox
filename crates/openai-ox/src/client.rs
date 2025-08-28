@@ -1,4 +1,5 @@
 use bon::Builder;
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::{OpenAIRequestError, ChatRequest, ChatResponse, internal::OpenAIRequestHelper};
@@ -20,7 +21,7 @@ pub struct OpenAI {
     /// Rate limiter (optional)
     #[cfg(feature = "leaky-bucket")]
     #[builder(skip)]
-    rate_limiter: Option<leaky_bucket::RateLimiter>,
+    rate_limiter: Option<Arc<leaky_bucket::RateLimiter>>,
 }
 
 impl OpenAI {
@@ -291,7 +292,7 @@ impl OpenAI {
 impl OpenAI {
     /// Set rate limiter
     pub fn with_rate_limiter(mut self, rate_limiter: leaky_bucket::RateLimiter) -> Self {
-        self.rate_limiter = Some(rate_limiter);
+        self.rate_limiter = Some(Arc::new(rate_limiter));
         self
     }
 }

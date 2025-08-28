@@ -1,14 +1,14 @@
 #[cfg(test)]
 mod tests {
     use mistral_ox::*;
-    use mistral_ox::message::Message;
+    use mistral_ox::message::{Message, Messages};
 
     #[test]
     fn test_embeddings_request_builder() {
         let request = EmbeddingsRequest::builder()
-            .model("mistral-embed")
+            .model("mistral-embed".to_string())
             .input(EmbeddingInput::Single("Hello world".to_string()))
-            .encoding_format("float")
+            .encoding_format("float".to_string())
             .build();
 
         assert_eq!(request.model, "mistral-embed");
@@ -20,7 +20,7 @@ mod tests {
     fn test_moderation_request_builder() {
         let request = ModerationRequest::builder()
             .input(ModerationInput::Single("This is a test message".to_string()))
-            .model("mistral-moderation-latest")
+            .model("mistral-moderation-latest".to_string())
             .build();
 
         assert!(matches!(request.input, ModerationInput::Single(ref s) if s == "This is a test message"));
@@ -29,9 +29,9 @@ mod tests {
 
     #[test]
     fn test_chat_moderation_request_builder() {
-        let messages = vec![Message::user("Hello"), Message::assistant("Hi there!")];
+        let messages = Messages::new(vec![Message::user("Hello"), Message::assistant("Hi there!")]);
         let request = ChatModerationRequest::builder()
-            .model("mistral-moderation-latest")
+            .model("mistral-moderation-latest".to_string())
             .messages(messages.clone())
             .build();
 
@@ -53,10 +53,10 @@ mod tests {
             .build();
 
         let request = FineTuningRequest::builder()
-            .model("mistral-small")
+            .model("mistral-small".to_string())
             .training_files(training_files.clone())
             .hyperparameters(hyperparameters)
-            .suffix("custom-model")
+            .suffix("custom-model".to_string())
             .auto_start(true)
             .build();
 
@@ -69,9 +69,9 @@ mod tests {
     #[test]
     fn test_batch_job_request_builder() {
         let request = BatchJobRequest::builder()
-            .input_file_id("file-batch123")
-            .endpoint("/v1/chat/completions")
-            .completion_window("24h")
+            .input_file_id("file-batch123".to_string())
+            .endpoint("/v1/chat/completions".to_string())
+            .completion_window("24h".to_string())
             .build();
 
         assert_eq!(request.input_file_id, "file-batch123");
@@ -82,9 +82,9 @@ mod tests {
     #[test]
     fn test_fim_request_builder() {
         let request = FimRequest::builder()
-            .model("codestral-latest")
-            .prompt("def hello():")
-            .suffix("    return 'world'")
+            .model("codestral-latest".to_string())
+            .prompt("def hello():".to_string())
+            .suffix("    return 'world'".to_string())
             .max_tokens(100)
             .temperature(0.7)
             .build();
@@ -98,10 +98,10 @@ mod tests {
 
     #[test]
     fn test_agents_request_builder() {
-        let messages = vec![Message::user("Solve this math problem: 2 + 2")];
+        let messages = Messages::new(vec![Message::user("Solve this math problem: 2 + 2")]);
         let request = AgentsRequest::builder()
             .messages(messages.clone())
-            .agent_id("agent-math-tutor")
+            .agent_id("agent-math-tutor".to_string())
             .max_tokens(200)
             .temperature(0.1)
             .build();

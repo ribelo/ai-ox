@@ -231,6 +231,12 @@ pub fn convert_anthropic_response_to_ai_ox(
                     content,
                 });
             }
+            AnthropicContent::Thinking(_) => {
+                // Ignore thinking content
+            }
+            AnthropicContent::SearchResult(_) => {
+                // Ignore search result content
+            }
         }
     }
     
@@ -299,6 +305,9 @@ pub fn convert_stream_event_to_ai_ox(
                 ContentBlock::Text { .. } => {
                     // Text content blocks don't need special start handling
                 }
+                ContentBlock::Thinking { .. } => {
+                    // Thinking content blocks don't need special start handling
+                }
             }
         }
         AnthropicStreamEvent::ContentBlockDelta { delta, index } => {
@@ -326,6 +335,9 @@ pub fn convert_stream_event_to_ai_ox(
                     };
                     
                     events.push(Ok(StreamEvent::MessageDelta(message_delta)));
+                }
+                ContentBlockDelta::ThinkingDelta { .. } => {
+                    // Ignore thinking delta
                 }
             }
         }
@@ -385,34 +397,32 @@ pub fn convert_stream_event_to_ai_ox(
 }
 
 /// Convert ai-ox Tools to Anthropic Tools
-fn convert_tools_to_anthropic(tools: Vec<AiOxTool>) -> Result<Vec<anthropic_ox::tool::Tool>, GenerateContentError> {
-    #[cfg(feature = "schema")]
+fn convert_tools_to_anthropic(
+    tools: Vec<AiOxTool>,
+) -> Result<Vec<anthropic_ox::tool::Tool>, GenerateContentError> {
     let mut anthropic_tools = Vec::new();
-    #[cfg(not(feature = "schema"))]
-    let anthropic_tools = Vec::new();
-    
+
     for tool in tools {
         match tool {
             AiOxTool::FunctionDeclarations(functions) => {
-                for func in functions {
-                    let _anthropic_tool = anthropic_ox::tool::Tool::new(
-                        func.name.clone(),
-                        func.description.clone().unwrap_or_default(),
-                    );
-                    
-                    // Schema support requires schema feature to be enabled in anthropic-ox
-                    #[cfg(feature = "schema")]
-                    let anthropic_tool = _anthropic_tool.with_schema(func.parameters.clone());
-                    
-                    #[cfg(not(feature = "schema"))]
-                    {
-                        // Return an error if schema feature is not enabled but tools are provided
+                #[cfg(not(feature = "schema"))]
+                {
+                    if !functions.is_empty() {
                         return Err(GenerateContentError::configuration(
-                            "Tool schemas require the 'schema' feature to be enabled. Please enable the 'schema' feature."
+                            "Tool schemas require the 'schema' feature to be enabled. Please enable the 'schema' feature.",
                         ));
                     }
-                    
-                    #[cfg(feature = "schema")]
+                }
+
+                #[cfg(feature = "schema")]
+                for func in functions {
+                    let anthropic_tool =
+                        anthropic_ox::tool::Tool::Custom(CustomTool::new(
+                            func.name.clone(),
+                            func.description.clone().unwrap_or_default(),
+                        )
+                        .with_schema(func.parameters.clone()));
+
                     anthropic_tools.push(anthropic_tool);
                 }
             }
@@ -422,7 +432,7 @@ fn convert_tools_to_anthropic(tools: Vec<AiOxTool>) -> Result<Vec<anthropic_ox::
             }
         }
     }
-    
+
     Ok(anthropic_tools)
 }
 
@@ -484,8 +494,16 @@ mod tests {
         let result = convert_tools_to_anthropic(tools).unwrap();
 
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0].name, "get_weather");
-        assert_eq!(result[1].name, "get_time");
+        if let Tool::Custom(tool) = &result[0] {
+            assert_eq!(tool.name, "get_weather");
+        } else {
+            panic!("Expected CustomTool");
+        }
+        if let Tool::Custom(tool) = &result[1] {
+            assert_eq!(tool.name, "get_time");
+        } else {
+            panic!("Expected CustomTool");
+        }
     }
 
     #[test]

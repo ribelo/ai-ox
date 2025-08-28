@@ -26,14 +26,18 @@ pub enum CommonRequestError {
     /// UTF-8 conversion error
     #[error("UTF-8 conversion error: {0}")]
     Utf8Error(#[from] std::string::FromUtf8Error),
+
+    /// Error originating from the request builder
+    #[error("Request builder error: {0}")]
+    RequestBuilder(String),
 }
 
 /// Parse error response from HTTP status and body
-pub fn parse_error_response(status: reqwest::StatusCode, body: bytes::Bytes) -> CommonRequestError {
-    let body_str = String::from_utf8_lossy(&body);
+pub fn parse_error_response(status: reqwest::StatusCode, body: &bytes::Bytes) -> CommonRequestError {
+    let body_str = String::from_utf8_lossy(body);
     
     // Try to parse as JSON error first
-    if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(&body) {
+    if let Ok(json_value) = serde_json::from_slice::<serde_json::Value>(body) {
         if let Some(error_message) = extract_error_message(&json_value) {
             return CommonRequestError::InvalidEventData(format!(
                 "HTTP {}: {}",

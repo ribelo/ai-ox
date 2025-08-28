@@ -4,11 +4,14 @@ use crate::error::CommonRequestError;
 
 /// Server-Sent Events parser for streaming responses
 pub struct SseParser {
+    /// The underlying byte stream from the response.
     byte_stream: std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
+    /// A buffer to store partial event data.
     buffer: Vec<u8>,
 }
 
 impl SseParser {
+    #[must_use]
     pub fn new(response: reqwest::Response) -> Self {
         Self {
             byte_stream: Box::pin(response.bytes_stream()),
@@ -16,7 +19,11 @@ impl SseParser {
         }
     }
 
-    /// Get the next parsed event from the stream
+    /// Get the next parsed event from the stream.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if reading from the stream fails or if the event data is invalid.
     pub async fn next_event<T: for<'de> Deserialize<'de>>(&mut self) -> Result<Option<T>, CommonRequestError> {
         loop {
             // Try to process events from current buffer
@@ -85,7 +92,7 @@ impl SseParser {
 
             // Parse JSON
             let event: T = serde_json::from_str(json_data)
-                .map_err(|e| CommonRequestError::InvalidEventData(format!("JSON parse error: {}", e)))?;
+                .map_err(|e| CommonRequestError::InvalidEventData(format!("JSON parse error: {e}")))?;
             
             return Ok(Some(event));
         }
@@ -95,7 +102,11 @@ impl SseParser {
     }
 }
 
-/// Utility function to parse SSE events from a string chunk (for compatibility)
+/// Utility function to parse SSE events from a string chunk (for compatibility).
+///
+/// # Errors
+///
+/// Returns an error if any line contains invalid event data.
 pub fn parse_sse_events<T: for<'de> Deserialize<'de>>(
     chunk: &str,
 ) -> Result<Vec<T>, CommonRequestError> {

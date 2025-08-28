@@ -63,15 +63,6 @@ impl Tool {
         Self::function(ToolFunction::with_parameters(name, description, parameters))
     }
 
-    #[cfg(feature = "schema")]
-    pub fn from_schema<T: schemars::JsonSchema>() -> Self {
-        let schema = schemars::schema_for!(T);
-        Self::function_with_params(
-            std::any::type_name::<T>().split("::").last().unwrap_or("unknown").to_string(),
-            schema.schema.metadata.as_ref().and_then(|m| m.description.clone()).unwrap_or_default(),
-            serde_json::to_value(schema).unwrap(),
-        )
-    }
 
     pub fn with_strict(mut self, strict: bool) -> Self {
         self.function.strict = Some(strict);

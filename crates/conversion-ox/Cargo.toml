@@ -10,12 +10,11 @@ categories = ["api-bindings", "asynchronous"]
 keywords = ["ai", "conversion", "anthropic", "gemini", "openrouter"]
 
 [features]
-default = []
+default = ["anthropic-gemini"]
 # Individual provider conversions
-anthropic-openrouter = ["dep:anthropic-ox", "dep:openrouter-ox"]
 anthropic-gemini = ["dep:anthropic-ox", "dep:gemini-ox"]
 # Convenience feature for all conversions
-all = ["anthropic-openrouter", "anthropic-gemini"]
+all = ["anthropic-gemini"]
 
 [dependencies]
 # Core dependencies

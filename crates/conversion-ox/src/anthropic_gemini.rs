@@ -9,7 +9,7 @@ use anthropic_ox::{
     },
     request::ChatRequest as AnthropicRequest,
     response::{ChatResponse as AnthropicResponse, StopReason as AnthropicStopReason},
-    tool::Tool as AnthropicTool,
+    tool::{CustomTool, Tool as AnthropicTool},
 };
 
 use gemini_ox::{
@@ -191,6 +191,10 @@ fn convert_anthropic_content_to_parts(content: &[AnthropicContent]) -> Vec<Gemin
                 // Thinking content is internal reasoning, not exposed in Gemini format
                 None
             }
+            AnthropicContent::SearchResult(_) => {
+                // TODO: Handle this properly. For now, ignore it.
+                None
+            }
         })
         .collect()
 }
@@ -231,11 +235,23 @@ fn convert_gemini_parts_to_anthropic_content(parts: &[GeminiPart]) -> Vec<Anthro
 
 /// Convert Anthropic Tool to Gemini Tool  
 pub fn anthropic_tool_to_gemini_tool(anthropic_tool: AnthropicTool) -> GeminiTool {
-    GeminiTool::FunctionDeclarations(vec![FunctionMetadata {
-        name: anthropic_tool.name,
-        description: Some(anthropic_tool.description),
-        parameters: draft07_to_openapi3(anthropic_tool.input_schema),
-    }])
+    match anthropic_tool {
+        AnthropicTool::Custom(custom_tool) => {
+            GeminiTool::FunctionDeclarations(vec![FunctionMetadata {
+                name: custom_tool.name,
+                description: Some(custom_tool.description),
+                parameters: draft07_to_openapi3(custom_tool.input_schema),
+            }])
+        }
+        AnthropicTool::Computer(_) => {
+            // Not sure how to handle this. For now, I'll create a placeholder.
+            GeminiTool::FunctionDeclarations(vec![FunctionMetadata {
+                name: "computer".to_string(),
+                description: Some("Computer tool".to_string()),
+                parameters: serde_json::Value::Object(serde_json::Map::new()),
+            }])
+        }
+    }
 }
 
 /// Convert JSON Schema Draft-07 format to OpenAPI 3.0 format
@@ -339,37 +355,37 @@ pub fn gemini_tool_to_anthropic_tool(gemini_tool: GeminiTool) -> AnthropicTool {
         GeminiTool::FunctionDeclarations(functions) => {
             // Take the first function if multiple are present
             if let Some(func) = functions.into_iter().next() {
-                let tool = AnthropicTool::new(
+                let tool = AnthropicTool::Custom(CustomTool::new(
                     func.name,
                     func.description.unwrap_or_else(|| "Unknown function".to_string()),
-                ).with_schema(func.parameters);
+                ).with_schema(func.parameters));
                 tool
             } else {
                 // Fallback for empty function list
-                AnthropicTool::new(
+                AnthropicTool::Custom(CustomTool::new(
                     "unknown".to_string(),
                     "Unknown function".to_string(),
-                )
+                ))
             }
         }
         // Handle other Gemini tool types by converting them to basic function tools
         GeminiTool::GoogleSearchRetrieval { .. } => {
-            AnthropicTool::new(
+            AnthropicTool::Custom(CustomTool::new(
                 "google_search_retrieval".to_string(),
                 "Google Search Retrieval tool".to_string(),
-            )
+            ))
         }
         GeminiTool::CodeExecution { .. } => {
-            AnthropicTool::new(
+            AnthropicTool::Custom(CustomTool::new(
                 "code_execution".to_string(),
                 "Code execution tool".to_string(),
-            )
+            ))
         }
         GeminiTool::GoogleSearch(_) => {
-            AnthropicTool::new(
+            AnthropicTool::Custom(CustomTool::new(
                 "google_search".to_string(),
                 "Google Search tool".to_string(),
-            )
+            ))
         }
     }
 }

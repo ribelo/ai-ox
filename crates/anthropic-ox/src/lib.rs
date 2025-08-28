@@ -1,3 +1,4 @@
+//! A Rust SDK for the Anthropic API.
 #![cfg_attr(not(test), deny(unsafe_code))]
 #![warn(
     clippy::pedantic,

@@ -25,10 +25,6 @@ audio = ["dep:cpal"]
 # Requires: same ALSA dependencies as audio feature
 audio-output = ["dep:cpal", "dep:ringbuf"]
 
-# Video features
-# Feature to enable video input using nokhwa and image processing
-video = ["dep:nokhwa", "dep:image"]
-
 [dependencies]
 # Use workspace dependencies where possible
 futures-util = { workspace = true }
@@ -58,7 +54,6 @@ ai-ox-common = { workspace = true }
 # Optional dependencies for audio and video features
 cpal = { version = "0.15", optional = true }
 ringbuf = { version = "0.3", optional = true }
-nokhwa = { version = "0.10.7", features = ["input-native"], optional = true }
 image = { workspace = true, optional = true }
 
 [dev-dependencies]

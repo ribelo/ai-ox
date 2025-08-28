@@ -17,6 +17,7 @@ pub mod model;
 pub mod request;
 pub mod tokens;
 pub mod tool;
+pub mod prelude;
 
 // Re-export types from modules
 pub use crate::model::response::{ListModelsResponse, Model as ApiModel};

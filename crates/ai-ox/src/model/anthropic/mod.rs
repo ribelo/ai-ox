@@ -12,7 +12,7 @@ use crate::{
 };
 use anthropic_ox::{
     message::Content,
-    tool::{Tool, ToolChoice},
+    tool::{CustomTool, Tool, ToolChoice},
     Anthropic,
 };
 use async_stream::try_stream;
@@ -156,11 +156,13 @@ impl Model for AnthropicModel {
             let schema_json: serde_json::Value =
                 serde_json::from_str(&schema).map_err(|e| AnthropicError::InvalidSchema(e.to_string()))?;
 
-            let tool = Tool {
+            let tool = Tool::Custom(CustomTool {
+                object_type: "custom".to_string(),
                 name: TOOL_NAME.to_string(),
-                description: "Function call with a JSON schema for structured data extraction.".to_string(),
+                description: "Function call with a JSON schema for structured data extraction."
+                    .to_string(),
                 input_schema: schema_json,
-            };
+            });
 
             let tool_choice = ToolChoice::Tool {
                 name: TOOL_NAME.to_string(),

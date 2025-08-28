@@ -1,7 +1,13 @@
+use mistral_ox::*;
+use mistral_ox::message::{Message, Messages};
+use mistral_ox::tool::{Tool, ToolChoice};
+use futures_util::StreamExt;
+
+
 #[cfg(test)]
 mod tests {
-    use mistral_ox::*;
-    use mistral_ox::message::Message;
+
+    use super::*;
 
     fn get_client() -> Mistral {
         Mistral::load_from_env().expect("MISTRAL_API_KEY must be set for integration tests")
@@ -69,9 +75,9 @@ mod tests {
         
         let request = ChatRequest::builder()
             .model("mistral-tiny".to_string()) // Cheapest model
-            .messages(vec![Message::user("Say 'hello' in one word")])
-            .max_tokens(Some(5))
-            .temperature(Some(0.0)) // Deterministic
+            .messages(Messages::new(vec![Message::user("Say 'hello' in one word")]))
+            .max_tokens(5)
+            .temperature(0.0) // Deterministic
             .build();
         
         let response = client.send(&request).await;
@@ -90,13 +96,12 @@ mod tests {
         
         let request = ChatRequest::builder()
             .model("mistral-tiny".to_string())
-            .messages(vec![Message::user("Count from 1 to 3")])
-            .max_tokens(Some(20))
-            .temperature(Some(0.0))
+            .messages(Messages::new(vec![Message::user("Count from 1 to 3")]))
+            .max_tokens(20)
+            .temperature(0.0)
             .build();
         
         let mut stream = client.stream(&request);
-        use futures_util::StreamExt;
         
         let mut chunks_received = 0;
         while let Some(chunk_result) = stream.next().await {
@@ -158,10 +163,10 @@ mod tests {
     async fn test_chat_moderation() {
         let client = get_client();
         
-        let messages = vec![
+        let messages = Messages::new(vec![
             Message::user("Hello"),
             Message::assistant("Hi there! How can I help you today?"),
-        ];
+        ]);
         
         let request = ChatModerationRequest::builder()
             .model("mistral-moderation-latest".to_string())
@@ -207,9 +212,9 @@ mod tests {
         let request = FimRequest::builder()
             .model("codestral-latest".to_string())
             .prompt("def hello():".to_string())
-            .suffix(Some("    return greeting".to_string()))
-            .max_tokens(Some(10))
-            .temperature(Some(0.0))
+            .suffix("    return greeting".to_string())
+            .max_tokens(10)
+            .temperature(0.0)
             .build();
         
         let response = client.create_fim_completion(&request).await;

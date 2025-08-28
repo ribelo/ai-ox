@@ -1,7 +1,6 @@
 use bon::Builder;
 use core::fmt;
 use futures_util::stream::BoxStream;
-use serde::Serialize;
 #[cfg(feature = "leaky-bucket")]
 use leaky_bucket::RateLimiter;
 #[cfg(feature = "leaky-bucket")]
@@ -37,7 +36,6 @@ const TOKENS_URL: &str = "v1/messages/count-tokens";
 const MODELS_URL: &str = "v1/models";
 const BATCHES_URL: &str = "v1/message_batches";
 const FILES_URL: &str = "v1/files";
-const ADMIN_ORGANIZATIONS_URL: &str = "v1/organizations";
 const API_VERSION: &str = "2023-06-01";
 
 /// A struct to configure beta features for the Anthropic API.
@@ -143,13 +141,15 @@ impl Anthropic {
     }
 
     /// Add a custom header to the client
+    #[must_use]
     pub fn header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.headers.insert(key.into(), value.into());
         self
     }
 
     /// Enables beta features for the client.
-    pub fn with_beta_features(mut self, features: BetaFeatures) -> Self {
+    #[must_use]
+    pub fn with_beta_features(mut self, features: &BetaFeatures) -> Self {
         let mut beta_headers = Vec::new();
         if features.fine_grained_tool_streaming {
             beta_headers.push("fine-grained-tool-streaming-2025-05-14");
@@ -198,7 +198,7 @@ impl Anthropic {
     /// Retrieves a specific model by its ID.
     #[cfg(feature = "models")]
     pub async fn get_model(&self, model_id: &str) -> Result<ModelInfo, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/{}", MODELS_URL, model_id), HttpMethod::Get);
+        let endpoint = Endpoint::new(format!("{MODELS_URL}/{model_id}"), HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
@@ -244,7 +244,7 @@ impl Anthropic {
         &self,
         batch_id: &str,
     ) -> Result<MessageBatch, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/{}", BATCHES_URL, batch_id), HttpMethod::Get);
+        let endpoint = Endpoint::new(format!("{BATCHES_URL}/{batch_id}"), HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
@@ -275,7 +275,7 @@ impl Anthropic {
         &self,
         batch_id: &str,
     ) -> Result<MessageBatch, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/{}/cancel", BATCHES_URL, batch_id), HttpMethod::Post);
+        let endpoint = Endpoint::new(format!("{BATCHES_URL}/{batch_id}/cancel"), HttpMethod::Post);
         // For POST requests that need empty body
         let empty_body = serde_json::json!({});
         self.api_request_with_body(endpoint, &empty_body).await
@@ -283,11 +283,12 @@ impl Anthropic {
 
     /// Retrieves the results of a message batch.
     #[cfg(feature = "batches")]
+    #[must_use]
     pub fn get_message_batch_results(
         &self,
         batch_id: &str,
     ) -> BoxStream<'static, Result<crate::batches::BatchResult, AnthropicRequestError>> {
-        let endpoint = Endpoint::new(format!("{}/{}/results", BATCHES_URL, batch_id), HttpMethod::Get);
+        let endpoint = Endpoint::new(format!("{BATCHES_URL}/{batch_id}/results"), HttpMethod::Get);
         self.request_builder().stream_jsonl(&endpoint)
     }
 
@@ -308,7 +309,7 @@ impl Anthropic {
         let mut req = self.client.post(&url).multipart(form);
 
         if let Some(oauth_token) = &self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
+            req = req.header("authorization", format!("Bearer {oauth_token}"));
         } else if let Some(api_key) = &self.api_key {
             req = req.header("x-api-key", api_key);
         } else {
@@ -323,14 +324,14 @@ impl Anthropic {
             req_with_headers = req_with_headers.header(key, value);
         }
 
-        let res = req_with_headers.send().await?;
+        let response = req_with_headers.send().await?;
 
-        if res.status().is_success() {
-            Ok(res.json::<FileInfo>().await?)
+        if response.status().is_success() {
+            Ok(response.json::<FileInfo>().await?)
         } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
+            let status = response.status();
+            let bytes = response.bytes().await?;
+            Err(error::parse_error_response(status, &bytes))
         }
     }
 
@@ -362,7 +363,7 @@ impl Anthropic {
     /// Retrieves metadata for a specific file.
     #[cfg(feature = "files")]
     pub async fn get_file(&self, file_id: &str) -> Result<FileInfo, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/{}", FILES_URL, file_id), HttpMethod::Get)
+        let endpoint = Endpoint::new(format!("{FILES_URL}/{file_id}"), HttpMethod::Get)
             .with_beta("files-api-2025-04-14");
         self.api_request(endpoint).await
     }
@@ -370,7 +371,7 @@ impl Anthropic {
     /// Deletes a file from the server.
     #[cfg(feature = "files")]
     pub async fn delete_file(&self, file_id: &str) -> Result<(), AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/{}", FILES_URL, file_id), HttpMethod::Delete)
+        let endpoint = Endpoint::new(format!("{FILES_URL}/{file_id}"), HttpMethod::Delete)
             .with_beta("files-api-2025-04-14");
         self.api_delete(endpoint).await
     }
@@ -378,7 +379,7 @@ impl Anthropic {
     /// Downloads a file from the server.
     #[cfg(feature = "files")]
     pub async fn download_file(&self, file_id: &str) -> Result<bytes::Bytes, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/{}/content", FILES_URL, file_id), HttpMethod::Get)
+        let endpoint = Endpoint::new(format!("{FILES_URL}/{file_id}/content"), HttpMethod::Get)
             .with_beta("files-api-2025-04-14");
         self.api_request_bytes(endpoint).await
     }
@@ -390,76 +391,76 @@ impl Anthropic {
     // Organization Users
     /// Lists the users in the organization.
     pub async fn list_organization_users(&self) -> Result<UserListResponse, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/users", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        let endpoint = Endpoint::new("v1/organizations/users", HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
     /// Retrieves a specific user by their ID.
     pub async fn get_organization_user(&self, user_id: &str) -> Result<User, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/users/{}", ADMIN_ORGANIZATIONS_URL, user_id), HttpMethod::Get);
+        let endpoint = Endpoint::new(format!("v1/organizations/users/{user_id}"), HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
     /// Updates a user's role in the organization.
     pub async fn update_organization_user(&self, user_id: &str, role: &crate::admin::users::UserRole) -> Result<User, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/users/{}", ADMIN_ORGANIZATIONS_URL, user_id), HttpMethod::Post);
+        let endpoint = Endpoint::new(format!("v1/organizations/users/{user_id}"), HttpMethod::Post);
         let body = serde_json::json!({ "role": role });
         self.api_request_with_body(endpoint, &body).await
     }
 
     /// Removes a user from the organization.
     pub async fn remove_organization_user(&self, user_id: &str) -> Result<(), AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/users/{}", ADMIN_ORGANIZATIONS_URL, user_id), HttpMethod::Delete);
+        let endpoint = Endpoint::new(format!("v1/organizations/users/{user_id}"), HttpMethod::Delete);
         self.api_delete(endpoint).await
     }
 
     // Organization Invites
     /// Lists the pending invitations for the organization.
     pub async fn list_organization_invites(&self) -> Result<InviteListResponse, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/invites", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        let endpoint = Endpoint::new("v1/organizations/invites", HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
     /// Creates a new invitation to the organization.
     pub async fn create_organization_invite(&self, request: &CreateInviteRequest) -> Result<Invite, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/invites", ADMIN_ORGANIZATIONS_URL), HttpMethod::Post);
+        let endpoint = Endpoint::new("v1/organizations/invites", HttpMethod::Post);
         self.api_request_with_body(endpoint, request).await
     }
 
     /// Deletes a pending invitation to the organization.
     pub async fn delete_organization_invite(&self, invite_id: &str) -> Result<(), AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/invites/{}", ADMIN_ORGANIZATIONS_URL, invite_id), HttpMethod::Delete);
+        let endpoint = Endpoint::new(format!("v1/organizations/invites/{invite_id}"), HttpMethod::Delete);
         self.api_delete(endpoint).await
     }
 
     // Workspaces
     /// Lists the workspaces in the organization.
     pub async fn list_workspaces(&self) -> Result<WorkspaceListResponse, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/workspaces", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        let endpoint = Endpoint::new("v1/organizations/workspaces", HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
     /// Retrieves a specific workspace by its ID.
     pub async fn get_workspace(&self, workspace_id: &str) -> Result<Workspace, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/workspaces/{}", ADMIN_ORGANIZATIONS_URL, workspace_id), HttpMethod::Get);
+        let endpoint = Endpoint::new(format!("v1/organizations/workspaces/{workspace_id}"), HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
     /// Creates a new workspace in the organization.
     pub async fn create_workspace(&self, request: &CreateWorkspaceRequest) -> Result<Workspace, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/workspaces", ADMIN_ORGANIZATIONS_URL), HttpMethod::Post);
+        let endpoint = Endpoint::new("v1/organizations/workspaces", HttpMethod::Post);
         self.api_request_with_body(endpoint, request).await
     }
 
     /// Updates a workspace.
     pub async fn update_workspace(&self, workspace_id: &str, request: &UpdateWorkspaceRequest) -> Result<Workspace, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/workspaces/{}", ADMIN_ORGANIZATIONS_URL, workspace_id), HttpMethod::Post);
+        let endpoint = Endpoint::new(format!("v1/organizations/workspaces/{workspace_id}"), HttpMethod::Post);
         self.api_request_with_body(endpoint, request).await
     }
 
     /// Archives a workspace.
     pub async fn archive_workspace(&self, workspace_id: &str) -> Result<Workspace, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/workspaces/{}/archive", ADMIN_ORGANIZATIONS_URL, workspace_id), HttpMethod::Post);
+        let endpoint = Endpoint::new(format!("v1/organizations/workspaces/{workspace_id}/archive"), HttpMethod::Post);
         let empty_body = serde_json::json!({});
         self.api_request_with_body(endpoint, &empty_body).await
     }
@@ -467,32 +468,32 @@ impl Anthropic {
     // API Keys
     /// Lists the API keys in the organization.
     pub async fn list_api_keys(&self) -> Result<ApiKeyListResponse, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/api_keys", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        let endpoint = Endpoint::new("v1/organizations/api_keys", HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
     /// Retrieves a specific API key by its ID.
     pub async fn get_api_key(&self, api_key_id: &str) -> Result<ApiKey, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/api_keys/{}", ADMIN_ORGANIZATIONS_URL, api_key_id), HttpMethod::Get);
+        let endpoint = Endpoint::new(format!("v1/organizations/api_keys/{api_key_id}"), HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
     /// Updates an API key.
     pub async fn update_api_key(&self, api_key_id: &str, request: &UpdateApiKeyRequest) -> Result<ApiKey, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/api_keys/{}", ADMIN_ORGANIZATIONS_URL, api_key_id), HttpMethod::Post);
+        let endpoint = Endpoint::new(format!("v1/organizations/api_keys/{api_key_id}"), HttpMethod::Post);
         self.api_request_with_body(endpoint, request).await
     }
 
     // Usage and Cost
     /// Retrieves a usage report for the organization.
     pub async fn get_usage_report(&self) -> Result<UsageReportResponse, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/usage_report/messages", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        let endpoint = Endpoint::new("v1/organizations/usage_report/messages", HttpMethod::Get);
         self.api_request(endpoint).await
     }
 
     /// Retrieves a cost report for the organization.
     pub async fn get_cost_report(&self) -> Result<CostReportResponse, AnthropicRequestError> {
-        let endpoint = Endpoint::new(format!("{}/cost_report", ADMIN_ORGANIZATIONS_URL), HttpMethod::Get);
+        let endpoint = Endpoint::new("v1/organizations/cost_report", HttpMethod::Get);
         self.api_request(endpoint).await
     }
 

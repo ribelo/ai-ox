@@ -50,6 +50,7 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
+    #[must_use]
     pub fn new(path: impl Into<String>, method: HttpMethod) -> Self {
         Self {
             path: path.into(),
@@ -59,6 +60,7 @@ impl Endpoint {
         }
     }
 
+    #[must_use]
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         let mut headers = self.extra_headers.unwrap_or_default();
         headers.insert(key.into(), value.into());
@@ -66,6 +68,7 @@ impl Endpoint {
         self
     }
 
+    #[must_use]
     pub fn with_query_params(mut self, params: Vec<(String, String)>) -> Self {
         self.query_params = Some(params);
         self
@@ -82,6 +85,7 @@ pub struct RequestConfig {
 }
 
 impl RequestConfig {
+    #[must_use]
     pub fn new(base_url: impl Into<String>) -> Self {
         Self {
             base_url: base_url.into(),
@@ -91,16 +95,19 @@ impl RequestConfig {
         }
     }
 
+    #[must_use]
     pub fn with_auth(mut self, auth: AuthMethod) -> Self {
         self.auth = Some(auth);
         self
     }
 
+    #[must_use]
     pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.default_headers.insert(key.into(), value.into());
         self
     }
 
+    #[must_use]
     pub fn with_user_agent(mut self, user_agent: impl Into<String>) -> Self {
         self.user_agent = Some(user_agent.into());
         self
@@ -109,21 +116,32 @@ impl RequestConfig {
 
 /// Generic request builder that handles common HTTP patterns
 pub struct RequestBuilder {
+    /// The underlying `reqwest::Client` used to send requests.
     client: reqwest::Client,
+    /// The configuration for building requests.
     config: RequestConfig,
 }
 
 impl RequestBuilder {
+    #[must_use]
     pub fn new(client: reqwest::Client, config: RequestConfig) -> Self {
         Self { client, config }
     }
 
-    /// Build a reqwest RequestBuilder for the given endpoint
+    /// Build a reqwest `RequestBuilder` for the given endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the URL cannot be parsed.
     pub fn build_request(&self, endpoint: &Endpoint) -> Result<ReqwestRequestBuilder, CommonRequestError> {
         self.build_request_with_options(endpoint, true)
     }
 
-    /// Build a reqwest RequestBuilder with options for content-type handling
+    /// Build a reqwest `RequestBuilder` with options for content-type handling.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the URL cannot be parsed.
     pub fn build_request_with_options(&self, endpoint: &Endpoint, add_json_content_type: bool) -> Result<ReqwestRequestBuilder, CommonRequestError> {
         let url = format!("{}/{}", self.config.base_url.trim_end_matches('/'), endpoint.path.trim_start_matches('/'));
         let method: Method = endpoint.method.clone().into();
@@ -140,7 +158,7 @@ impl RequestBuilder {
             req = match auth {
                 AuthMethod::Bearer(token) => req.bearer_auth(token),
                 AuthMethod::ApiKey { header_name, key } => req.header(header_name, key),
-                AuthMethod::OAuth { header_name, token } => req.header(header_name, format!("Bearer {}", token)),
+                AuthMethod::OAuth { header_name, token } => req.header(header_name, format!("Bearer {token}")),
                 AuthMethod::QueryParam(param_name, value) => req.query(&[(param_name, value)]),
             };
         }
@@ -170,7 +188,11 @@ impl RequestBuilder {
         Ok(req)
     }
 
-    /// Execute a request with JSON body and return deserialized response
+    /// Execute a request with JSON body and return deserialized response.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, or if the response cannot be deserialized.
     pub async fn request_json<T: for<'de> Deserialize<'de>, B: Serialize>(
         &self,
         endpoint: &Endpoint,
@@ -182,49 +204,70 @@ impl RequestBuilder {
             req = req.json(body);
         }
 
-        let res = req.send().await?;
-        self.handle_response(res).await
+        let response = req.send().await?;
+        self.handle_response(response).await
     }
 
-    /// Execute a request without body and return deserialized response
+    /// Execute a request without body and return deserialized response.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, or if the response cannot be deserialized.
     pub async fn request<T: for<'de> Deserialize<'de>>(
         &self,
         endpoint: &Endpoint,
     ) -> Result<T, CommonRequestError> {
         let req = self.build_request(endpoint)?;
-        let res = req.send().await?;
-        self.handle_response(res).await
+        let response = req.send().await?;
+        self.handle_response(response).await
     }
 
-    /// Execute a request and return unit type (for delete operations)
+    /// Execute a request and return unit type (for delete operations).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn request_unit(&self, endpoint: &Endpoint) -> Result<(), CommonRequestError> {
         let req = self.build_request(endpoint)?;
-        let res = req.send().await?;
+        let response = req.send().await?;
         
-        if res.status().is_success() {
+        if response.status().is_success() {
             Ok(())
         } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
+            let status = response.status();
+            let bytes = response.bytes().await?;
+            Err(error::parse_error_response(status, &bytes))
         }
     }
 
-    /// Execute a request and return raw bytes (for file downloads)
+    /// Execute a request and return raw bytes (for file downloads).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
     pub async fn request_bytes(&self, endpoint: &Endpoint) -> Result<bytes::Bytes, CommonRequestError> {
         let req = self.build_request(endpoint)?;
-        let res = req.send().await?;
+        let response = req.send().await?;
         
-        if res.status().is_success() {
-            Ok(res.bytes().await?)
+        if response.status().is_success() {
+            Ok(response.bytes().await?)
         } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
+            let status = response.status();
+            let bytes = response.bytes().await?;
+            Err(error::parse_error_response(status, &bytes))
         }
     }
 
-    /// Execute a streaming request
+    /// Execute a streaming request.
+    ///
+    /// # Errors
+    ///
+    /// Returns a stream that can yield errors if the request fails, or if an event cannot be parsed.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the body cannot be serialized to a JSON value.
+    #[must_use]
     pub fn stream<T, B>(
         &self,
         endpoint: &Endpoint,
@@ -237,7 +280,7 @@ impl RequestBuilder {
         let client = self.client.clone();
         let config = self.config.clone();
         let endpoint = endpoint.clone();
-        let body_data = body.map(|b| serde_json::to_value(b).ok()).flatten();
+        let body_data = body.and_then(|b| serde_json::to_value(b).ok());
 
         Box::pin(try_stream! {
             let mut req = RequestBuilder::new(client.clone(), config.clone())
@@ -245,23 +288,26 @@ impl RequestBuilder {
 
             // Add body if provided and set stream=true
             if let Some(body_value) = body_data {
-                let mut body_obj = body_value.as_object().unwrap().clone();
-                body_obj.insert("stream".to_string(), serde_json::Value::Bool(true));
-                req = req.json(&serde_json::Value::Object(body_obj));
+                if let Some(mut body_obj) = body_value.as_object().cloned() {
+                    body_obj.insert("stream".to_string(), serde_json::Value::Bool(true));
+                    req = req.json(&serde_json::Value::Object(body_obj));
+                } else {
+                    Err(CommonRequestError::RequestBuilder("Stream body must be a JSON object".to_string()))?;
+                }
             }
 
             let response = req.send().await?;
             let status = response.status();
 
-            if !status.is_success() {
-                let bytes = response.bytes().await?;
-                Err(error::parse_error_response(status, bytes))?;
-            } else {
+            if status.is_success() {
                 let mut parser = SseParser::new(response);
-                
+
                 while let Some(event) = parser.next_event().await? {
                     yield event;
                 }
+            } else {
+                let bytes = response.bytes().await?;
+                Err(error::parse_error_response(status, &bytes))?;
             }
         })
     }
@@ -269,18 +315,22 @@ impl RequestBuilder {
     /// Handle response and parse errors
     async fn handle_response<T: for<'de> Deserialize<'de>>(
         &self,
-        res: Response,
+        response: Response,
     ) -> Result<T, CommonRequestError> {
-        if res.status().is_success() {
-            Ok(res.json::<T>().await?)
+        if response.status().is_success() {
+            Ok(response.json::<T>().await?)
         } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
+            let status = response.status();
+            let bytes = response.bytes().await?;
+            Err(error::parse_error_response(status, &bytes))
         }
     }
 
-    /// Execute a multipart form request (for file uploads)
+    /// Execute a multipart form request (for file uploads).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, or if the response cannot be deserialized.
     pub async fn request_multipart<T: for<'de> Deserialize<'de>>(
         &self,
         endpoint: &Endpoint,
@@ -289,18 +339,20 @@ impl RequestBuilder {
         let req = self.build_request_with_options(endpoint, false)?; // Don't add JSON content-type for multipart
         let req = req.multipart(form);
 
-        let res = req.send().await?;
-        self.handle_response(res).await
+        let response = req.send().await?;
+        self.handle_response(response).await
     }
 }
 
 /// Helper struct for building multipart forms
 pub struct MultipartForm {
+    /// The underlying `reqwest::multipart::Form`.
     form: reqwest::multipart::Form,
 }
 
 impl MultipartForm {
     /// Create a new multipart form
+    #[must_use]
     pub fn new() -> Self {
         Self {
             form: reqwest::multipart::Form::new(),
@@ -308,12 +360,14 @@ impl MultipartForm {
     }
 
     /// Add a text field
+    #[must_use]
     pub fn text(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
         self.form = self.form.text(name.into(), value.into());
         self
     }
 
     /// Add a file from bytes
+    #[must_use]
     pub fn file_from_bytes(
         mut self, 
         name: impl Into<String>, 
@@ -327,6 +381,7 @@ impl MultipartForm {
     }
 
     /// Add a file from bytes with custom mime type
+    #[must_use]
     pub fn file_from_bytes_with_mime(
         mut self,
         name: impl Into<String>,
@@ -344,6 +399,7 @@ impl MultipartForm {
     }
 
     /// Build the final form
+    #[must_use]
     pub fn build(self) -> reqwest::multipart::Form {
         self.form
     }
