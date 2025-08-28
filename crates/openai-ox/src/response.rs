@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-
 use crate::{Message, Usage};
 
 /// Response from chat completion
