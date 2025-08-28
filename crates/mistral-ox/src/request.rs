@@ -1,13 +1,13 @@
 use bon::Builder;
 #[cfg(feature = "schema")]
 use schemars::{generate::SchemaSettings, JsonSchema};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::{
-    message::{Message, Messages},
-    tool::{Tool, ToolChoice},
-};
+use crate::message::Messages;
+
+// Import base OpenAI format types
+use ai_ox_common::openai_format::{BaseMessage, BaseTool, BaseToolChoice};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -20,7 +20,7 @@ pub enum ResponseFormat {
 #[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
 pub struct ChatRequest {
     #[builder(field)]
-    pub messages: Messages,
+    pub messages: Vec<BaseMessage>,
     #[builder(field)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<Value>,
@@ -42,21 +42,31 @@ pub struct ChatRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub random_seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Tool>>,
+    pub tools: Option<Vec<BaseTool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tool_choice: Option<ToolChoice>,
+    pub tool_choice: Option<BaseToolChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub safe_prompt: Option<bool>,
 }
 
 impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
-    pub fn messages(mut self, messages: impl IntoIterator<Item = impl Into<Message>>) -> Self {
-        self.messages = messages.into_iter().map(Into::into).collect();
+    pub fn messages(mut self, messages: impl IntoIterator<Item = BaseMessage>) -> Self {
+        self.messages = messages.into_iter().collect();
         self
     }
     
-    pub fn message(mut self, message: impl Into<Message>) -> Self {
-        self.messages.push(message.into());
+    pub fn message(mut self, message: BaseMessage) -> Self {
+        self.messages.push(message);
+        self
+    }
+    
+    pub fn user_message(mut self, content: impl Into<String>) -> Self {
+        self.messages.push(BaseMessage::user(content));
+        self
+    }
+    
+    pub fn system_message(mut self, content: impl Into<String>) -> Self {
+        self.messages.push(BaseMessage::system(content));
         self
     }
     
@@ -76,8 +86,8 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
 }
 
 impl ChatRequest {
-    pub fn push_message(&mut self, message: impl Into<Message>) {
-        self.messages.push(message.into());
+    pub fn push_message(&mut self, message: BaseMessage) {
+        self.messages.push(message);
     }
 }
 

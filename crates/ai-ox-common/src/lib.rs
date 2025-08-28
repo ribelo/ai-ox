@@ -11,10 +11,12 @@
 //! to eliminate code duplication and ensure consistent behavior.
 
 pub mod error;
+pub mod openai_format;
 pub mod request_builder;
 pub mod streaming;
 
 pub use error::CommonRequestError;
+pub use openai_format::*;
 pub use request_builder::{Endpoint, HttpMethod, RequestBuilder, MultipartForm};
 pub use streaming::SseParser;
 
