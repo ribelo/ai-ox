@@ -218,3 +218,94 @@ impl Message {
         }
     }
 }
+
+// SHARED RESPONSE TYPES
+// These are identical across OpenAI-format providers (OpenAI, Groq, OpenRouter, etc.)
+
+/// Standard chat completion response structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatCompletionResponse {
+    /// Unique identifier for the response
+    pub id: String,
+    /// Object type (usually "chat.completion")
+    pub object: String,
+    /// Unix timestamp of creation
+    pub created: u64,
+    /// Model used for completion
+    pub model: String,
+    /// List of completion choices
+    pub choices: Vec<CompletionChoice>,
+    /// Usage statistics
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
+    /// System fingerprint (for tracking)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_fingerprint: Option<String>,
+}
+
+/// A single completion choice
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionChoice {
+    /// Choice index 
+    pub index: u32,
+    /// The message content
+    pub message: Message,
+    /// Reason why generation stopped
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finish_reason: Option<String>,
+}
+
+/// Token usage statistics (identical across providers)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenUsage {
+    /// Tokens used in the prompt
+    pub prompt_tokens: u32,
+    /// Tokens generated in completion
+    pub completion_tokens: u32,
+    /// Total tokens used
+    pub total_tokens: u32,
+}
+
+/// Streaming response chunk
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatCompletionChunk {
+    /// Unique identifier
+    pub id: String,
+    /// Object type (usually "chat.completion.chunk")
+    pub object: String,
+    /// Unix timestamp
+    pub created: u64,
+    /// Model used
+    pub model: String,
+    /// List of streaming choices
+    pub choices: Vec<StreamingChoice>,
+    /// System fingerprint
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_fingerprint: Option<String>,
+}
+
+/// A single streaming choice
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamingChoice {
+    /// Choice index
+    pub index: u32,
+    /// The incremental message delta
+    pub delta: MessageDelta,
+    /// Reason why generation stopped
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub finish_reason: Option<String>,
+}
+
+/// Incremental message content in streaming
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MessageDelta {
+    /// Role (usually only present in first chunk)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<MessageRole>,
+    /// Incremental content
+    #[serde(skip_serializing_if = "Option::is_none")]  
+    pub content: Option<String>,
+    /// Tool calls being built incrementally
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<Vec<ToolCall>>,
+}

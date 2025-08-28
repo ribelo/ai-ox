@@ -1,31 +1,16 @@
 use serde::{Deserialize, Serialize};
-use ai_ox_common::openai_format::{Message, ToolCall};
-use crate::{
-    usage::Usage,
-    error::GroqRequestError,
+use ai_ox_common::openai_format::{
+    ChatCompletionResponse, CompletionChoice, TokenUsage, 
+    ToolCall
 };
+use crate::error::GroqRequestError;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChatResponse {
-    pub id: String,
-    pub object: String,
-    pub created: u64,
-    pub model: String,
-    pub choices: Vec<Choice>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub system_fingerprint: Option<String>,
-}
+// Use shared response types from ai-ox-common
+pub type ChatResponse = ChatCompletionResponse;
+pub type Choice = CompletionChoice;
+pub type Usage = TokenUsage;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Choice {
-    pub index: u32,
-    pub message: Message,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub finish_reason: Option<String>,
-}
-
+// Groq uses custom streaming types due to complex tool call deltas
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatCompletionChunk {
     pub id: String,
@@ -108,16 +93,22 @@ impl ChatCompletionChunk {
     }
 }
 
-impl ChatResponse {
+/// Extension trait for ChatResponse convenience methods
+pub trait ChatResponseExt {
     /// Get the text content from the first choice, if available
-    pub fn text(&self) -> Option<&str> {
+    fn text(&self) -> Option<&str>;
+    /// Get tool calls from the first choice, if available
+    fn tool_calls(&self) -> Option<&[ToolCall]>;
+}
+
+impl ChatResponseExt for ChatResponse {
+    fn text(&self) -> Option<&str> {
         self.choices
             .first()
             .and_then(|choice| choice.message.content.as_deref())
     }
 
-    /// Get tool calls from the first choice, if available
-    pub fn tool_calls(&self) -> Option<&[ToolCall]> {
+    fn tool_calls(&self) -> Option<&[ToolCall]> {
         self.choices
             .first()
             .and_then(|choice| choice.message.tool_calls.as_deref())
