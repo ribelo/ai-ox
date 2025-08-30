@@ -17,6 +17,7 @@ use gemini_ox::{
     generate_content::{
         request::GenerateContentRequest as GeminiRequest,
         response::GenerateContentResponse as GeminiResponse,
+        ThinkingConfig,
     },
     tool::{Tool as GeminiTool, FunctionMetadata},
 };
@@ -25,18 +26,34 @@ use gemini_ox::{
 pub fn anthropic_to_gemini_request(anthropic_request: AnthropicRequest) -> GeminiRequest {
     let mut gemini_contents = Vec::new();
     
+    // First pass: collect all tool names from all messages for ID mapping and check for thinking content
+    let mut tool_id_to_name = std::collections::HashMap::new();
+    let mut has_thinking_content = false;
+    
+    for message in &anthropic_request.messages.0 {
+        if let anthropic_ox::message::StringOrContents::Contents(contents) = &message.content {
+            for content in contents {
+                if let AnthropicContent::ToolUse(tool_use) = content {
+                    tool_id_to_name.insert(tool_use.id.clone(), tool_use.name.clone());
+                } else if let AnthropicContent::Thinking(_) = content {
+                    has_thinking_content = true;
+                }
+            }
+        }
+    }
+    
     // Convert messages to Gemini contents
     for message in anthropic_request.messages.0 {
         match message.role {
             AnthropicRole::User => {
-                let parts = convert_anthropic_message_content_to_parts(&message.content);
+                let parts = convert_anthropic_message_content_to_parts(&message.content, &tool_id_to_name);
                 gemini_contents.push(GeminiContent {
                     role: GeminiRole::User,
                     parts,
                 });
             }
             AnthropicRole::Assistant => {
-                let parts = convert_anthropic_message_content_to_parts(&message.content);
+                let parts = convert_anthropic_message_content_to_parts(&message.content, &tool_id_to_name);
                 gemini_contents.push(GeminiContent {
                     role: GeminiRole::Model,
                     parts,
@@ -92,6 +109,17 @@ pub fn anthropic_to_gemini_request(anthropic_request: AnthropicRequest) -> Gemin
         request.tools = Some(tools);
     }
 
+    // Enable thinking config if we detected thinking content or model name suggests thinking
+    if has_thinking_content || request.model.contains("thinking") {
+        // Set up generation config with thinking support
+        let mut generation_config = request.generation_config.unwrap_or_default();
+        generation_config.thinking_config = Some(ThinkingConfig {
+            include_thoughts: true,
+            thinking_budget: -1, // Dynamic thinking budget
+        });
+        request.generation_config = Some(generation_config);
+    }
+
     request
 }
 
@@ -133,19 +161,25 @@ pub fn gemini_to_anthropic_response(gemini_response: GeminiResponse) -> Anthropi
 }
 
 /// Convert Anthropic message content (StringOrContents) to Gemini parts
-fn convert_anthropic_message_content_to_parts(content: &anthropic_ox::message::StringOrContents) -> Vec<GeminiPart> {
+fn convert_anthropic_message_content_to_parts(
+    content: &anthropic_ox::message::StringOrContents,
+    tool_id_to_name: &std::collections::HashMap<String, String>,
+) -> Vec<GeminiPart> {
     match content {
         anthropic_ox::message::StringOrContents::String(text) => {
             vec![GeminiPart::new(PartData::Text(GeminiText::from(text.clone())))]
         }
         anthropic_ox::message::StringOrContents::Contents(contents) => {
-            convert_anthropic_content_to_parts(contents)
+            convert_anthropic_content_to_parts(contents, tool_id_to_name)
         }
     }
 }
 
 /// Convert Anthropic content blocks to Gemini parts
-fn convert_anthropic_content_to_parts(content: &[AnthropicContent]) -> Vec<GeminiPart> {
+fn convert_anthropic_content_to_parts(
+    content: &[AnthropicContent],
+    tool_id_to_name: &std::collections::HashMap<String, String>,
+) -> Vec<GeminiPart> {
     content
         .iter()
         .filter_map(|content| match content {
@@ -179,17 +213,46 @@ fn convert_anthropic_content_to_parts(content: &[AnthropicContent]) -> Vec<Gemin
                     .collect();
                 let response = serde_json::json!({"text": text_parts.join("\n")});
                 
+                // Get the tool name from the mapping, with fallback to extracting from ID
+                let tool_name = tool_id_to_name
+                    .get(&tool_result.tool_use_id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        // Fallback: try to extract from tool_use_id if it contains tool name
+                        // For UUIDs, use a generic name
+                        if tool_result.tool_use_id.len() == 36 && tool_result.tool_use_id.matches('-').count() == 4 {
+                            "function_tool".to_string()
+                        } else {
+                            tool_result.tool_use_id.split('_').next().unwrap_or("unknown_tool").to_string()
+                        }
+                    });
+                
                 Some(GeminiPart::new(PartData::FunctionResponse(gemini_ox::content::FunctionResponse {
                     id: Some(tool_result.tool_use_id.clone()),
-                    name: "".to_string(), // Gemini doesn't require function name in response
+                    name: tool_name,
                     response,
                     will_continue: None,
                     scheduling: None,
                 })))
             }
-            AnthropicContent::Thinking(_) => {
-                // Thinking content is internal reasoning, not exposed in Gemini format
-                None
+            AnthropicContent::Thinking(thinking) => {
+                // Convert Anthropic thinking content to Gemini thought part
+                let mut part = GeminiPart::new_with_thought(
+                    PartData::Text(GeminiText::from(thinking.text.clone())),
+                    true
+                );
+                
+                // If Anthropic thinking content has a signature, use it for Gemini's thoughtSignature
+                if let Some(ref signature) = thinking.signature {
+                    part.thought_signature = Some(signature.clone());
+                }
+                
+                Some(part)
+            }
+            AnthropicContent::SearchResult(search_result) => {
+                // Convert search result to text format for Gemini
+                let text_content = format!("Search Result: {}\n{}", search_result.title, search_result.source);
+                Some(GeminiPart::new(PartData::Text(GeminiText::from(text_content))))
             }
         })
         .collect()
@@ -201,7 +264,20 @@ fn convert_gemini_parts_to_anthropic_content(parts: &[GeminiPart]) -> Vec<Anthro
         .iter()
         .filter_map(|part| match &part.data {
             PartData::Text(text) => {
-                Some(AnthropicContent::Text(anthropic_ox::message::Text::new(text.to_string())))
+                // Check if this is a thinking part based on the thought field
+                if part.thought == Some(true) {
+                    // Create Anthropic thinking content with signature if available
+                    let mut thinking = anthropic_ox::message::ThinkingContent::new(text.to_string());
+                    
+                    // If Gemini has a thoughtSignature, use it for Anthropic's signature
+                    if let Some(ref signature) = part.thought_signature {
+                        thinking.signature = Some(signature.clone());
+                    }
+                    
+                    Some(AnthropicContent::Thinking(thinking))
+                } else {
+                    Some(AnthropicContent::Text(anthropic_ox::message::Text::new(text.to_string())))
+                }
             }
             PartData::InlineData(blob) => {
                 Some(AnthropicContent::Image {
@@ -231,11 +307,23 @@ fn convert_gemini_parts_to_anthropic_content(parts: &[GeminiPart]) -> Vec<Anthro
 
 /// Convert Anthropic Tool to Gemini Tool  
 pub fn anthropic_tool_to_gemini_tool(anthropic_tool: AnthropicTool) -> GeminiTool {
-    GeminiTool::FunctionDeclarations(vec![FunctionMetadata {
-        name: anthropic_tool.name,
-        description: Some(anthropic_tool.description),
-        parameters: draft07_to_openapi3(anthropic_tool.input_schema),
-    }])
+    match anthropic_tool {
+        AnthropicTool::Custom(custom_tool) => {
+            GeminiTool::FunctionDeclarations(vec![FunctionMetadata {
+                name: custom_tool.name,
+                description: Some(custom_tool.description),
+                parameters: draft07_to_openapi3(custom_tool.input_schema),
+            }])
+        }
+        AnthropicTool::Computer(_) => {
+            // Computer tool doesn't convert directly to Gemini - would need special handling
+            GeminiTool::FunctionDeclarations(vec![FunctionMetadata {
+                name: "computer".to_string(),
+                description: Some("Computer use tool (not supported in Gemini)".to_string()),
+                parameters: serde_json::json!({"type": "object", "properties": {}}),
+            }])
+        }
+    }
 }
 
 /// Convert JSON Schema Draft-07 format to OpenAPI 3.0 format
@@ -339,37 +427,38 @@ pub fn gemini_tool_to_anthropic_tool(gemini_tool: GeminiTool) -> AnthropicTool {
         GeminiTool::FunctionDeclarations(functions) => {
             // Take the first function if multiple are present
             if let Some(func) = functions.into_iter().next() {
-                let tool = AnthropicTool::new(
+                let custom_tool = anthropic_ox::tool::CustomTool::new(
                     func.name,
                     func.description.unwrap_or_else(|| "Unknown function".to_string()),
                 ).with_schema(func.parameters);
+                let tool = AnthropicTool::Custom(custom_tool);
                 tool
             } else {
                 // Fallback for empty function list
-                AnthropicTool::new(
+                AnthropicTool::Custom(anthropic_ox::tool::CustomTool::new(
                     "unknown".to_string(),
                     "Unknown function".to_string(),
-                )
+                ))
             }
         }
         // Handle other Gemini tool types by converting them to basic function tools
         GeminiTool::GoogleSearchRetrieval { .. } => {
-            AnthropicTool::new(
+            AnthropicTool::Custom(anthropic_ox::tool::CustomTool::new(
                 "google_search_retrieval".to_string(),
                 "Google Search Retrieval tool".to_string(),
-            )
+            ))
         }
         GeminiTool::CodeExecution { .. } => {
-            AnthropicTool::new(
+            AnthropicTool::Custom(anthropic_ox::tool::CustomTool::new(
                 "code_execution".to_string(),
                 "Code execution tool".to_string(),
-            )
+            ))
         }
         GeminiTool::GoogleSearch(_) => {
-            AnthropicTool::new(
+            AnthropicTool::Custom(anthropic_ox::tool::CustomTool::new(
                 "google_search".to_string(),
                 "Google Search tool".to_string(),
-            )
+            ))
         }
     }
 }

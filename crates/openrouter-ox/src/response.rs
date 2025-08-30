@@ -55,6 +55,10 @@ pub struct Choice {
     pub logprobs: Option<Value>,
     pub finish_reason: FinishReason,
     pub native_finish_reason: Option<FinishReason>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_details: Option<Vec<ReasoningDetail>>,
 }
 
 impl<'de> Deserialize<'de> for Choice {
@@ -110,17 +114,25 @@ impl<'de> Deserialize<'de> for Choice {
                     }
                 }
                 let index = index.ok_or_else(|| serde::de::Error::missing_field("index"))?;
-                let message = response_message
-                    .ok_or_else(|| serde::de::Error::missing_field("message"))?
-                    .into();
+                let response_msg = response_message
+                    .ok_or_else(|| serde::de::Error::missing_field("message"))?;
+                
+                // Extract reasoning fields before converting to AssistantMessage
+                let reasoning = response_msg.reasoning.clone();
+                let reasoning_details = response_msg.reasoning_details.clone();
+                
+                let message = response_msg.into();
                 let finish_reason =
                     finish_reason.ok_or_else(|| serde::de::Error::missing_field("finishReason"))?;
+
                 Ok(Choice {
                     index,
                     message,
                     logprobs,
                     finish_reason,
                     native_finish_reason,
+                    reasoning,
+                    reasoning_details,
                 })
             }
         }
@@ -170,6 +182,18 @@ pub struct CompletionTokensDetails {
     pub rejected_prediction_tokens: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct ReasoningDetail {
+    #[serde(rename = "type")]
+    pub detail_type: String,
+    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub index: Option<usize>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct ResponseMessage {
@@ -178,6 +202,10 @@ pub struct ResponseMessage {
     pub refusal: Option<String>,
     #[serde(default)]
     pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_details: Option<Vec<ReasoningDetail>>,
 }
 
 impl From<ResponseMessage> for AssistantMessage {

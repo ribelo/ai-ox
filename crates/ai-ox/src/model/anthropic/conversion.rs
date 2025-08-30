@@ -231,6 +231,16 @@ pub fn convert_anthropic_response_to_ai_ox(
                     content,
                 });
             }
+            AnthropicContent::Thinking(thinking) => {
+                // Thinking content is internal to Claude and not exposed in ai-ox format
+                // We can either skip it or include it as a text part
+                content_parts.push(Part::Text { text: thinking.text });
+            }
+            AnthropicContent::SearchResult(search_result) => {
+                // Convert search result to text content
+                let content = format!("Search result: {}", serde_json::to_string(&search_result).unwrap_or_else(|_| "Invalid search result".to_string()));
+                content_parts.push(Part::Text { text: content });
+            }
         }
     }
     
@@ -299,6 +309,10 @@ pub fn convert_stream_event_to_ai_ox(
                 ContentBlock::Text { .. } => {
                     // Text content blocks don't need special start handling
                 }
+                ContentBlock::Thinking { .. } => {
+                    // Thinking content blocks are internal to Claude
+                    // We can skip them or treat them as text
+                }
             }
         }
         AnthropicStreamEvent::ContentBlockDelta { delta, index } => {
@@ -326,6 +340,13 @@ pub fn convert_stream_event_to_ai_ox(
                     };
                     
                     events.push(Ok(StreamEvent::MessageDelta(message_delta)));
+                }
+                ContentBlockDelta::ThinkingDelta { text } => {
+                    // Thinking deltas are internal to Claude
+                    // We can treat them as regular text deltas or skip them
+                    if !text.is_empty() {
+                        events.push(Ok(StreamEvent::TextDelta(text)));
+                    }
                 }
             }
         }
@@ -395,9 +416,13 @@ fn convert_tools_to_anthropic(tools: Vec<AiOxTool>) -> Result<Vec<anthropic_ox::
         match tool {
             AiOxTool::FunctionDeclarations(functions) => {
                 for func in functions {
-                    let _anthropic_tool = anthropic_ox::tool::Tool::new(
-                        func.name.clone(),
-                        func.description.clone().unwrap_or_default(),
+                    let _anthropic_tool = anthropic_ox::tool::Tool::Custom(
+                        anthropic_ox::tool::CustomTool {
+                            object_type: "function".to_string(),
+                            name: func.name.clone(),
+                            description: func.description.clone().unwrap_or_default(),
+                            input_schema: func.parameters,
+                        }
                     );
                     
                     // Schema support requires schema feature to be enabled in anthropic-ox

@@ -161,13 +161,13 @@ pub struct OpenRouterModel {
     #[builder(into)]
     model: String,
     #[builder(default = default_tool_choice())]
-    tool_choice: openrouter_ox::tool::ToolChoice,
+    tool_choice: ai_ox_common::openai_format::ToolChoice,
 }
 
 /// Returns the default tool choice for OpenRouter models.
 /// Defaults to Auto, allowing the model to decide when to use tools.
-fn default_tool_choice() -> openrouter_ox::tool::ToolChoice {
-    openrouter_ox::tool::ToolChoice::Auto
+fn default_tool_choice() -> ai_ox_common::openai_format::ToolChoice {
+    ai_ox_common::openai_format::ToolChoice::Auto
 }
 
 impl<S: open_router_model_builder::State> OpenRouterModelBuilder<S> 
@@ -198,7 +198,7 @@ impl OpenRouterModel {
     fn build_openrouter_request(
         request: ModelRequest,
         model: &str,
-        tool_choice: &openrouter_ox::tool::ToolChoice,
+        tool_choice: &ai_ox_common::openai_format::ToolChoice,
         response_format: Option<Value>,
     ) -> Result<OpenRouterRequest, OpenRouterError> {
         // Convert messages using the conversion module
@@ -209,10 +209,10 @@ impl OpenRouterModel {
 
         // Build request based on whether we have tools or not
         let mut request = if !tools.is_empty() {
-            let openrouter_tools: Vec<openrouter_ox::tool::Tool> = tools
+            let openrouter_tools: Vec<ai_ox_common::openai_format::Tool> = tools
                 .into_iter()
-                .map(|func| openrouter_ox::tool::Tool {
-                    tool_type: "function".to_string(),
+                .map(|func| ai_ox_common::openai_format::Tool {
+                    r#type: "function".to_string(),
                     function: func,
                 })
                 .collect();

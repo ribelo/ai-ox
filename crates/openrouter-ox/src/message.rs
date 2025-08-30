@@ -1,7 +1,7 @@
 use std::fmt;
 
 use bon::Builder;
-use derive_more::Deref;
+// Removed unused import
 use serde::{Deserialize, Serialize};
 
 use crate::response::ToolCall;

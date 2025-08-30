@@ -9,12 +9,16 @@ use crate::{GeminiRequestError, Gemini, generate_content::{request::GenerateCont
 impl From<CommonRequestError> for GeminiRequestError {
     fn from(err: CommonRequestError) -> Self {
         match err {
-            CommonRequestError::Http(e) => GeminiRequestError::ReqwestError(e),
-            CommonRequestError::Json(e) => GeminiRequestError::SerdeError(e),
-            CommonRequestError::InvalidEventData(msg) => GeminiRequestError::InvalidEventData(msg),
+            CommonRequestError::Http(e) => GeminiRequestError::InvalidEventData(e),
+            CommonRequestError::Json(e) => GeminiRequestError::InvalidEventData(e),
+            CommonRequestError::Io(e) => GeminiRequestError::InvalidEventData(e),
+            CommonRequestError::InvalidRequest { message, .. } => GeminiRequestError::InvalidEventData(message),
+            CommonRequestError::RateLimit => GeminiRequestError::InvalidEventData("Rate limit exceeded".to_string()),
             CommonRequestError::AuthenticationMissing => GeminiRequestError::AuthenticationMissing,
             CommonRequestError::InvalidMimeType(msg) => GeminiRequestError::InvalidEventData(msg),
-            CommonRequestError::Utf8Error(e) => GeminiRequestError::InvalidEventData(e.to_string()),
+            CommonRequestError::InvalidEventData(msg) => GeminiRequestError::InvalidEventData(msg),
+            CommonRequestError::Utf8Error(msg) => GeminiRequestError::InvalidEventData(msg),
+            _ => GeminiRequestError::InvalidEventData(format!("Unknown error: {:?}", err)),
         }
     }
 }
@@ -131,7 +135,7 @@ impl GeminiRequestHelper {
                 Ok(value) => value,
                 Err(e) => {
                     return Box::pin(futures_util::stream::once(async move {
-                        Err(GeminiRequestError::from(CommonRequestError::Json(e)))
+                        Err(GeminiRequestError::from(CommonRequestError::Json(e.to_string())))
                     }));
                 }
             }

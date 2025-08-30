@@ -12,6 +12,11 @@ pub struct Part {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub thought: Option<bool>,
 
+    /// Optional. An opaque signature for the thought so it can be reused in subsequent requests.
+    /// A base64-encoded string.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "thoughtSignature")]
+    pub thought_signature: Option<String>,
+
     /// Optional. Metadata for a given video.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub video_metadata: Option<VideoMetadata>,
@@ -28,6 +33,7 @@ impl Part {
     pub fn new(data: impl Into<PartData>) -> Self {
         Self {
             thought: None,
+            thought_signature: None,
             video_metadata: None,
             data: data.into(),
         }
@@ -37,6 +43,17 @@ impl Part {
     pub fn new_with_thought(data: impl Into<PartData>, thought: bool) -> Self {
         Self {
             thought: Some(thought),
+            thought_signature: None,
+            video_metadata: None,
+            data: data.into(),
+        }
+    }
+    
+    /// Creates a new `Part` with the given data, thought information, and signature.
+    pub fn new_with_thought_and_signature(data: impl Into<PartData>, thought: bool, signature: String) -> Self {
+        Self {
+            thought: Some(thought),
+            thought_signature: Some(signature),
             video_metadata: None,
             data: data.into(),
         }
@@ -46,6 +63,7 @@ impl Part {
     pub fn new_with_video_metadata(data: impl Into<PartData>, metadata: VideoMetadata) -> Self {
         Self {
             thought: None,
+            thought_signature: None,
             video_metadata: Some(metadata),
             data: data.into(),
         }

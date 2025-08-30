@@ -7,9 +7,9 @@
 
 use async_stream::try_stream;
 use bon::Builder;
-use futures_util::stream::{BoxStream, StreamExt};
+use futures_util::stream::BoxStream;
 
-// pub mod conversion;  // Temporarily commented out due to compatibility issues with anthropic-ox
+pub mod conversion;
 pub mod error;
 mod internal;
 pub mod message;
@@ -134,7 +134,7 @@ impl fmt::Debug for OpenRouter {
     }
 }
 
-// pub use conversion::ConversionError;  // Temporarily commented out
+pub use conversion::ConversionError;
 pub use error::OpenRouterRequestError;
 pub use request::ChatRequest;
 pub use response::{
