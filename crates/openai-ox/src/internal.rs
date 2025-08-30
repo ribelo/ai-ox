@@ -3,7 +3,7 @@ use ai_ox_common::{
     error::ProviderError, BoxStream
 };
 use futures_util::stream::BoxStream as FuturesBoxStream;
-use crate::{OpenAIRequestError, ChatRequest, ChatResponse};
+use crate::{OpenAIRequestError, ChatRequest, ChatResponse, ResponsesRequest, ResponsesResponse, ResponsesStreamChunk};
 
 /// OpenAI client helper methods using the common RequestBuilder
 pub struct OpenAIRequestHelper {
@@ -13,8 +13,7 @@ pub struct OpenAIRequestHelper {
 impl OpenAIRequestHelper {
     pub fn new(client: reqwest::Client, base_url: &str, api_key: &str) -> Self {
         let config = RequestConfig::new(base_url)
-            .with_auth(AuthMethod::Bearer(api_key.to_string()))
-            .with_header("content-type", "application/json");
+            .with_auth(AuthMethod::Bearer(api_key.to_string()));
 
         let request_builder = RequestBuilder::new(client, config);
 
@@ -235,5 +234,29 @@ impl OpenAIRequestHelper {
 
         let endpoint = Endpoint::new("audio/translations", HttpMethod::Post);
         Ok(self.request_builder.request_multipart(&endpoint, form.build()).await?)
+    }
+
+    /// Send a Responses API request
+    pub async fn send_responses_request(&self, request: &ResponsesRequest) -> Result<ResponsesResponse, OpenAIRequestError> {
+        let endpoint = Endpoint::new("responses", HttpMethod::Post);
+        
+        Ok(self.request_builder
+            .request_json(&endpoint, Some(request))
+            .await?)
+    }
+
+    /// Stream a Responses API request
+    pub fn stream_responses_request(
+        &self, 
+        request: &ResponsesRequest
+    ) -> FuturesBoxStream<'static, Result<ResponsesStreamChunk, OpenAIRequestError>> {
+        let endpoint = Endpoint::new("responses", HttpMethod::Post);
+        
+        // Use the common streaming implementation
+        let stream: BoxStream<'static, Result<ResponsesStreamChunk, ProviderError>> = 
+            self.request_builder.stream(&endpoint, Some(request));
+        
+        // Direct cast since OpenAIRequestError = ProviderError
+        stream
     }
 }

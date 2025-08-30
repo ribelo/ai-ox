@@ -1,7 +1,7 @@
 use bon::Builder;
 use std::time::Duration;
 
-use crate::{OpenAIRequestError, ChatRequest, ChatResponse, internal::OpenAIRequestHelper};
+use crate::{OpenAIRequestError, ChatRequest, ChatResponse, ResponsesRequest, ResponsesResponse, ResponsesStreamChunk, internal::OpenAIRequestHelper};
 
 /// OpenAI AI API client
 #[derive(Debug, Clone, Builder)]
@@ -57,6 +57,11 @@ impl OpenAI {
         ChatRequest::builder()
     }
 
+    /// Create a responses API request builder
+    pub fn responses(&self) -> crate::ResponsesRequestBuilder {
+        ResponsesRequest::builder()
+    }
+
     /// Send a chat request and get a response
     pub async fn send(&self, request: &ChatRequest) -> Result<ChatResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
@@ -65,6 +70,16 @@ impl OpenAI {
         }
 
         self.request_helper().send_chat_request(request).await
+    }
+
+    /// Send a Responses API request and get a response
+    pub async fn send_responses(&self, request: &ResponsesRequest) -> Result<ResponsesResponse, OpenAIRequestError> {
+        #[cfg(feature = "leaky-bucket")]
+        if let Some(ref limiter) = self.rate_limiter {
+            limiter.acquire_one().await;
+        }
+
+        self.request_helper().send_responses_request(request).await
     }
 
     /// Send a chat request and get a streaming response
@@ -88,6 +103,35 @@ impl OpenAI {
             }
 
             let mut stream = helper.stream_chat_request(&request_data);
+            use futures_util::StreamExt;
+            
+            while let Some(result) = stream.next().await {
+                yield result?;
+            }
+        })
+    }
+
+    /// Send a Responses API request and get a streaming response
+    pub fn stream_responses(
+        &self,
+        request: &ResponsesRequest,
+    ) -> futures_util::stream::BoxStream<'static, Result<ResponsesStreamChunk, OpenAIRequestError>> {
+        use async_stream::try_stream;
+        
+        let helper = self.request_helper();
+        let mut request_data = request.clone();
+        request_data.stream = Some(true);
+
+        #[cfg(feature = "leaky-bucket")]
+        let rate_limiter = self.rate_limiter.clone();
+
+        Box::pin(try_stream! {
+            #[cfg(feature = "leaky-bucket")]
+            if let Some(ref limiter) = rate_limiter {
+                limiter.acquire_one().await;
+            }
+
+            let mut stream = helper.stream_responses_request(&request_data);
             use futures_util::StreamExt;
             
             while let Some(result) = stream.next().await {

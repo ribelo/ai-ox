@@ -41,6 +41,7 @@ mod internal;
 pub mod model;
 pub mod request;
 pub mod response;
+pub mod responses;
 pub mod usage;
 
 // Re-export main types
@@ -65,4 +66,11 @@ pub use response::{
     ImageResponse, AudioResponse, FilesResponse, FileInfo, FileUploadResponse,
     FineTuningJobsResponse, FineTuningJob, AssistantsResponse, AssistantInfo,
     ModelInfo, EmbeddingData, ModerationResult, ImageData, AudioSegment
+};
+
+// Re-export Responses API types
+pub use responses::{
+    ResponsesRequest, ResponsesRequestBuilder, ResponsesResponse, ReasoningConfig, TextConfig, ResponsesInput,
+    OutputItem, ReasoningItem, ResponseMessage, ToolCallItem, ResponsesUsage,
+    ResponsesStreamChunk, OutputDelta
 };
