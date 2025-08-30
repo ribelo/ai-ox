@@ -146,6 +146,7 @@ pub fn gemini_to_anthropic_response(gemini_response: GeminiResponse) -> Anthropi
     let usage = gemini_response.usage_metadata.map(|usage| anthropic_ox::response::Usage {
         input_tokens: Some(usage.prompt_token_count),
         output_tokens: usage.candidates_token_count,
+        thinking_tokens: usage.thoughts_token_count,
     }).unwrap_or_default();
 
     AnthropicResponse {

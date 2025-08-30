@@ -235,6 +235,7 @@ pub fn openrouter_to_anthropic_response(
         usage: anthropic_ox::response::Usage {
             input_tokens: Some(openrouter_response.usage.prompt_tokens),
             output_tokens: Some(openrouter_response.usage.completion_tokens),
+            thinking_tokens: None, // OpenRouter doesn't provide thinking tokens
         },
     })
 }

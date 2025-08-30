@@ -60,6 +60,7 @@ impl AnthropicOpenRouterStreamConverter {
                     usage: anthropic_ox::response::Usage {
                         input_tokens: None,
                         output_tokens: None,
+                        thinking_tokens: None,
                     },
                 };
                 
@@ -114,6 +115,7 @@ impl AnthropicOpenRouterStreamConverter {
                     usage: chunk.usage.map(|usage| anthropic_ox::response::Usage {
                         input_tokens: Some(usage.prompt_tokens),
                         output_tokens: Some(usage.completion_tokens),
+                        thinking_tokens: None, // OpenRouter doesn't provide thinking tokens
                     }),
                 });
 
