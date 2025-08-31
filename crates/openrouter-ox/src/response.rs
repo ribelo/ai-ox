@@ -9,7 +9,7 @@ use crate::{
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum FinishReason {
-    #[serde(alias = "STOP")]
+    #[serde(alias = "STOP", alias = "completed")]
     Stop,
     Limit,
     ContentFilter,
@@ -74,6 +74,8 @@ impl<'de> Deserialize<'de> for Choice {
             Logprobs,
             FinishReason,
             NativeFinishReason,
+            Reasoning,
+            ReasoningDetails,
         }
 
         struct ChoiceVisitor;
@@ -94,6 +96,8 @@ impl<'de> Deserialize<'de> for Choice {
                 let mut logprobs = None;
                 let mut finish_reason = None;
                 let mut native_finish_reason = None;
+                let mut reasoning = None;
+                let mut reasoning_details = None;
                 while let Some(key) = map.next_key()? {
                     match key {
                         Field::Index => {
@@ -111,15 +115,17 @@ impl<'de> Deserialize<'de> for Choice {
                         Field::NativeFinishReason => {
                             native_finish_reason = Some(map.next_value()?);
                         }
+                        Field::Reasoning => {
+                            reasoning = Some(map.next_value()?);
+                        }
+                        Field::ReasoningDetails => {
+                            reasoning_details = Some(map.next_value()?);
+                        }
                     }
                 }
                 let index = index.ok_or_else(|| serde::de::Error::missing_field("index"))?;
                 let response_msg = response_message
                     .ok_or_else(|| serde::de::Error::missing_field("message"))?;
-                
-                // Extract reasoning fields before converting to AssistantMessage
-                let reasoning = response_msg.reasoning.clone();
-                let reasoning_details = response_msg.reasoning_details.clone();
                 
                 let message = response_msg.into();
                 let finish_reason =
@@ -137,7 +143,7 @@ impl<'de> Deserialize<'de> for Choice {
             }
         }
 
-        const FIELDS: &[&str] = &["index", "message", "logprobs", "finishReason"];
+        const FIELDS: &[&str] = &["index", "message", "logprobs", "finishReason", "nativeFinishReason", "reasoning", "reasoningDetails"];
         deserializer.deserialize_struct("Choice", FIELDS, ChoiceVisitor)
     }
 }
@@ -187,7 +193,14 @@ pub struct CompletionTokensDetails {
 pub struct ReasoningDetail {
     #[serde(rename = "type")]
     pub detail_type: String,
-    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -208,13 +221,62 @@ pub struct ResponseMessage {
     pub reasoning_details: Option<Vec<ReasoningDetail>>,
 }
 
+/// Extract content from OpenRouter response, handling various content patterns.
+/// 
+/// GPT-5 and some other models return empty `content` but provide actual text in:
+/// - `reasoning` field (some models) 
+/// - `reasoning_details` array with summary/text/data fields (GPT-5)
+/// 
+/// This function implements a cascade: content → reasoning → reasoning_details
+fn extract_reasoning_content(
+    content: Option<String>,
+    reasoning: Option<String>, 
+    reasoning_details: Option<Vec<ReasoningDetail>>
+) -> Vec<ContentPart> {
+    match (content, reasoning, reasoning_details) {
+        // Normal content (most models)
+        (Some(text), _, _) if !text.is_empty() => vec![ContentPart::Text(text.into())],
+        
+        // Reasoning field (some models like o1)
+        (_, Some(reasoning), _) if !reasoning.is_empty() => vec![ContentPart::Text(reasoning.into())],
+        
+        // Reasoning details (GPT-5 pattern) - extract from first detail
+        (_, _, Some(details)) if !details.is_empty() => {
+            if let Some(first_detail) = details.first() {
+                // Try summary first (human-readable reasoning)
+                if let Some(summary) = &first_detail.summary {
+                    vec![ContentPart::Text(summary.into())]
+                } 
+                // Then text field
+                else if let Some(text) = &first_detail.text {
+                    vec![ContentPart::Text(text.into())]
+                } 
+                // Finally encrypted data (show placeholder)
+                else if let Some(_data) = &first_detail.data {
+                    vec![ContentPart::Text("[Encrypted reasoning data]".into())]
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![]
+            }
+        },
+        
+        // No content found
+        _ => vec![],
+    }
+}
+
 impl From<ResponseMessage> for AssistantMessage {
     fn from(resp: ResponseMessage) -> Self {
+        let content_parts = extract_reasoning_content(
+            resp.content,
+            resp.reasoning,
+            resp.reasoning_details
+        );
+        
         AssistantMessage {
-            content: Content(match resp.content {
-                Some(text) if !text.is_empty() => vec![ContentPart::Text(text.into())],
-                _ => vec![],
-            }),
+            content: Content(content_parts),
             tool_calls: resp.tool_calls,
             name: None,
             refusal: resp.refusal,
@@ -225,6 +287,89 @@ impl From<ResponseMessage> for AssistantMessage {
 impl From<ResponseMessage> for Message {
     fn from(resp: ResponseMessage) -> Self {
         Message::Assistant(AssistantMessage::from(resp))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_reasoning_content_normal_content() {
+        let result = extract_reasoning_content(
+            Some("Regular text content".to_string()),
+            None,
+            None,
+        );
+        assert_eq!(result.len(), 1);
+        if let ContentPart::Text(text) = &result[0] {
+            assert_eq!(text.text, "Regular text content");
+        } else {
+            panic!("Expected text content");
+        }
+    }
+
+    #[test]
+    fn test_extract_reasoning_content_from_reasoning_field() {
+        let result = extract_reasoning_content(
+            Some("".to_string()), // Empty content
+            Some("Reasoning text here".to_string()),
+            None,
+        );
+        assert_eq!(result.len(), 1);
+        if let ContentPart::Text(text) = &result[0] {
+            assert_eq!(text.text, "Reasoning text here");
+        } else {
+            panic!("Expected reasoning content");
+        }
+    }
+
+    #[test]
+    fn test_extract_reasoning_content_from_reasoning_details_summary() {
+        let details = vec![ReasoningDetail {
+            detail_type: "reasoning.summary".to_string(),
+            text: None,
+            summary: Some("Summary text".to_string()),
+            data: Some("ignored-data".to_string()),
+            id: None,
+            format: None,
+            index: None,
+        }];
+
+        let result = extract_reasoning_content(None, None, Some(details));
+        assert_eq!(result.len(), 1);
+        if let ContentPart::Text(text) = &result[0] {
+            assert_eq!(text.text, "Summary text");
+        } else {
+            panic!("Expected summary content");
+        }
+    }
+
+    #[test]
+    fn test_extract_reasoning_content_from_reasoning_details_encrypted() {
+        let details = vec![ReasoningDetail {
+            detail_type: "reasoning.encrypted".to_string(),
+            text: None,
+            summary: None,
+            data: Some("encrypted-data-here".to_string()),
+            id: None,
+            format: None,
+            index: None,
+        }];
+
+        let result = extract_reasoning_content(None, None, Some(details));
+        assert_eq!(result.len(), 1);
+        if let ContentPart::Text(text) = &result[0] {
+            assert_eq!(text.text, "[Encrypted reasoning data]");
+        } else {
+            panic!("Expected encrypted data placeholder");
+        }
+    }
+
+    #[test]
+    fn test_extract_reasoning_content_empty() {
+        let result = extract_reasoning_content(None, None, None);
+        assert_eq!(result.len(), 0);
     }
 }
 

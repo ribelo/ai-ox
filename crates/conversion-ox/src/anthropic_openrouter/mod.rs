@@ -167,7 +167,14 @@ pub fn openrouter_to_anthropic_response(
         // If we have reasoning_details, use the first one as the main thinking text
         if let Some(details) = &first_choice.reasoning_details {
             if let Some(first_detail) = details.first() {
-                thinking.text = first_detail.text.clone();
+                // Use summary first, then text, then data as fallback
+                if let Some(summary) = &first_detail.summary {
+                    thinking.text = summary.clone();
+                } else if let Some(text) = &first_detail.text {
+                    thinking.text = text.clone();
+                } else if let Some(data) = &first_detail.data {
+                    thinking.text = data.clone();
+                }
             }
         }
         content.push(AnthropicContent::Thinking(thinking));
