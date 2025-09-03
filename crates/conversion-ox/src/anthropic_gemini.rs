@@ -189,8 +189,8 @@ fn convert_anthropic_content_to_parts(
             AnthropicContent::Text(text) => {
                 Some(GeminiPart::new(PartData::Text(GeminiText::from(text.text.clone()))))
             }
-            AnthropicContent::Image { source } => {
-                match source {
+            AnthropicContent::Image(image) => {
+                match &image.source {
                     anthropic_ox::message::ImageSource::Base64 { media_type, data } => {
                         Some(GeminiPart::new(PartData::InlineData(Blob::new(
                             media_type.clone(),
@@ -283,12 +283,9 @@ fn convert_gemini_parts_to_anthropic_content(parts: &[GeminiPart]) -> Vec<Anthro
                 }
             }
             PartData::InlineData(blob) => {
-                Some(AnthropicContent::Image {
-                    source: anthropic_ox::message::ImageSource::Base64 {
-                        media_type: blob.mime_type.clone(),
-                        data: blob.data.clone(),
-                    },
-                })
+                Some(AnthropicContent::Image(
+                    anthropic_ox::message::Image::base64(blob.mime_type.clone(), blob.data.clone())
+                ))
             }
             PartData::FunctionCall(function_call) => {
                 Some(AnthropicContent::ToolUse(anthropic_ox::tool::ToolUse {
@@ -487,29 +484,36 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
                         anthropic_ox::message::Text::new(text.text)
                     ));
                 }
-                PartData::Blob(blob) => {
-                    // Convert blob to base64 image content
-                    let base64_data = base64::engine::general_purpose::STANDARD.encode(&blob.data);
+                PartData::InlineData(blob) => {
+                    // Convert blob to base64 image content  
                     anthropic_contents.push(AnthropicContent::Image(
-                        anthropic_ox::message::Image::base64(blob.mime_type, base64_data)
+                        anthropic_ox::message::Image::base64(blob.mime_type.clone(), blob.data.clone())
                     ));
                 }
                 PartData::FunctionCall(func_call) => {
                     let input = func_call.args.unwrap_or_default();
+                    let id = func_call.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                     anthropic_contents.push(AnthropicContent::ToolUse(
-                        anthropic_ox::message::ToolUse::new(
-                            func_call.name.clone(),
-                            func_call.name,
+                        anthropic_ox::tool::ToolUse {
+                            id,
+                            name: func_call.name,
                             input,
-                        )
+                            cache_control: None,
+                        }
                     ));
                 }
                 PartData::FunctionResponse(func_response) => {
+                    let tool_use_id = func_response.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                    let text_response = match func_response.response {
+                        serde_json::Value::String(s) => s,
+                        other => serde_json::to_string(&other).unwrap_or_default(),
+                    };
                     anthropic_contents.push(AnthropicContent::ToolResult(
-                        anthropic_ox::message::ToolResult::new(
-                            func_response.name,
-                            func_response.response,
-                        )
+                        anthropic_ox::tool::ToolResult {
+                            tool_use_id,
+                            content: vec![anthropic_ox::tool::ToolResultContent::Text { text: text_response }],
+                            is_error: None,
+                        }
                     ));
                 }
                 PartData::FileData(_) => {
@@ -595,7 +599,9 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
     match anthropic_response.content {
         anthropic_ox::message::StringOrContents::String(text) => {
             gemini_parts.push(GeminiPart {
-                data: PartData::Text(GeminiText { text })
+                data: PartData::Text(GeminiText { text }),
+                thought: None,
+                thought_signature: None,
             });
         }
         anthropic_ox::message::StringOrContents::Contents(contents) => {
@@ -603,28 +609,48 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
                 match content {
                     AnthropicContent::Text(text) => {
                         gemini_parts.push(GeminiPart {
-                            data: PartData::Text(GeminiText { text: text.text })
+                            data: PartData::Text(GeminiText { text: text.text }),
+                            thought: None,
+                            thought_signature: None,
                         });
                     }
                     AnthropicContent::Thinking(thinking) => {
                         gemini_parts.push(GeminiPart {
-                            data: PartData::Text(GeminiText { text: thinking.content })
+                            data: PartData::Text(GeminiText { text: thinking.text }),
+                            thought: Some(true),
+                            thought_signature: thinking.signature,
                         });
                     }
                     AnthropicContent::ToolUse(tool_use) => {
                         gemini_parts.push(GeminiPart {
                             data: PartData::FunctionCall(gemini_ox::content::FunctionCall {
+                                id: Some(tool_use.id),
                                 name: tool_use.name,
                                 args: Some(tool_use.input),
-                            })
+                            }),
+                            thought: None,
+                            thought_signature: None,
                         });
                     }
                     AnthropicContent::ToolResult(tool_result) => {
+                        let response_text = tool_result.content.iter()
+                            .filter_map(|content| match content {
+                                anthropic_ox::tool::ToolResultContent::Text { text } => Some(text.clone()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        let response = serde_json::json!({"text": response_text});
                         gemini_parts.push(GeminiPart {
                             data: PartData::FunctionResponse(gemini_ox::content::FunctionResponse {
-                                name: tool_result.tool_use_id,
-                                response: tool_result.content,
-                            })
+                                id: Some(tool_result.tool_use_id),
+                                name: "function_tool".to_string(),
+                                response,
+                                will_continue: None,
+                                scheduling: None,
+                            }),
+                            thought: None,
+                            thought_signature: None,
                         });
                     }
                     // Skip unsupported content types
@@ -660,10 +686,11 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
         candidates: vec![candidate],
         prompt_feedback: None,
         usage_metadata: Some(UsageMetadata {
-            prompt_token_count: Some(anthropic_response.usage.input_tokens),
-            candidates_token_count: Some(anthropic_response.usage.output_tokens),
-            total_token_count: Some(anthropic_response.usage.input_tokens + anthropic_response.usage.output_tokens),
+            prompt_token_count: anthropic_response.usage.input_tokens.unwrap_or_default(),
+            candidates_token_count: anthropic_response.usage.output_tokens,
+            total_token_count: anthropic_response.usage.input_tokens.unwrap_or_default() + anthropic_response.usage.output_tokens,
             cached_content_token_count: None,
+            thoughts_token_count: anthropic_response.usage.thinking_tokens,
         }),
         model: Some(anthropic_response.model),
     }

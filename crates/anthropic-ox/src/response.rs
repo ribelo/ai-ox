@@ -199,7 +199,7 @@ mod tests {
             model: "claude-3-sonnet".to_string(),
             stop_reason: Some(StopReason::EndTurn),
             stop_sequence: None,
-            usage: Usage { input_tokens: Some(10), output_tokens: Some(20) },
+            usage: Usage { input_tokens: Some(10), output_tokens: Some(20), thinking_tokens: None },
         }
     }
     
