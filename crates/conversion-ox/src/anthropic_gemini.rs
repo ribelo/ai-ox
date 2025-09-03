@@ -484,7 +484,7 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
             match part.data {
                 PartData::Text(text) => {
                     anthropic_contents.push(AnthropicContent::Text(
-                        anthropic_ox::message::Text::new(text.text)
+                        anthropic_ox::message::Text::new(text.0.clone())
                     ));
                 }
                 PartData::InlineData(blob) => {
@@ -519,6 +519,7 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
                             tool_use_id,
                             content: vec![anthropic_ox::tool::ToolResultContent::Text { text: text_response }],
                             is_error: None,
+                            cache_control: None,
                         }
                     ));
                 }
@@ -541,7 +542,7 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
         }
     }
     
-    // Build Anthropic request
+    // Build Anthropic request with all fields at once
     let mut request_builder = AnthropicRequest::builder()
         .model(gemini_request.model)
         .messages(anthropic_ox::message::Messages(anthropic_messages));
@@ -550,7 +551,7 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
     if let Some(system_content) = gemini_request.system_instruction {
         if let Some(first_part) = system_content.parts.first() {
             if let PartData::Text(text) = &first_part.data {
-                request_builder = request_builder.system(text.text.clone());
+                request_builder = request_builder.system(text.0.clone());
             }
         }
     }
@@ -570,22 +571,29 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
             request_builder = request_builder.top_k(top_k);
         }
         if let Some(thinking_config) = gen_config.thinking_config {
-            request_builder = request_builder.thinking(anthropic_ox::request::ThinkingConfig::new(thinking_config.thinking_budget));
+            let budget = if thinking_config.thinking_budget < 0 { 
+                u32::MAX // Use max for dynamic budget
+            } else { 
+                thinking_config.thinking_budget as u32 
+            };
+            request_builder = request_builder.thinking(anthropic_ox::request::ThinkingConfig::new(budget));
         }
     }
     
     // Convert tools if present
     if let Some(tools) = gemini_request.tools {
-        let anthropic_tools: Result<Vec<_>, _> = tools.into_iter()
-            .map(|tool| Ok(gemini_tool_to_anthropic_tool(tool)))
-            .collect();
-        match anthropic_tools {
-            Ok(tools) => {
-                request_builder = request_builder.tools(tools);
+        let mut anthropic_tools = Vec::new();
+        for tool_json in tools {
+            // Try to deserialize JSON Value to Tool
+            match serde_json::from_value::<GeminiTool>(tool_json) {
+                Ok(tool) => anthropic_tools.push(gemini_tool_to_anthropic_tool(tool)),
+                Err(e) => {
+                    return Err(crate::ConversionError::ContentConversion(format!("Failed to deserialize tool: {:?}", e)));
+                }
             }
-            Err(e) => {
-                return Err(crate::ConversionError::ContentConversion(format!("Failed to convert tools: {:?}", e)));
-            }
+        }
+        if !anthropic_tools.is_empty() {
+            request_builder = request_builder.tools(anthropic_tools);
         }
     }
     
@@ -603,68 +611,61 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
     
     let mut gemini_parts = Vec::new();
     
-    // Convert Anthropic content to Gemini parts
-    match anthropic_response.content {
-        anthropic_ox::message::StringOrContents::String(text) => {
-            gemini_parts.push(GeminiPart {
-                data: PartData::Text(GeminiText { text }),
-                thought: None,
-                thought_signature: None,
-            });
-        }
-        anthropic_ox::message::StringOrContents::Contents(contents) => {
-            for content in contents {
-                match content {
-                    AnthropicContent::Text(text) => {
-                        gemini_parts.push(GeminiPart {
-                            data: PartData::Text(GeminiText { text: text.text }),
-                            thought: None,
-                            thought_signature: None,
-                        });
-                    }
-                    AnthropicContent::Thinking(thinking) => {
-                        gemini_parts.push(GeminiPart {
-                            data: PartData::Text(GeminiText { text: thinking.text }),
-                            thought: Some(true),
-                            thought_signature: thinking.signature,
-                        });
-                    }
-                    AnthropicContent::ToolUse(tool_use) => {
-                        gemini_parts.push(GeminiPart {
-                            data: PartData::FunctionCall(gemini_ox::content::FunctionCall {
-                                id: Some(tool_use.id),
-                                name: tool_use.name,
-                                args: Some(tool_use.input),
-                            }),
-                            thought: None,
-                            thought_signature: None,
-                        });
-                    }
-                    AnthropicContent::ToolResult(tool_result) => {
-                        let response_text = tool_result.content.iter()
-                            .filter_map(|content| match content {
-                                anthropic_ox::tool::ToolResultContent::Text { text } => Some(text.clone()),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        let response = serde_json::json!({"text": response_text});
-                        gemini_parts.push(GeminiPart {
-                            data: PartData::FunctionResponse(gemini_ox::content::FunctionResponse {
-                                id: Some(tool_result.tool_use_id),
-                                name: "function_tool".to_string(),
-                                response,
-                                will_continue: None,
-                                scheduling: None,
-                            }),
-                            thought: None,
-                            thought_signature: None,
-                        });
-                    }
-                    // Skip unsupported content types
-                    _ => continue,
-                }
+    // Convert Anthropic content to Gemini parts - content is now directly Vec<Content>
+    for content in anthropic_response.content {
+        match content {
+            AnthropicContent::Text(text) => {
+                gemini_parts.push(GeminiPart {
+                    data: PartData::Text(GeminiText(text.text)),
+                    thought: None,
+                    thought_signature: None,
+                    video_metadata: None,
+                });
             }
+            AnthropicContent::Thinking(thinking) => {
+                gemini_parts.push(GeminiPart {
+                    data: PartData::Text(GeminiText(thinking.text)),
+                    thought: Some(true),
+                    thought_signature: thinking.signature,
+                    video_metadata: None,
+                });
+            }
+            AnthropicContent::ToolUse(tool_use) => {
+                gemini_parts.push(GeminiPart {
+                    data: PartData::FunctionCall(gemini_ox::content::FunctionCall {
+                        id: Some(tool_use.id),
+                        name: tool_use.name,
+                        args: Some(tool_use.input),
+                    }),
+                    thought: None,
+                    thought_signature: None,
+                    video_metadata: None,
+                });
+            }
+            AnthropicContent::ToolResult(tool_result) => {
+                let response_text = tool_result.content.iter()
+                    .filter_map(|content| match content {
+                        anthropic_ox::tool::ToolResultContent::Text { text } => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                let response = serde_json::json!({"text": response_text});
+                gemini_parts.push(GeminiPart {
+                    data: PartData::FunctionResponse(gemini_ox::content::FunctionResponse {
+                        id: Some(tool_result.tool_use_id),
+                        name: "function_tool".to_string(),
+                        response,
+                        will_continue: None,
+                        scheduling: None,
+                    }),
+                    thought: None,
+                    thought_signature: None,
+                    video_metadata: None,
+                });
+            }
+            // Skip unsupported content types
+            _ => continue,
         }
     }
     
