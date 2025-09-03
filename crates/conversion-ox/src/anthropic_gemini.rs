@@ -616,7 +616,7 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
         match content {
             AnthropicContent::Text(text) => {
                 gemini_parts.push(GeminiPart {
-                    data: PartData::Text(GeminiText(text.text)),
+                    data: PartData::Text(GeminiText::from(text.text)),
                     thought: None,
                     thought_signature: None,
                     video_metadata: None,
@@ -624,7 +624,7 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
             }
             AnthropicContent::Thinking(thinking) => {
                 gemini_parts.push(GeminiPart {
-                    data: PartData::Text(GeminiText(thinking.text)),
+                    data: PartData::Text(GeminiText::from(thinking.text)),
                     thought: Some(true),
                     thought_signature: thinking.signature,
                     video_metadata: None,
