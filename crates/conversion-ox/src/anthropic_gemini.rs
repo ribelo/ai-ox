@@ -2,7 +2,6 @@
 //!
 //! This module provides functions to convert between Anthropic and Gemini API formats.
 
-use base64;
 
 use anthropic_ox::{
     message::{
@@ -709,15 +708,15 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
         prompt_feedback: None,
         usage_metadata: Some(UsageMetadata {
             prompt_token_count: anthropic_response.usage.input_tokens.unwrap_or_default(),
-            candidates_token_count: anthropic_response.usage.output_tokens.unwrap_or_default(),
+            candidates_token_count: anthropic_response.usage.output_tokens,
             total_token_count: anthropic_response.usage.input_tokens.unwrap_or_default() + anthropic_response.usage.output_tokens.unwrap_or_default(),
             cached_content_token_count: None,
             thoughts_token_count: anthropic_response.usage.thinking_tokens,
             cache_tokens_details: None,
             candidates_tokens_details: None,
             prompt_tokens_details: None,
-            cached_tokens_count: None,
-            cached_content_tokens_count: None,
+            tool_use_prompt_tokens_details: None,
+            tool_use_prompt_token_count: None,
         }),
         model_version: Some(anthropic_response.model),
     }

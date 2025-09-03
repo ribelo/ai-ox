@@ -16,6 +16,8 @@ anthropic-openrouter = ["dep:anthropic-ox", "dep:openrouter-ox"]
 anthropic-gemini = ["dep:anthropic-ox", "dep:gemini-ox"]
 # Convenience feature for all conversions
 all = ["anthropic-openrouter", "anthropic-gemini"]
+# Test feature that enables all functionality for testing
+test = ["all"]
 
 [dependencies]
 # Core dependencies
