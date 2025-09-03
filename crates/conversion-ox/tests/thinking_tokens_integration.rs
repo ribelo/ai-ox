@@ -1,3 +1,5 @@
+#![cfg(feature = "anthropic-gemini")]
+
 use conversion_ox::anthropic_gemini::{gemini_to_anthropic_response, anthropic_to_gemini_request};
 use gemini_ox::{
     generate_content::{

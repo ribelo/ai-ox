@@ -1,4 +1,6 @@
 use serde_json::json;
+#![cfg(feature = "anthropic-gemini")]
+
 use conversion_ox::anthropic_gemini::draft07_to_openapi3;
 
 #[test]

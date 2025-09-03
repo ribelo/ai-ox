@@ -1,3 +1,5 @@
+#![cfg(feature = "anthropic-openrouter")]
+
 use anthropic_ox::{
     message::{Content as AnthropicContent, Message as AnthropicMessage, Role as AnthropicRole, ThinkingContent, StringOrContents},
     request::ChatRequest as AnthropicRequest,

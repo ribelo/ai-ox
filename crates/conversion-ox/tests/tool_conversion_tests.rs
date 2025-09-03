@@ -1,3 +1,5 @@
+#![cfg(feature = "anthropic-gemini")]
+
 use std::fs;
 use serde_json;
 use conversion_ox::anthropic_gemini::{anthropic_to_gemini_request, anthropic_tool_to_gemini_tool};

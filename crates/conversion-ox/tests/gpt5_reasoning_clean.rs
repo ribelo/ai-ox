@@ -1,3 +1,5 @@
+#![cfg(feature = "anthropic-openrouter")]
+
 use conversion_ox::anthropic_openrouter::openrouter_to_anthropic_response;
 use openrouter_ox::response::ChatCompletionResponse as OpenRouterResponse;
 use anthropic_ox::message::Content as AnthropicContent;
