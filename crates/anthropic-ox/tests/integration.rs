@@ -42,7 +42,10 @@ async fn test_model_enum_conversion() {
 
 #[tokio::test]
 async fn test_chat_request_builder() {
-    use anthropic_ox::{message::{Message, Messages, Role, Content, StringOrContents, Text}, ChatRequest};
+    use anthropic_ox::{
+        ChatRequest, 
+        message::{Message, Messages, Role, Content, StringOrContents, Text}
+    };
 
     // Create test messages
     let mut messages = Messages::new();

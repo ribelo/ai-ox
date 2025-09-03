@@ -29,7 +29,8 @@ pub use crate::{
         Messages, 
         Role,
         Content,
-        message::{Text, ImageSource},
+        Text,
+        ImageSource,
     },
     tool::{
         Tool,
