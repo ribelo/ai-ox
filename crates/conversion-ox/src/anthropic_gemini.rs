@@ -2,6 +2,8 @@
 //!
 //! This module provides functions to convert between Anthropic and Gemini API formats.
 
+use base64;
+
 use anthropic_ox::{
     message::{
         Content as AnthropicContent,
@@ -461,5 +463,208 @@ pub fn gemini_tool_to_anthropic_tool(gemini_tool: GeminiTool) -> AnthropicTool {
                 "Google Search tool".to_string(),
             ))
         }
+    }
+}
+
+/// Convert Gemini GenerateContentRequest to Anthropic ChatRequest
+pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<AnthropicRequest, crate::ConversionError> {
+    let mut anthropic_messages = Vec::new();
+    
+    // Convert Gemini contents to Anthropic messages
+    for content in gemini_request.contents {
+        let role = match content.role {
+            GeminiRole::User => AnthropicRole::User,
+            GeminiRole::Model => AnthropicRole::Assistant,
+        };
+        
+        let mut anthropic_contents = Vec::new();
+        
+        // Convert parts to Anthropic content
+        for part in content.parts {
+            match part.data {
+                PartData::Text(text) => {
+                    anthropic_contents.push(AnthropicContent::Text(
+                        anthropic_ox::message::Text::new(text.text)
+                    ));
+                }
+                PartData::Blob(blob) => {
+                    // Convert blob to base64 image content
+                    let base64_data = base64::engine::general_purpose::STANDARD.encode(&blob.data);
+                    anthropic_contents.push(AnthropicContent::Image(
+                        anthropic_ox::message::Image::base64(blob.mime_type, base64_data)
+                    ));
+                }
+                PartData::FunctionCall(func_call) => {
+                    let input = func_call.args.unwrap_or_default();
+                    anthropic_contents.push(AnthropicContent::ToolUse(
+                        anthropic_ox::message::ToolUse::new(
+                            func_call.name.clone(),
+                            func_call.name,
+                            input,
+                        )
+                    ));
+                }
+                PartData::FunctionResponse(func_response) => {
+                    anthropic_contents.push(AnthropicContent::ToolResult(
+                        anthropic_ox::message::ToolResult::new(
+                            func_response.name,
+                            func_response.response,
+                        )
+                    ));
+                }
+                PartData::FileData(_) => {
+                    // Skip file data for now - could be enhanced to handle attachments
+                    continue;
+                }
+                PartData::ExecutableCode(_) | PartData::CodeExecutionResult(_) => {
+                    // Skip code execution for now - not directly supported in Anthropic
+                    continue;
+                }
+            }
+        }
+        
+        if !anthropic_contents.is_empty() {
+            anthropic_messages.push(anthropic_ox::message::Message {
+                role,
+                content: anthropic_ox::message::StringOrContents::Contents(anthropic_contents),
+            });
+        }
+    }
+    
+    // Build Anthropic request
+    let mut request_builder = AnthropicRequest::builder()
+        .model(gemini_request.model)
+        .messages(anthropic_ox::message::Messages(anthropic_messages));
+    
+    // Handle system instruction if present
+    if let Some(system_content) = gemini_request.system_instruction {
+        if let Some(first_part) = system_content.parts.first() {
+            if let PartData::Text(text) = &first_part.data {
+                request_builder = request_builder.system(text.text.clone());
+            }
+        }
+    }
+    
+    // Convert generation config
+    if let Some(gen_config) = gemini_request.generation_config {
+        if let Some(max_tokens) = gen_config.max_output_tokens {
+            request_builder = request_builder.max_tokens(max_tokens);
+        }
+        if let Some(temp) = gen_config.temperature {
+            request_builder = request_builder.temperature(temp);
+        }
+        if let Some(top_p) = gen_config.top_p {
+            request_builder = request_builder.top_p(top_p);
+        }
+        if let Some(top_k) = gen_config.top_k {
+            request_builder = request_builder.top_k(top_k);
+        }
+        if let Some(thinking_config) = gen_config.thinking_config {
+            request_builder = request_builder.thinking(anthropic_ox::request::ThinkingConfig::new(thinking_config.thinking_budget));
+        }
+    }
+    
+    // Convert tools if present
+    if let Some(tools) = gemini_request.tools {
+        let anthropic_tools: Result<Vec<_>, _> = tools.into_iter()
+            .map(|tool| Ok(gemini_tool_to_anthropic_tool(tool)))
+            .collect();
+        match anthropic_tools {
+            Ok(tools) => {
+                request_builder = request_builder.tools(tools);
+            }
+            Err(e) => {
+                return Err(crate::ConversionError::ContentConversion(format!("Failed to convert tools: {:?}", e)));
+            }
+        }
+    }
+    
+    Ok(request_builder.build())
+}
+
+/// Convert Anthropic ChatResponse to Gemini GenerateContentResponse
+pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> GeminiResponse {
+    use gemini_ox::generate_content::response::{
+        Candidate, FinishReason, SafetyRating, UsageMetadata
+    };
+    use gemini_ox::content::{Content as GeminiContent, Part as GeminiPart, Role as GeminiRole};
+    
+    let mut gemini_parts = Vec::new();
+    
+    // Convert Anthropic content to Gemini parts
+    match anthropic_response.content {
+        anthropic_ox::message::StringOrContents::String(text) => {
+            gemini_parts.push(GeminiPart {
+                data: PartData::Text(GeminiText { text })
+            });
+        }
+        anthropic_ox::message::StringOrContents::Contents(contents) => {
+            for content in contents {
+                match content {
+                    AnthropicContent::Text(text) => {
+                        gemini_parts.push(GeminiPart {
+                            data: PartData::Text(GeminiText { text: text.text })
+                        });
+                    }
+                    AnthropicContent::Thinking(thinking) => {
+                        gemini_parts.push(GeminiPart {
+                            data: PartData::Text(GeminiText { text: thinking.content })
+                        });
+                    }
+                    AnthropicContent::ToolUse(tool_use) => {
+                        gemini_parts.push(GeminiPart {
+                            data: PartData::FunctionCall(gemini_ox::content::FunctionCall {
+                                name: tool_use.name,
+                                args: Some(tool_use.input),
+                            })
+                        });
+                    }
+                    AnthropicContent::ToolResult(tool_result) => {
+                        gemini_parts.push(GeminiPart {
+                            data: PartData::FunctionResponse(gemini_ox::content::FunctionResponse {
+                                name: tool_result.tool_use_id,
+                                response: tool_result.content,
+                            })
+                        });
+                    }
+                    // Skip unsupported content types
+                    _ => continue,
+                }
+            }
+        }
+    }
+    
+    let candidate = Candidate {
+        content: Some(GeminiContent {
+            role: GeminiRole::Model,
+            parts: gemini_parts,
+        }),
+        finish_reason: Some(match anthropic_response.stop_reason {
+            Some(anthropic_ox::response::StopReason::EndTurn) => FinishReason::Stop,
+            Some(anthropic_ox::response::StopReason::MaxTokens) => FinishReason::MaxTokens,
+            Some(anthropic_ox::response::StopReason::StopSequence) => FinishReason::Stop,
+            Some(anthropic_ox::response::StopReason::ToolUse) => FinishReason::Stop,
+            None => FinishReason::Stop,
+        }),
+        index: Some(0),
+        safety_ratings: Vec::new(), // Could be enhanced to convert safety info
+        citation_metadata: None,
+        token_count: None,
+        grounding_attributions: Vec::new(),
+        avg_logprobs: None,
+        logprobs_result: None,
+        grounding_metadata: None,
+    };
+    
+    GeminiResponse {
+        candidates: vec![candidate],
+        prompt_feedback: None,
+        usage_metadata: Some(UsageMetadata {
+            prompt_token_count: Some(anthropic_response.usage.input_tokens),
+            candidates_token_count: Some(anthropic_response.usage.output_tokens),
+            total_token_count: Some(anthropic_response.usage.input_tokens + anthropic_response.usage.output_tokens),
+            cached_content_token_count: None,
+        }),
+        model: Some(anthropic_response.model),
     }
 }

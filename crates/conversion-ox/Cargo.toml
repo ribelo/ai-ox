@@ -27,6 +27,7 @@ async-stream = { workspace = true }
 futures-util = { workspace = true }
 chrono = { workspace = true }
 log = "0.4"
+base64 = "0.22"
 
 # Provider crates (optional)
 anthropic-ox = { path = "../anthropic-ox", optional = true, features = ["full"] }
