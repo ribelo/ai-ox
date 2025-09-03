@@ -283,9 +283,12 @@ fn convert_gemini_parts_to_anthropic_content(parts: &[GeminiPart]) -> Vec<Anthro
                 }
             }
             PartData::InlineData(blob) => {
-                Some(AnthropicContent::Image(
-                    anthropic_ox::message::Image::base64(blob.mime_type.clone(), blob.data.clone())
-                ))
+                Some(AnthropicContent::Image {
+                    source: anthropic_ox::message::ImageSource::Base64 {
+                        media_type: blob.mime_type.clone(),
+                        data: blob.data.clone(),
+                    },
+                })
             }
             PartData::FunctionCall(function_call) => {
                 Some(AnthropicContent::ToolUse(anthropic_ox::tool::ToolUse {
@@ -486,9 +489,12 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
                 }
                 PartData::InlineData(blob) => {
                     // Convert blob to base64 image content  
-                    anthropic_contents.push(AnthropicContent::Image(
-                        anthropic_ox::message::Image::base64(blob.mime_type.clone(), blob.data.clone())
-                    ));
+                    anthropic_contents.push(AnthropicContent::Image {
+                        source: anthropic_ox::message::ImageSource::Base64 {
+                            media_type: blob.mime_type.clone(),
+                            data: blob.data.clone(),
+                        },
+                    });
                 }
                 PartData::FunctionCall(func_call) => {
                     let input = func_call.args.unwrap_or_default();
@@ -588,8 +594,10 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
 
 /// Convert Anthropic ChatResponse to Gemini GenerateContentResponse
 pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> GeminiResponse {
-    use gemini_ox::generate_content::response::{
-        Candidate, FinishReason, SafetyRating, UsageMetadata
+    use gemini_ox::generate_content::{
+        ResponseCandidate as Candidate, 
+        FinishReason,
+        usage::UsageMetadata,
     };
     use gemini_ox::content::{Content as GeminiContent, Part as GeminiPart, Role as GeminiRole};
     
