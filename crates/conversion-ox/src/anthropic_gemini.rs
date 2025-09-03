@@ -189,8 +189,8 @@ fn convert_anthropic_content_to_parts(
             AnthropicContent::Text(text) => {
                 Some(GeminiPart::new(PartData::Text(GeminiText::from(text.text.clone()))))
             }
-            AnthropicContent::Image(image) => {
-                match &image.source {
+            AnthropicContent::Image { source } => {
+                match source {
                     anthropic_ox::message::ImageSource::Base64 { media_type, data } => {
                         Some(GeminiPart::new(PartData::InlineData(Blob::new(
                             media_type.clone(),
@@ -484,7 +484,7 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
             match part.data {
                 PartData::Text(text) => {
                     anthropic_contents.push(AnthropicContent::Text(
-                        anthropic_ox::message::Text::new(text.0.clone())
+                        anthropic_ox::message::Text::new(text.to_string())
                     ));
                 }
                 PartData::InlineData(blob) => {
@@ -542,21 +542,40 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
         }
     }
     
-    // Build Anthropic request with all fields at once
+    // Prepare optional fields
+    let system_instruction = if let Some(system_content) = gemini_request.system_instruction {
+        if let Some(first_part) = system_content.parts.first() {
+            if let PartData::Text(text) = &first_part.data {
+                Some(text.to_string())
+            } else { None }
+        } else { None }
+    } else { None };
+    
+    let anthropic_tools = if let Some(tools) = gemini_request.tools {
+        let mut converted_tools = Vec::new();
+        for tool_json in tools {
+            // Try to deserialize JSON Value to Tool
+            match serde_json::from_value::<GeminiTool>(tool_json) {
+                Ok(tool) => converted_tools.push(gemini_tool_to_anthropic_tool(tool)),
+                Err(e) => {
+                    return Err(crate::ConversionError::ContentConversion(format!("Failed to deserialize tool: {:?}", e)));
+                }
+            }
+        }
+        if converted_tools.is_empty() { None } else { Some(converted_tools) }
+    } else { None };
+    
+    // Build request with all fields at once using the builder pattern properly
     let mut request_builder = AnthropicRequest::builder()
         .model(gemini_request.model)
         .messages(anthropic_ox::message::Messages(anthropic_messages));
     
-    // Handle system instruction if present
-    if let Some(system_content) = gemini_request.system_instruction {
-        if let Some(first_part) = system_content.parts.first() {
-            if let PartData::Text(text) = &first_part.data {
-                request_builder = request_builder.system(text.0.clone());
-            }
-        }
+    // Apply system instruction if present
+    if let Some(system) = system_instruction {
+        request_builder = request_builder.system(system);
     }
     
-    // Convert generation config
+    // Apply generation config fields
     if let Some(gen_config) = gemini_request.generation_config {
         if let Some(max_tokens) = gen_config.max_output_tokens {
             request_builder = request_builder.max_tokens(max_tokens);
@@ -568,7 +587,7 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
             request_builder = request_builder.top_p(top_p);
         }
         if let Some(top_k) = gen_config.top_k {
-            request_builder = request_builder.top_k(top_k);
+            request_builder = request_builder.top_k(top_k as i32);
         }
         if let Some(thinking_config) = gen_config.thinking_config {
             let budget = if thinking_config.thinking_budget < 0 { 
@@ -580,21 +599,9 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
         }
     }
     
-    // Convert tools if present
-    if let Some(tools) = gemini_request.tools {
-        let mut anthropic_tools = Vec::new();
-        for tool_json in tools {
-            // Try to deserialize JSON Value to Tool
-            match serde_json::from_value::<GeminiTool>(tool_json) {
-                Ok(tool) => anthropic_tools.push(gemini_tool_to_anthropic_tool(tool)),
-                Err(e) => {
-                    return Err(crate::ConversionError::ContentConversion(format!("Failed to deserialize tool: {:?}", e)));
-                }
-            }
-        }
-        if !anthropic_tools.is_empty() {
-            request_builder = request_builder.tools(anthropic_tools);
-        }
+    // Apply tools if present
+    if let Some(tools) = anthropic_tools {
+        request_builder = request_builder.tools(tools);
     }
     
     Ok(request_builder.build())
@@ -670,10 +677,10 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
     }
     
     let candidate = Candidate {
-        content: Some(GeminiContent {
+        content: GeminiContent {
             role: GeminiRole::Model,
             parts: gemini_parts,
-        }),
+        },
         finish_reason: Some(match anthropic_response.stop_reason {
             Some(anthropic_ox::response::StopReason::EndTurn) => FinishReason::Stop,
             Some(anthropic_ox::response::StopReason::MaxTokens) => FinishReason::MaxTokens,
@@ -685,7 +692,7 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
         safety_ratings: Vec::new(), // Could be enhanced to convert safety info
         citation_metadata: None,
         token_count: None,
-        grounding_attributions: Vec::new(),
+        grounding_attributions: None,
         avg_logprobs: None,
         logprobs_result: None,
         grounding_metadata: None,
