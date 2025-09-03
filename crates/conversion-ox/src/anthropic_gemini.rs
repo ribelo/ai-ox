@@ -565,46 +565,52 @@ pub fn gemini_to_anthropic_request(gemini_request: GeminiRequest) -> Result<Anth
         if converted_tools.is_empty() { None } else { Some(converted_tools) }
     } else { None };
     
-    // Build request with all fields at once using the builder pattern properly
-    let mut request_builder = AnthropicRequest::builder()
+    // Build request using chained maybe_ methods for all optional fields
+    let request = AnthropicRequest::builder()
         .model(gemini_request.model)
-        .messages(anthropic_ox::message::Messages(anthropic_messages));
+        .messages(anthropic_ox::message::Messages(anthropic_messages))
+        .maybe_system(system_instruction.map(anthropic_ox::message::StringOrContents::String))
+        .maybe_max_tokens(
+            gemini_request.generation_config
+                .as_ref()
+                .and_then(|c| c.max_output_tokens)
+                .map(|t| t as u32)
+        )
+        .maybe_temperature(
+            gemini_request.generation_config
+                .as_ref()
+                .and_then(|c| c.temperature)
+                .map(|t| t as f32)
+        )
+        .maybe_top_p(
+            gemini_request.generation_config
+                .as_ref()
+                .and_then(|c| c.top_p)
+                .map(|tp| tp as f32)
+        )
+        .maybe_top_k(
+            gemini_request.generation_config
+                .as_ref()
+                .and_then(|c| c.top_k)
+                .map(|tk| tk as i32)
+        )
+        .maybe_thinking(
+            gemini_request.generation_config
+                .as_ref()
+                .and_then(|c| c.thinking_config.as_ref())
+                .map(|tc| {
+                    let budget = if tc.thinking_budget < 0 { 
+                        u32::MAX // Use max for dynamic budget
+                    } else { 
+                        tc.thinking_budget as u32 
+                    };
+                    anthropic_ox::request::ThinkingConfig::new(budget)
+                })
+        )
+        .maybe_tools(anthropic_tools)
+        .build();
     
-    // Apply system instruction if present
-    if let Some(system) = system_instruction {
-        request_builder = request_builder.system(system);
-    }
-    
-    // Apply generation config fields
-    if let Some(gen_config) = gemini_request.generation_config {
-        if let Some(max_tokens) = gen_config.max_output_tokens {
-            request_builder = request_builder.max_tokens(max_tokens);
-        }
-        if let Some(temp) = gen_config.temperature {
-            request_builder = request_builder.temperature(temp);
-        }
-        if let Some(top_p) = gen_config.top_p {
-            request_builder = request_builder.top_p(top_p);
-        }
-        if let Some(top_k) = gen_config.top_k {
-            request_builder = request_builder.top_k(top_k as i32);
-        }
-        if let Some(thinking_config) = gen_config.thinking_config {
-            let budget = if thinking_config.thinking_budget < 0 { 
-                u32::MAX // Use max for dynamic budget
-            } else { 
-                thinking_config.thinking_budget as u32 
-            };
-            request_builder = request_builder.thinking(anthropic_ox::request::ThinkingConfig::new(budget));
-        }
-    }
-    
-    // Apply tools if present
-    if let Some(tools) = anthropic_tools {
-        request_builder = request_builder.tools(tools);
-    }
-    
-    Ok(request_builder.build())
+    Ok(request)
 }
 
 /// Convert Anthropic ChatResponse to Gemini GenerateContentResponse
@@ -703,11 +709,16 @@ pub fn anthropic_to_gemini_response(anthropic_response: AnthropicResponse) -> Ge
         prompt_feedback: None,
         usage_metadata: Some(UsageMetadata {
             prompt_token_count: anthropic_response.usage.input_tokens.unwrap_or_default(),
-            candidates_token_count: anthropic_response.usage.output_tokens,
-            total_token_count: anthropic_response.usage.input_tokens.unwrap_or_default() + anthropic_response.usage.output_tokens,
+            candidates_token_count: anthropic_response.usage.output_tokens.unwrap_or_default(),
+            total_token_count: anthropic_response.usage.input_tokens.unwrap_or_default() + anthropic_response.usage.output_tokens.unwrap_or_default(),
             cached_content_token_count: None,
             thoughts_token_count: anthropic_response.usage.thinking_tokens,
+            cache_tokens_details: None,
+            candidates_tokens_details: None,
+            prompt_tokens_details: None,
+            cached_tokens_count: None,
+            cached_content_tokens_count: None,
         }),
-        model: Some(anthropic_response.model),
+        model_version: Some(anthropic_response.model),
     }
 }
