@@ -27,10 +27,16 @@ fn test_tool_conversion_from_resource_file() {
             let func = &functions[0];
             assert_eq!(func.name, "Task");
             assert!(func.description.is_some());
-            assert_eq!(func.description.as_ref().unwrap(), &tool.description);
-            
-            // Verify input schema is preserved
-            assert_eq!(func.parameters, tool.input_schema);
+            match &tool {
+                Tool::Custom(custom) => {
+                    assert_eq!(func.description.as_ref().unwrap(), &custom.description);
+                    // Verify input schema is preserved
+                    assert_eq!(func.parameters, custom.input_schema);
+                }
+                Tool::Computer(_) => {
+                    assert_eq!(func.description.as_ref().unwrap(), "Computer tool");
+                }
+            }
         }
         _ => panic!("Expected FunctionDeclarations"),
     }

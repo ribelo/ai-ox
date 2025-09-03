@@ -21,14 +21,20 @@ fn test_openrouter_openai_reasoning_conversion() {
     // Real OpenRouter → OpenAI GPT-5-mini response format with reasoning
     let reasoning_summary = ReasoningDetail {
         detail_type: "reasoning.summary".to_string(),
-        text: "**Explaining the riddle**\n\nI need to tackle this classic riddle step by step. When it says \"all but 9 die,\" it means 9 survive, so the answer is that 9 sheep are left. I can start with 17 sheep, subtracting those that died, so alive = 9. If I have 17 sheep and all but 9 die, then alive = 9 and dead = 8. It's important to highlight a common trap: some might mistakenly think the answer is 8 by misinterpreting it. I'll clarify this in my response.**Clarifying the final steps**\n\nAlright, let's put this all together. I start with a total of 17 sheep, and since 9 survive, I find that the number dead is 17 minus 9, which equals 8. So, the clear answer is that there are 9 sheep left. I want to ensure my final output reflects this process clearly and concisely for the user, so it's easy to understand. Let's craft that final output!".to_string(),
+        text: Some("**Explaining the riddle**\n\nI need to tackle this classic riddle step by step. When it says \"all but 9 die,\" it means 9 survive, so the answer is that 9 sheep are left. I can start with 17 sheep, subtracting those that died, so alive = 9. If I have 17 sheep and all but 9 die, then alive = 9 and dead = 8. It's important to highlight a common trap: some might mistakenly think the answer is 8 by misinterpreting it. I'll clarify this in my response.**Clarifying the final steps**\n\nAlright, let's put this all together. I start with a total of 17 sheep, and since 9 survive, I find that the number dead is 17 minus 9, which equals 8. So, the clear answer is that there are 9 sheep left. I want to ensure my final output reflects this process clearly and concisely for the user, so it's easy to understand. Let's craft that final output!".to_string()),
+        summary: None,
+        data: None,
+        id: None,
         format: Some("openai-responses-v1".to_string()),
         index: Some(0),
     };
 
     let reasoning_encrypted = ReasoningDetail {
         detail_type: "reasoning.encrypted".to_string(),
-        text: "gAAAAABosvmR6htThzBEsGCedZT14SwuCMOx...".to_string(), // Truncated for test
+        text: Some("gAAAAABosvmR6htThzBEsGCedZT14SwuCMOx...".to_string()), // Truncated for test
+        summary: None,
+        data: None,
+        id: None,
         format: Some("openai-responses-v1".to_string()),
         index: Some(0),
     };
@@ -144,13 +150,19 @@ fn test_openrouter_openai_encrypted_reasoning_handling() {
     let reasoning_details = vec![
         ReasoningDetail {
             detail_type: "reasoning.summary".to_string(),
-            text: "This is the readable reasoning summary".to_string(),
+            text: Some("This is the readable reasoning summary".to_string()),
+            summary: None,
+            data: None,
+            id: None,
             format: Some("openai-responses-v1".to_string()),
             index: Some(0),
         },
         ReasoningDetail {
             detail_type: "reasoning.encrypted".to_string(),
-            text: "encrypted_reasoning_data_here".to_string(), // This would be encrypted in real response
+            text: Some("encrypted_reasoning_data_here".to_string()), // This would be encrypted in real response
+            summary: None,
+            data: None,
+            id: None,
             format: Some("openai-responses-v1".to_string()),
             index: Some(0),
         }

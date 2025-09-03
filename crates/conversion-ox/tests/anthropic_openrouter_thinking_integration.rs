@@ -71,7 +71,10 @@ fn test_openrouter_to_anthropic_thinking_conversion() {
     // Create OpenRouter response with reasoning
     let reasoning_detail = ReasoningDetail {
         detail_type: "reasoning.text".to_string(),
-        text: "Let me work through this step by step. 15 × 23 means I need to multiply these two numbers. I can break this down: 15 × 20 = 300, and 15 × 3 = 45. So 300 + 45 = 345.".to_string(),
+        text: Some("Let me work through this step by step. 15 × 23 means I need to multiply these two numbers. I can break this down: 15 × 20 = 300, and 15 × 3 = 45. So 300 + 45 = 345.".to_string()),
+        summary: None,
+        data: None,
+        id: None,
         format: Some("unknown".to_string()),
         index: Some(0),
     };
@@ -157,7 +160,10 @@ fn test_anthropic_to_openrouter_to_anthropic_round_trip() {
     // Simulate OpenRouter response with reasoning
     let reasoning_detail = ReasoningDetail {
         detail_type: "reasoning.text".to_string(),
-        text: "This is a complex reasoning process that I need to work through carefully.".to_string(),
+        text: Some("This is a complex reasoning process that I need to work through carefully.".to_string()),
+        summary: None,
+        data: None,
+        id: None,
         format: Some("unknown".to_string()),
         index: Some(0),
     };
@@ -211,7 +217,10 @@ fn test_openrouter_to_anthropic_to_openrouter_round_trip() {
     // Create original OpenRouter response with reasoning
     let original_reasoning_detail = ReasoningDetail {
         detail_type: "reasoning.text".to_string(),
-        text: "I need to analyze this request carefully and provide a thoughtful response.".to_string(),
+        text: Some("I need to analyze this request carefully and provide a thoughtful response.".to_string()),
+        summary: None,
+        data: None,
+        id: None,
         format: Some("unknown".to_string()),
         index: Some(0),
     };
@@ -330,7 +339,10 @@ fn test_full_round_trip_thinking_preservation() {
         reasoning: Some("Let me think about this problem systematically. First, I need to understand what is being asked.".to_string()),
         reasoning_details: Some(vec![ReasoningDetail {
             detail_type: "reasoning.text".to_string(),
-            text: "Let me think about this problem systematically. First, I need to understand what is being asked.".to_string(),
+            text: Some("Let me think about this problem systematically. First, I need to understand what is being asked.".to_string()),
+            summary: None,
+            data: None,
+            id: None,
             format: Some("unknown".to_string()),
             index: Some(0),
         }]),
