@@ -1,32 +1,33 @@
 #[cfg(test)]
 mod tests {
     use openai_ox::{OpenAI, Message, Model, Usage};
+    use ai_ox_common::openai_format::MessageRole;
 
     #[test]
     fn test_message_creation() {
         let msg = Message::user("Hello");
         assert_eq!(msg.content, Some("Hello".to_string()));
-        assert!(matches!(msg.role, openai_ox::message::Role::User));
+        assert!(matches!(msg.role, MessageRole::User));
     }
 
     #[test]
     fn test_system_message() {
         let msg = Message::system("You are a helpful assistant");
-        assert!(matches!(msg.role, openai_ox::message::Role::System));
+        assert!(matches!(msg.role, MessageRole::System));
         assert_eq!(msg.content, Some("You are a helpful assistant".to_string()));
     }
 
     #[test]
     fn test_assistant_message() {
         let msg = Message::assistant("I'm here to help!");
-        assert!(matches!(msg.role, openai_ox::message::Role::Assistant));
+        assert!(matches!(msg.role, MessageRole::Assistant));
         assert_eq!(msg.content, Some("I'm here to help!".to_string()));
     }
 
     #[test]
     fn test_tool_message() {
         let msg = Message::tool("call_123", "Result: 42");
-        assert!(matches!(msg.role, openai_ox::message::Role::Tool));
+        assert!(matches!(msg.role, MessageRole::Tool));
         assert_eq!(msg.content, Some("Result: 42".to_string()));
         assert_eq!(msg.tool_call_id, Some("call_123".to_string()));
     }
@@ -35,8 +36,10 @@ mod tests {
     fn test_chat_request_builder() {
         let request = openai_ox::ChatRequest::builder()
             .model("gpt-3.5-turbo")
-            .user("Hello")
-            .assistant("Hi there!")
+            .messages(vec![
+                Message::user("Hello"),
+                Message::assistant("Hi there!")
+            ])
             .temperature(0.7)
             .max_tokens(100)
             .build();
@@ -86,18 +89,18 @@ mod tests {
     #[test]
     fn test_client_creation() {
         let client = OpenAI::new("test-key");
-        assert_eq!(client.api_key, "test-key");
-        assert_eq!(client.base_url, "https://api.openai.com/v1");
+        assert_eq!(client.api_key(), "test-key");
+        assert_eq!(client.base_url(), "https://api.openai.com/v1");
     }
 
     #[test]
     fn test_client_builder() {
         let client = OpenAI::builder()
-            .api_key("test-key")
+            .api_key("test-key".to_string())
             .base_url("https://custom.api.com")
             .build();
 
-        assert_eq!(client.api_key, "test-key");
-        assert_eq!(client.base_url, "https://custom.api.com");
+        assert_eq!(client.api_key(), "test-key");
+        assert_eq!(client.base_url(), "https://custom.api.com");
     }
 }

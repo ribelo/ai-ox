@@ -20,6 +20,30 @@ pub use model::Model;
 pub use models::response::{ListModelsResponse, ModelInfo};
 pub use request::ChatRequest;
 pub use response::{ChatResponse, ChatCompletionChunk};
+pub use usage::Usage;
+
+// Re-export types from ai-ox-common for convenience
+pub use ai_ox_common::openai_format::{Message, Tool, ToolChoice, ToolCall};
+
+// Create a tool module with helper functions for backward compatibility
+pub mod tool {
+    use ai_ox_common::openai_format::{Tool, Function};
+    
+    pub struct ToolFunction;
+    
+    impl ToolFunction {
+        pub fn with_parameters(name: &str, description: &str, parameters: serde_json::Value) -> Tool {
+            Tool {
+                r#type: "function".to_string(),
+                function: Function {
+                    name: name.to_string(),
+                    description: Some(description.to_string()),
+                    parameters: Some(parameters),
+                },
+            }
+        }
+    }
+}
 
 use bon::Builder;
 use core::fmt;

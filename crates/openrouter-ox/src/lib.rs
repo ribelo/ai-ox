@@ -136,7 +136,7 @@ impl fmt::Debug for OpenRouter {
 
 pub use conversion::ConversionError;
 pub use error::OpenRouterRequestError;
-pub use request::ChatRequest;
+pub use request::{ChatRequest, ReasoningConfig};
 pub use response::{
     ChatCompletionResponse, ChatCompletionChunk, GenerationInfo, KeyStatus, KeyStatusData, 
     KeyRateLimit, ModelInfo, ModelsResponse, ModelPricing, ModelArchitecture, ModelProvider

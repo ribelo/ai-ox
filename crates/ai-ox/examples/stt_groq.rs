@@ -1,3 +1,4 @@
+#[cfg(feature = "groq")]
 use ai_ox::stt::{
     TranscriptionRequest, AudioSource, 
     SpeechToText, OutputFormat,
@@ -5,6 +6,7 @@ use ai_ox::stt::{
 };
 use std::path::PathBuf;
 
+#[cfg(feature = "groq")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create Groq STT provider using builder
@@ -74,5 +76,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    Ok(())
+}
+
+#[cfg(not(feature = "groq"))]
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    println!("This example requires the 'groq' feature. Run with: cargo run --example stt_groq --features groq");
     Ok(())
 }

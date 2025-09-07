@@ -217,6 +217,17 @@ impl Message {
             tool_call_id: None,
         }
     }
+    
+    /// Create a tool message
+    pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            role: MessageRole::Tool,
+            content: Some(content.into()),
+            name: None,
+            tool_calls: None,
+            tool_call_id: Some(tool_call_id.into()),
+        }
+    }
 }
 
 // SHARED RESPONSE TYPES

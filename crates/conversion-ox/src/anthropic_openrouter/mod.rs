@@ -138,7 +138,14 @@ pub fn anthropic_to_openrouter_request(
     
     // Enable reasoning if thinking content is present
     let final_request = if has_thinking {
-        request_builder.maybe_include_reasoning(Some(true)).build()
+        let mut req = request_builder.build();
+        req.reasoning = Some(openrouter_ox::ReasoningConfig {
+            enabled: Some(true),
+            effort: None,
+            max_tokens: None,
+            exclude: None,
+        });
+        req
     } else {
         request_builder.build()
     };

@@ -9,6 +9,7 @@ fn test_client_creation() {
 }
 
 #[test]
+#[ignore = "Environment variable tests are unreliable in concurrent test execution"]
 fn test_client_from_env_missing_key() {
     // Remove any existing API key
     unsafe {

@@ -21,6 +21,20 @@ pub mod tool;
 // Re-export types from modules
 pub use crate::model::response::{ListModelsResponse, Model as ApiModel};
 
+// Re-export generate content types
+pub use crate::generate_content::request::GenerateContentRequest;
+pub use crate::generate_content::{GenerationConfig, SafetySetting, HarmCategory, HarmBlockThreshold};
+pub use crate::generate_content::response::GenerateContentResponse;
+
+// Re-export content and message types
+pub use crate::content::{Content, Part, Text, Role};
+
+// Re-export tool types
+pub use crate::tool::{Tool, FunctionMetadata};
+
+// Re-export embedding types
+pub use crate::embedding::EmbedContentRequest;
+
 // Re-export the procedural macro from gemini-ox-macros if the 'macros' feature is enabled.
 // #[cfg(feature = "macros")]
 // pub use gemini_ox_macros::toolbox;

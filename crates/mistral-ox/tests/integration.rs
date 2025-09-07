@@ -1,7 +1,10 @@
+#![cfg(feature = "mistral")]
+
 #[cfg(test)]
 mod tests {
     use mistral_ox::*;
     use mistral_ox::message::Message;
+    use futures_util::StreamExt;
 
     fn get_client() -> Mistral {
         Mistral::load_from_env().expect("MISTRAL_API_KEY must be set for integration tests")
@@ -70,8 +73,8 @@ mod tests {
         let request = ChatRequest::builder()
             .model("mistral-tiny".to_string()) // Cheapest model
             .messages(vec![Message::user("Say 'hello' in one word")])
-            .max_tokens(Some(5))
-            .temperature(Some(0.0)) // Deterministic
+            .max_tokens(5)
+            .temperature(0.0) // Deterministic
             .build();
         
         let response = client.send(&request).await;
@@ -91,8 +94,8 @@ mod tests {
         let request = ChatRequest::builder()
             .model("mistral-tiny".to_string())
             .messages(vec![Message::user("Count from 1 to 3")])
-            .max_tokens(Some(20))
-            .temperature(Some(0.0))
+            .max_tokens(20)
+            .temperature(0.0)
             .build();
         
         let mut stream = client.stream(&request);
@@ -165,7 +168,7 @@ mod tests {
         
         let request = ChatModerationRequest::builder()
             .model("mistral-moderation-latest".to_string())
-            .messages(messages)
+            .messages(mistral_ox::message::Messages(messages))
             .build();
         
         let response = client.create_chat_moderation(&request).await;
@@ -207,9 +210,9 @@ mod tests {
         let request = FimRequest::builder()
             .model("codestral-latest".to_string())
             .prompt("def hello():".to_string())
-            .suffix(Some("    return greeting".to_string()))
-            .max_tokens(Some(10))
-            .temperature(Some(0.0))
+            .suffix("    return greeting".to_string())
+            .max_tokens(10)
+            .temperature(0.0)
             .build();
         
         let response = client.create_fim_completion(&request).await;
@@ -218,6 +221,12 @@ mod tests {
         assert!(response.is_ok() || response.is_err());
     }
 }
+
+use mistral_ox::{Mistral, ChatRequest, Model};
+use mistral_ox::tool::ToolChoice;
+use ai_ox_common::openai_format::Tool;
+use mistral_ox::message::{Message, Messages};
+use futures_util::StreamExt;
 
 /// Helper to get test client
 fn get_test_client() -> Result<Mistral, Box<dyn std::error::Error>> {
@@ -280,8 +289,9 @@ async fn test_system_message() -> Result<(), Box<dyn std::error::Error>> {
     let content = response.choices[0].message.content
         .iter()
         .find_map(|p| p.as_text())
-        .map(|t| t.text.clone())
-        .unwrap_or_else(|| String::new());
+        .map(|t| &t.text)
+        .unwrap_or("")
+        .to_string();
     
     println!("Pirate response: {}", content);
     
@@ -346,23 +356,29 @@ async fn test_streaming() -> Result<(), Box<dyn std::error::Error>> {
 async fn test_tool_calling() -> Result<(), Box<dyn std::error::Error>> {
     let client = get_test_client()?;
     
-    let weather_tool = Tool::new("get_weather", "Get the current weather for a location")
-        .with_parameters(serde_json::json!({
-            "type": "object",
-            "properties": {
-                "location": {
-                    "type": "string",
-                    "description": "The city and country, e.g., 'Paris, France'"
+    let weather_tool = Tool {
+        r#type: "function".to_string(),
+        function: ai_ox_common::openai_format::Function {
+            name: "get_weather".to_string(),
+            description: Some("Get the current weather for a location".to_string()),
+            parameters: Some(serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and country, e.g., 'Paris, France'"
+                    },
+                    "unit": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"],
+                        "description": "The temperature unit",
+                        "default": "celsius"
+                    }
                 },
-                "unit": {
-                    "type": "string",
-                    "enum": ["celsius", "fahrenheit"],
-                    "description": "The temperature unit",
-                    "default": "celsius"
-                }
-            },
-            "required": ["location"]
-        }));
+                "required": ["location"]
+            })),
+        },
+    };
     
     let messages = Messages::new(vec![
         Message::user("What's the weather like in Tokyo?")
@@ -425,8 +441,9 @@ async fn test_json_mode() -> Result<(), Box<dyn std::error::Error>> {
     let content = response.choices[0].message.content
         .iter()
         .find_map(|p| p.as_text())
-        .map(|t| t.text.clone())
-        .unwrap_or_else(|| String::new());
+        .map(|t| &t.text)
+        .unwrap_or("")
+        .to_string();
     
     // Verify the response is valid JSON
     let json_value: serde_json::Value = serde_json::from_str(&content)?;
@@ -460,7 +477,7 @@ async fn test_multiple_models() -> Result<(), Box<dyn std::error::Error>> {
         
         let request = ChatRequest::builder()
             .model(model.to_string())
-            .messages(messages)
+            .messages(mistral_ox::message::Messages(messages))
             .max_tokens(10)
             .build();
         

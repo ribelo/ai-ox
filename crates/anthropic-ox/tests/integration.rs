@@ -1,4 +1,8 @@
-use anthropic_ox::{Anthropic, Model};
+#![cfg(feature = "anthropic")]
+
+use anthropic_ox::{Anthropic, Model, ChatRequest, StreamEvent};
+use anthropic_ox::message::{Message, Messages, Role, Content, Text};
+use anthropic_ox::response::ContentBlockDelta;
 
 #[tokio::test]
 async fn test_anthropic_client_initialization() {
@@ -146,7 +150,7 @@ async fn test_error_types() {
 // Real integration tests using actual API calls
 mod real_api_tests {
     use super::*;
-    use anthropic_ox::{ChatRequest, message::{Message, Messages, Role, Content, Text, Tool}};
+    use anthropic_ox::{ChatRequest, message::{Message, Messages, Role, Content, Text}, tool::Tool};
 
     fn get_client() -> Anthropic {
         Anthropic::load_from_env().expect("ANTHROPIC_API_KEY must be set for integration tests")
@@ -172,7 +176,7 @@ mod real_api_tests {
         let chat_response = response.unwrap();
         assert_eq!(chat_response.model, "claude-3-haiku-20240307");
         assert!(!chat_response.content.is_empty());
-        assert!(chat_response.usage.is_some());
+        assert!(chat_response.usage.input_tokens.is_some() || chat_response.usage.output_tokens.is_some());
     }
 
     #[tokio::test]
@@ -214,7 +218,7 @@ mod real_api_tests {
         
         let request = ChatRequest::builder()
             .model("claude-3-haiku-20240307")
-            .system("You are a helpful assistant that responds very briefly.")
+            .system("You are a helpful assistant that responds very briefly.".into())
             .messages(messages)
             .max_tokens(10)
             .build();
@@ -224,7 +228,7 @@ mod real_api_tests {
         
         let chat_response = response.unwrap();
         assert!(!chat_response.content.is_empty());
-        assert!(chat_response.usage.is_some());
+        assert!(chat_response.usage.input_tokens.is_some() || chat_response.usage.output_tokens.is_some());
     }
 
     #[tokio::test]
@@ -232,8 +236,11 @@ mod real_api_tests {
     async fn test_tool_calling() {
         let client = get_client();
         
-        let weather_tool = Tool::new("get_weather", "Get the current weather for a location")
-            .with_input_schema(serde_json::json!({
+        let weather_tool = Tool::Custom(tool::CustomTool {
+            object_type: "custom".to_string(),
+            name: "get_weather".to_string(),
+            description: "Get the current weather for a location".to_string(),
+            input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "location": {
@@ -242,7 +249,8 @@ mod real_api_tests {
                     }
                 },
                 "required": ["location"]
-            }));
+            }),
+        });
         
         let mut messages = Messages::new();
         messages.push(Message::new(Role::User, vec![Content::Text(Text::new("What's the weather like in Tokyo?".to_string()))]));
@@ -259,7 +267,7 @@ mod real_api_tests {
         
         let chat_response = response.unwrap();
         // Claude might or might not call the tool, both are valid responses
-        assert!(!chat_response.content.is_empty() || !chat_response.tool_use.is_empty());
+        assert!(!chat_response.content.is_empty() || chat_response.has_tool_use());
     }
 
     #[tokio::test]
@@ -383,14 +391,16 @@ async fn test_streaming() -> Result<(), Box<dyn std::error::Error>> {
         let chunk = chunk_result?;
         chunks_received += 1;
         
-        if let Some(delta) = &chunk.delta {
-            if let Some(text) = &delta.text {
-                content.push_str(text);
+        match chunk {
+            StreamEvent::ContentBlockDelta { delta, .. } => {
+                if let ContentBlockDelta::TextDelta { text } = delta {
+                    content.push_str(&text);
+                }
             }
-        }
-        
-        if chunk.r#type == "message_stop" {
-            finish_reason_received = true;
+            StreamEvent::MessageStop => {
+                finish_reason_received = true;
+            }
+            _ => {}
         }
     }
     

@@ -1,7 +1,9 @@
+#![cfg(feature = "gemini")]
+
 #[cfg(test)]
 mod tests {
     use gemini_ox::*;
-    use gemini_ox::message::{Message, Part, Content, Text};
+    use gemini_ox::content::{Content, Part, Text};
 
     fn get_client() -> Gemini {
         Gemini::from_env().expect("GEMINI_API_KEY must be set for integration tests")

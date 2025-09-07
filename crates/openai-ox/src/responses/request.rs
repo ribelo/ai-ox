@@ -1,6 +1,46 @@
 use bon::Builder;
 use serde::{Deserialize, Serialize};
-use ai_ox_common::openai_format::{Message, Tool};
+use ai_ox_common::openai_format::Message;
+use serde_json::Value;
+
+/// Tool definition for OpenAI Responses API - supports custom types
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResponsesTool {
+    /// Type of tool (e.g., "custom", "function")
+    #[serde(rename = "type")]
+    pub tool_type: String,
+    
+    /// Name of the tool
+    pub name: String,
+    
+    /// Optional description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    
+    /// Tool format configuration (for grammar-based tools)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub format: Option<ToolFormat>,
+    
+    /// Parameters schema (for simple tools without grammar)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parameters: Option<Value>,
+}
+
+/// Tool format configuration for grammar-based tools
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolFormat {
+    /// Format type (e.g., "grammar")
+    #[serde(rename = "type")]
+    pub format_type: String,
+    
+    /// Grammar syntax (e.g., "lark")
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub syntax: Option<String>,
+    
+    /// Grammar definition
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub definition: Option<String>,
+}
 
 /// Request for OpenAI Responses API - supports reasoning models
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
@@ -13,6 +53,10 @@ pub struct ResponsesRequest {
     /// Input content - can be text, messages, or mixed content
     pub input: ResponsesInput,
 
+    /// Instructions for the model (system prompt)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub instructions: Option<String>,
+
     /// Reasoning configuration
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<ReasoningConfig>,
@@ -23,7 +67,15 @@ pub struct ResponsesRequest {
 
     /// Tools/functions available to the model
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Tool>>,
+    pub tools: Option<Vec<ResponsesTool>>,
+    
+    /// Tool choice configuration (e.g., "auto", "none", or specific tool)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_choice: Option<String>,
+    
+    /// Whether to allow parallel tool calls
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parallel_tool_calls: Option<bool>,
 
     /// Items to include in response (e.g., ["reasoning.encrypted_content"])
     #[serde(skip_serializing_if = "Option::is_none")]

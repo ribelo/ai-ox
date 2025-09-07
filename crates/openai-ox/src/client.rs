@@ -40,6 +40,16 @@ impl OpenAI {
         }
     }
 
+    /// Get API key (for testing)
+    pub fn api_key(&self) -> &str {
+        &self.api_key
+    }
+    
+    /// Get base URL
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     /// Create request helper for internal use
     fn request_helper(&self) -> OpenAIRequestHelper {
         OpenAIRequestHelper::new(self.client.clone(), &self.base_url, &self.api_key)

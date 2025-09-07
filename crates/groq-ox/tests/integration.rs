@@ -31,7 +31,7 @@ mod tests {
         let client = get_client();
         
         let request = ChatRequest::builder()
-            .model("llama3-8b-8192") // Fast and free Groq model
+            .model("llama-3.1-8b-instant") // Current available Groq model
             .messages(vec![Message::user("Say 'hello' in one word")])
             .max_completion_tokens(5)
             .temperature(0.0) // Deterministic
@@ -41,7 +41,7 @@ mod tests {
         assert!(response.is_ok());
         
         let chat_response = response.unwrap();
-        assert_eq!(chat_response.model, "llama3-8b-8192");
+        assert_eq!(chat_response.model, "llama-3.1-8b-instant");
         assert!(!chat_response.choices.is_empty());
         assert!(chat_response.usage.is_some());
     }
@@ -52,7 +52,7 @@ mod tests {
         let client = get_client();
         
         let request = ChatRequest::builder()
-            .model("llama3-8b-8192")
+            .model("llama-3.1-8b-instant")
             .messages(vec![Message::user("Count from 1 to 3")])
             .max_completion_tokens(20)
             .temperature(0.0)
@@ -79,7 +79,7 @@ mod tests {
         let client = get_client();
         
         let request = ChatRequest::builder()
-            .model("llama3-8b-8192")
+            .model("llama-3.1-8b-instant")
             .messages(vec![
                 Message::system("You are a helpful assistant that responds very briefly."),
                 Message::user("What is 2+2?")
@@ -104,7 +104,7 @@ mod tests {
         let client = get_client();
         
         use groq_ox::tool::ToolFunction;
-        let weather_function = ToolFunction::with_parameters(
+        let weather_tool = ToolFunction::with_parameters(
             "get_weather",
             "Get the current weather for a location",
             serde_json::json!({
@@ -118,7 +118,6 @@ mod tests {
                 "required": ["location"]
             })
         );
-        let weather_tool = Tool::function(weather_function);
         
         let request = ChatRequest::builder()
             .model("llama3-groq-70b-8192-tool-use-preview") // Model with tool support
@@ -155,7 +154,7 @@ mod tests {
         let client = get_client();
         
         let models = vec![
-            "llama3-8b-8192",
+            "llama-3.1-8b-instant",
             "llama3-70b-8192",
             "mixtral-8x7b-32768",
         ];
@@ -204,7 +203,7 @@ mod tests {
         let client = get_client();
         
         let request = ChatRequest::builder()
-            .model("llama3-8b-8192")
+            .model("llama-3.1-8b-instant")
             .messages(vec![Message::user("Say hello")])
             .temperature(0.0) // Deterministic
             .max_completion_tokens(10)
@@ -228,10 +227,10 @@ fn get_test_client() -> Result<groq_ox::Groq, Box<dyn std::error::Error>> {
 async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
     let client = get_test_client()?;
     
-    use groq_ox::{ChatRequest};
+    use groq_ox::{ChatRequest, Message};
     
     let request = ChatRequest::builder()
-        .model("llama3-8b-8192")
+        .model("llama-3.1-8b-instant")
         .messages(vec![Message::user("What is 2+2? Reply with just the number.")])
         .max_completion_tokens(10)
         .build();
@@ -265,10 +264,10 @@ async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
 async fn test_streaming() -> Result<(), Box<dyn std::error::Error>> {
     let client = get_test_client()?;
     
-    use groq_ox::{ChatRequest};
+    use groq_ox::{ChatRequest, Message};
     
     let request = ChatRequest::builder()
-        .model("llama3-8b-8192")
+        .model("llama-3.1-8b-instant")
         .messages(vec![Message::user("Count from 1 to 5, one number per line.")])
         .build();
     

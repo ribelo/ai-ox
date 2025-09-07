@@ -71,6 +71,7 @@ pub use response::{
 // Re-export Responses API types
 pub use responses::{
     ResponsesRequest, ResponsesRequestBuilder, ResponsesResponse, ReasoningConfig, TextConfig, ResponsesInput,
-    OutputItem, ReasoningItem, ResponseMessage, ToolCallItem, ResponsesUsage,
+    ResponseOutputItem, ResponseOutputContent, ResponseError, IncompleteDetails, Conversation,
+    ReasoningItem, ResponseMessage, ToolCallItem, ResponsesUsage,
     ResponsesStreamChunk, OutputDelta
 };

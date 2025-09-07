@@ -67,8 +67,8 @@ mod tests {
         let request = client.chat()
             .model("gpt-3.5-turbo") // Cheapest chat model
             .user_message("Say 'hello' in one word")
-            .max_tokens(Some(5))
-            .temperature(Some(0.0)) // Deterministic
+            .max_tokens(5)
+            .temperature(0.0) // Deterministic
             .build();
         
         let response = client.send(&request).await;
@@ -131,8 +131,8 @@ mod tests {
         let request = client.chat()
             .model("gpt-3.5-turbo")
             .user_message("Count from 1 to 3")
-            .max_tokens(Some(20))
-            .temperature(Some(0.0))
+            .max_tokens(20)
+            .temperature(0.0)
             .build();
         
         let mut stream = client.stream(&request);

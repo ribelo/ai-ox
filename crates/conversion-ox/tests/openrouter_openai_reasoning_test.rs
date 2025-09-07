@@ -119,7 +119,8 @@ fn test_anthropic_thinking_to_openrouter_openai_request() {
     let openrouter_request = anthropic_to_openrouter_request(anthropic_request).unwrap();
     
     // Verify reasoning is enabled for OpenAI models via OpenRouter
-    assert_eq!(openrouter_request.include_reasoning, Some(true));
+    assert!(openrouter_request.reasoning.is_some());
+    assert_eq!(openrouter_request.reasoning.as_ref().unwrap().enabled, Some(true));
     assert_eq!(openrouter_request.model, "openai/gpt-5-mini");
     
     // Verify thinking content was converted to text in OpenRouter format

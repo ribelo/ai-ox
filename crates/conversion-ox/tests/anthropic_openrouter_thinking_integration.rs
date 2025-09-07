@@ -51,7 +51,8 @@ fn test_anthropic_to_openrouter_thinking_conversion() {
     let openrouter_request = anthropic_to_openrouter_request(anthropic_request).unwrap();
     
     // Verify reasoning is enabled
-    assert_eq!(openrouter_request.include_reasoning, Some(true));
+    assert!(openrouter_request.reasoning.is_some());
+    assert_eq!(openrouter_request.reasoning.as_ref().unwrap().enabled, Some(true));
     
     // Verify thinking content was converted to text in messages
     assert_eq!(openrouter_request.messages.len(), 2);
@@ -329,7 +330,8 @@ fn test_full_round_trip_thinking_preservation() {
 
     // Convert to OpenRouter and verify reasoning is enabled
     let openrouter_request = anthropic_to_openrouter_request(original_request).unwrap();
-    assert_eq!(openrouter_request.include_reasoning, Some(true));
+    assert!(openrouter_request.reasoning.is_some());
+    assert_eq!(openrouter_request.reasoning.as_ref().unwrap().enabled, Some(true));
 
     // Simulate OpenRouter response with reasoning matching the thinking content
     let choice = Choice {

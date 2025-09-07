@@ -1,9 +1,11 @@
+#[cfg(feature = "anthropic-gemini")]
 use serde_json::json;
-#![cfg(feature = "anthropic-gemini")]
 
+#[cfg(feature = "anthropic-gemini")]
 use conversion_ox::anthropic_gemini::draft07_to_openapi3;
 
 #[test]
+#[cfg(feature = "anthropic-gemini")]
 fn test_schema_conversion_bash_tool() {
     // This is the actual schema from Claude Code's Bash tool that might be causing issues
     let draft07_schema = json!({
@@ -45,6 +47,7 @@ fn test_schema_conversion_bash_tool() {
     assert!(openapi_schema["required"].is_array());
 }
 
+#[cfg(feature = "anthropic-gemini")]
 #[test]
 fn test_schema_conversion_with_nullable_types() {
     // Test the nullable type conversion that might be problematic
@@ -74,6 +77,7 @@ fn test_schema_conversion_with_nullable_types() {
     assert_eq!(optional_field["nullable"], true);
 }
 
+#[cfg(feature = "anthropic-gemini")]
 #[test]
 fn test_schema_conversion_property_names_with_hyphens() {
     // Test property names with hyphens that might be problematic for Gemini
@@ -108,6 +112,7 @@ fn test_schema_conversion_property_names_with_hyphens() {
     assert!(properties.contains_key("-i"));
 }
 
+#[cfg(feature = "anthropic-gemini")]
 #[test]
 fn test_schema_conversion_complex_tool() {
     // Test a more complex tool schema similar to what Claude Code sends

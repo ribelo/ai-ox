@@ -24,6 +24,18 @@ pub struct Prediction {
     pub content: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReasoningConfig {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effort: Option<String>, // "high", "medium", "low"
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exclude: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub enabled: Option<bool>,
+}
+
 /// OpenRouter chat request - uses base OpenAI format with extensive OpenRouter extensions
 /// 
 /// This is the most complex provider - demonstrates the pattern can handle extensive extensions
@@ -92,7 +104,7 @@ pub struct ChatRequest {
     #[builder(into)]
     pub provider: Option<ProviderPreferences>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub include_reasoning: Option<bool>,
+    pub reasoning: Option<ReasoningConfig>,
 }
 
 // Builder extension methods (same pattern as Groq/Mistral)
@@ -161,13 +173,40 @@ impl ChatRequest {
             route: None,
             preset: None,
             provider: None,
-            include_reasoning: None,
+            reasoning: None,
         }
     }
     
     /// Enable OpenRouter's reasoning inclusion feature
     pub fn with_reasoning(mut self) -> Self {
-        self.include_reasoning = Some(true);
+        self.reasoning = Some(ReasoningConfig {
+            enabled: Some(true),
+            effort: None,
+            max_tokens: None,
+            exclude: None,
+        });
+        self
+    }
+    
+    /// Enable OpenRouter's reasoning with specific effort level
+    pub fn with_reasoning_effort(mut self, effort: &str) -> Self {
+        self.reasoning = Some(ReasoningConfig {
+            enabled: Some(true),
+            effort: Some(effort.to_string()),
+            max_tokens: None,
+            exclude: None,
+        });
+        self
+    }
+    
+    /// Enable OpenRouter's reasoning with specific token limit
+    pub fn with_reasoning_tokens(mut self, max_tokens: u32) -> Self {
+        self.reasoning = Some(ReasoningConfig {
+            enabled: Some(true),
+            effort: None,
+            max_tokens: Some(max_tokens),
+            exclude: None,
+        });
         self
     }
     

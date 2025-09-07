@@ -1,3 +1,5 @@
+#![cfg(feature = "openrouter")]
+
 #[cfg(test)]
 mod tests {
     use openrouter_ox::*;

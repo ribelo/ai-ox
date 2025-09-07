@@ -32,13 +32,13 @@ impl From<OpenRouterError> for GenerateContentError {
         match error {
             OpenRouterError::Api(api_error) => {
                 match api_error {
-                    OpenRouterRequestError::ReqwestError(reqwest_err) => {
-                        GenerateContentError::provider_error("openrouter", format!("Network error: {}", reqwest_err))
+                    OpenRouterRequestError::Http(http_err) => {
+                        GenerateContentError::provider_error("openrouter", format!("Network error: {}", http_err))
                     }
-                    OpenRouterRequestError::SerdeError(serde_err) => {
-                        GenerateContentError::response_parsing(format!("OpenRouter JSON parsing error: {}", serde_err))
+                    OpenRouterRequestError::Json(json_err) => {
+                        GenerateContentError::response_parsing(format!("OpenRouter JSON parsing error: {}", json_err))
                     }
-                    OpenRouterRequestError::InvalidRequestError { code, message, .. } => {
+                    OpenRouterRequestError::InvalidRequest { code, message, .. } => {
                         let code_str = code.as_deref().unwrap_or("unknown");
                         GenerateContentError::provider_error("openrouter", format!("API error {}: {}", code_str, message))
                     }
@@ -60,8 +60,11 @@ impl From<OpenRouterError> for GenerateContentError {
                     OpenRouterRequestError::UrlBuildError(url_error) => {
                         GenerateContentError::configuration(format!("OpenRouter URL build error: {}", url_error))
                     }
-                    OpenRouterRequestError::IoError(io_error) => {
+                    OpenRouterRequestError::Io(io_error) => {
                         GenerateContentError::provider_error("openrouter", format!("I/O error: {}", io_error))
+                    }
+                    _ => {
+                        GenerateContentError::provider_error("openrouter", format!("Unknown error: {}", api_error))
                     }
                 }
             }

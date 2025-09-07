@@ -9,9 +9,11 @@ async fn test_responses_request_serialization() {
     let request = ResponsesRequest::builder()
         .model("o3-mini")
         .input(ResponsesInput::text("What is 2+2?"))
-        .reasoning_effort("medium")
-        .auto_reasoning_summary()
-        .include_encrypted_reasoning()
+        .reasoning(openai_ox::ReasoningConfig { 
+            effort: Some("medium".to_string()),
+            summary: Some("auto".to_string())
+        })
+        .include(vec!["reasoning.encrypted_content".to_string()])
         .max_output_tokens(100)
         .build();
 
@@ -36,7 +38,10 @@ async fn test_responses_request_with_messages() {
     let request = ResponsesRequest::builder()
         .model("gpt-5")
         .input(ResponsesInput::messages(messages.clone()))
-        .reasoning_with_summary("high")
+        .reasoning(openai_ox::ReasoningConfig { 
+            effort: Some("high".to_string()),
+            summary: Some("auto".to_string())
+        })
         .build();
 
     let json = serde_json::to_value(&request).unwrap();
@@ -218,7 +223,10 @@ async fn test_client_responses_methods() {
     let request = client.responses()
         .model("o3-mini")
         .input(ResponsesInput::text("Test"))
-        .reasoning_effort("medium")
+        .reasoning(openai_ox::ReasoningConfig { 
+            effort: Some("medium".to_string()),
+            summary: None
+        })
         .build();
         
     assert_eq!(request.model, "o3-mini");

@@ -238,11 +238,17 @@ impl OpenAIRequestHelper {
 
     /// Send a Responses API request
     pub async fn send_responses_request(&self, request: &ResponsesRequest) -> Result<ResponsesResponse, OpenAIRequestError> {
-        let endpoint = Endpoint::new("responses", HttpMethod::Post);
+        let endpoint = Endpoint::new("responses", HttpMethod::Post)
+            .with_header("OpenAI-Beta", "responses=experimental");
         
-        Ok(self.request_builder
+        let mut response: ResponsesResponse = self.request_builder
             .request_json(&endpoint, Some(request))
-            .await?)
+            .await?;
+        
+        // Add output_text field like the official SDK does
+        crate::responses::response::add_output_text(&mut response);
+        
+        Ok(response)
     }
 
     /// Stream a Responses API request
@@ -250,7 +256,9 @@ impl OpenAIRequestHelper {
         &self, 
         request: &ResponsesRequest
     ) -> FuturesBoxStream<'static, Result<ResponsesStreamChunk, OpenAIRequestError>> {
-        let endpoint = Endpoint::new("responses", HttpMethod::Post);
+        let endpoint = Endpoint::new("responses", HttpMethod::Post)
+            .with_header("OpenAI-Beta", "responses=experimental")
+            .with_header("Accept", "text/event-stream");
         
         // Use the common streaming implementation
         let stream: BoxStream<'static, Result<ResponsesStreamChunk, ProviderError>> = 

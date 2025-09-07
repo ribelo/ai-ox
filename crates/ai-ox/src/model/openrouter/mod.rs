@@ -9,6 +9,9 @@ use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
 use openrouter_ox::{OpenRouter, request::ChatRequest as OpenRouterRequest};
 use serde_json::Value;
 
+// Import the correct OpenAI format types
+use ai_ox_common::openai_format::{Tool as OaiTool, Function as OaiFunction, ToolChoice as OaiToolChoice};
+
 use crate::{
     content::delta::StreamEvent,
     tool::ToolCall,
@@ -161,13 +164,13 @@ pub struct OpenRouterModel {
     #[builder(into)]
     model: String,
     #[builder(default = default_tool_choice())]
-    tool_choice: ai_ox_common::openai_format::ToolChoice,
+    tool_choice: OaiToolChoice,
 }
 
 /// Returns the default tool choice for OpenRouter models.
 /// Defaults to Auto, allowing the model to decide when to use tools.
-fn default_tool_choice() -> ai_ox_common::openai_format::ToolChoice {
-    ai_ox_common::openai_format::ToolChoice::Auto
+fn default_tool_choice() -> OaiToolChoice {
+    OaiToolChoice::Auto
 }
 
 impl<S: open_router_model_builder::State> OpenRouterModelBuilder<S> 
@@ -198,7 +201,7 @@ impl OpenRouterModel {
     fn build_openrouter_request(
         request: ModelRequest,
         model: &str,
-        tool_choice: &ai_ox_common::openai_format::ToolChoice,
+        tool_choice: &OaiToolChoice,
         response_format: Option<Value>,
     ) -> Result<OpenRouterRequest, OpenRouterError> {
         // Convert messages using the conversion module
@@ -209,14 +212,18 @@ impl OpenRouterModel {
 
         // Build request based on whether we have tools or not
         let mut request = if !tools.is_empty() {
-            let openrouter_tools: Vec<ai_ox_common::openai_format::Tool> = tools
+            let openrouter_tools: Vec<OaiTool> = tools
                 .into_iter()
-                .map(|func| ai_ox_common::openai_format::Tool {
+                .map(|func| OaiTool {
                     r#type: "function".to_string(),
-                    function: func,
+                    function: OaiFunction {
+                        name: func.name,
+                        description: func.description,
+                        parameters: Some(func.parameters),
+                    },
                 })
                 .collect();
-            
+
             OpenRouterRequest::builder()
                 .model(model)
                 .messages(messages)
