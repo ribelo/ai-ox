@@ -1,7 +1,7 @@
 mod common;
 
 use ai_ox::content::part::Part;
-use ai_ox::tool::{Tool, ToolBox, ToolCall, ToolError};
+use ai_ox::tool::{Tool, ToolBox, ToolUse, ToolError};
 use ai_ox::toolbox;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -95,8 +95,8 @@ impl TestToolService {
     pub fn side_effect_tool(&self) {
         println!("Side effect tool called");
     }
-    pub fn infailable_tool(&self) -> String {
-        "Success".to_string()
+    pub fn infailable_tool(&self) -> Result<String, TestToolError> {
+        Ok("Success".to_string())
     }
     /// A simple synchronous tool that processes basic input
     pub fn simple_sync_tool(&self, input: SimpleInput) -> Result<SimpleOutput, TestToolError> {
@@ -223,7 +223,7 @@ async fn test_toolbox_sync_tool_success() {
     let service = TestToolService::new("TestService");
     let initial_count = service.get_call_count();
 
-    let call = ToolCall::new(
+    let call = ToolUse::new(
         "test_call_1",
         "simple_sync_tool",
         json!({
@@ -236,9 +236,22 @@ async fn test_toolbox_sync_tool_success() {
     assert!(result.is_ok(), "Tool invocation should succeed");
 
     let tool_result = result.unwrap();
-    assert_eq!(tool_result.id, "test_call_1");
-    assert_eq!(tool_result.name, "simple_sync_tool");
-    assert_eq!(tool_result.response.len(), 1);
+    if let Part::ToolResult { id, name, parts, .. } = tool_result {
+        assert_eq!(id, "test_call_1");
+        assert_eq!(name, "simple_sync_tool");
+        // Content should be in the first part as text
+        assert_eq!(parts.len(), 1);
+        if let Part::Text { text, .. } = &parts[0] {
+            let content: serde_json::Value = serde_json::from_str(text).unwrap();
+            assert!(content.is_object(), "Content should be a JSON object");
+            assert!(content.get("result").is_some(), "Should have result field");
+            assert!(content.get("timestamp").is_some(), "Should have timestamp field");
+        } else {
+            panic!("Expected text part");
+        }
+    } else {
+        panic!("Expected ToolResult");
+    }
 
     // Verify state was updated
     assert_eq!(service.get_call_count(), initial_count + 1);
@@ -249,7 +262,7 @@ async fn test_toolbox_sync_tool_success() {
 async fn test_toolbox_async_tool_success() {
     let service = TestToolService::new("AsyncTest");
 
-    let call = ToolCall::new(
+    let call = ToolUse::new(
         "async_call_1",
         "simple_async_tool",
         json!({
@@ -262,8 +275,12 @@ async fn test_toolbox_async_tool_success() {
     assert!(result.is_ok());
 
     let tool_result = result.unwrap();
-    assert_eq!(tool_result.id, "async_call_1");
-    assert_eq!(tool_result.name, "simple_async_tool");
+    if let Part::ToolResult { id, name, .. } = tool_result {
+        assert_eq!(id, "async_call_1");
+        assert_eq!(name, "simple_async_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
     assert_eq!(service.get_last_operation(), "simple_async_tool");
 }
 
@@ -271,13 +288,17 @@ async fn test_toolbox_async_tool_success() {
 async fn test_toolbox_no_input_tool() {
     let service = TestToolService::new("NoInputTest");
 
-    let call = ToolCall::new("no_input_call", "no_input_tool", json!({}));
+    let call = ToolUse::new("no_input_call", "no_input_tool", json!({}));
 
     let result = service.invoke(call).await;
     assert!(result.is_ok());
 
     let tool_result = result.unwrap();
-    assert_eq!(tool_result.name, "no_input_tool");
+    if let Part::ToolResult { name, .. } = tool_result {
+        assert_eq!(name, "no_input_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
     assert_eq!(service.get_last_operation(), "no_input_tool");
 }
 
@@ -285,7 +306,7 @@ async fn test_toolbox_no_input_tool() {
 async fn test_toolbox_optional_input_with_data() {
     let service = TestToolService::new("OptionalTest");
 
-    let call = ToolCall::new(
+    let call = ToolUse::new(
         "opt_call_1",
         "optional_input_tool",
         json!({
@@ -298,27 +319,35 @@ async fn test_toolbox_optional_input_with_data() {
     assert!(result.is_ok());
 
     let tool_result = result.unwrap();
-    assert_eq!(tool_result.name, "optional_input_tool");
+    if let Part::ToolResult { name, .. } = tool_result {
+        assert_eq!(name, "optional_input_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
 }
 
 #[tokio::test]
 async fn test_toolbox_optional_input_none() {
     let service = TestToolService::new("OptionalNoneTest");
 
-    let call = ToolCall::new("opt_none_call", "optional_input_tool", Value::Null);
+    let call = ToolUse::new("opt_none_call", "optional_input_tool", Value::Null);
 
     let result = service.invoke(call).await;
     assert!(result.is_ok());
 
     let tool_result = result.unwrap();
-    assert_eq!(tool_result.name, "optional_input_tool");
+    if let Part::ToolResult { name, .. } = tool_result {
+        assert_eq!(name, "optional_input_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
 }
 
 #[tokio::test]
 async fn test_toolbox_complex_tool_success() {
     let service = TestToolService::new("ComplexTest");
 
-    let call = ToolCall::new(
+    let call = ToolUse::new(
         "complex_call",
         "complex_tool",
         json!({
@@ -335,7 +364,11 @@ async fn test_toolbox_complex_tool_success() {
     assert!(result.is_ok());
 
     let tool_result = result.unwrap();
-    assert_eq!(tool_result.name, "complex_tool");
+    if let Part::ToolResult { name, .. } = tool_result {
+        assert_eq!(name, "complex_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
 }
 
 // Error handling tests
@@ -343,7 +376,7 @@ async fn test_toolbox_complex_tool_success() {
 async fn test_toolbox_user_error_handling() {
     let service = TestToolService::new("ErrorTest");
 
-    let call = ToolCall::new(
+    let call = ToolUse::new(
         "error_call",
         "simple_sync_tool",
         json!({
@@ -369,7 +402,7 @@ async fn test_toolbox_user_error_handling() {
 async fn test_toolbox_input_deserialization_error() {
     let service = TestToolService::new("DeserializeTest");
 
-    let call = ToolCall::new(
+    let call = ToolUse::new(
         "bad_input_call",
         "simple_sync_tool",
         json!("invalid_input_type"), // String instead of object
@@ -391,7 +424,7 @@ async fn test_toolbox_input_deserialization_error() {
 async fn test_toolbox_missing_field_error() {
     let service = TestToolService::new("MissingFieldTest");
 
-    let call = ToolCall::new(
+    let call = ToolUse::new(
         "missing_field_call",
         "simple_sync_tool",
         json!({
@@ -415,7 +448,7 @@ async fn test_toolbox_missing_field_error() {
 async fn test_toolbox_tool_not_found() {
     let service = TestToolService::new("NotFoundTest");
 
-    let call = ToolCall::new("not_found_call", "non_existent_tool", json!({}));
+    let call = ToolUse::new("not_found_call", "non_existent_tool", json!({}));
 
     let result = service.invoke(call).await;
     assert!(result.is_err());
@@ -433,7 +466,7 @@ async fn test_toolbox_tool_not_found() {
 async fn test_toolbox_failing_tool() {
     let service = TestToolService::new("FailTest");
 
-    let call = ToolCall::new(
+    let call = ToolUse::new(
         "fail_call",
         "failing_tool",
         json!({
@@ -571,18 +604,18 @@ async fn test_toolbox_full_workflow() {
 
     // Test multiple tool invocations
     let calls = vec![
-        ToolCall::new(
+        ToolUse::new(
             "call1",
             "simple_sync_tool",
             json!({"value": 1, "label": "first"}),
         ),
-        ToolCall::new(
+        ToolUse::new(
             "call2",
             "simple_async_tool",
             json!({"value": 2, "label": "second"}),
         ),
-        ToolCall::new("call3", "no_input_tool", json!({})),
-        ToolCall::new(
+        ToolUse::new("call3", "no_input_tool", json!({})),
+        ToolUse::new(
             "call4",
             "optional_input_tool",
             json!({"data": "test", "count": 3}),
@@ -601,10 +634,26 @@ async fn test_toolbox_full_workflow() {
     assert_eq!(service.get_call_count(), initial_count + 4);
 
     // Verify correct tool names in results
-    assert_eq!(results[0].name, "simple_sync_tool");
-    assert_eq!(results[1].name, "simple_async_tool");
-    assert_eq!(results[2].name, "no_input_tool");
-    assert_eq!(results[3].name, "optional_input_tool");
+    if let Part::ToolResult { name, .. } = &results[0] {
+        assert_eq!(name, "simple_sync_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
+    if let Part::ToolResult { name, .. } = &results[1] {
+        assert_eq!(name, "simple_async_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
+    if let Part::ToolResult { name, .. } = &results[2] {
+        assert_eq!(name, "no_input_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
+    if let Part::ToolResult { name, .. } = &results[3] {
+        assert_eq!(name, "optional_input_tool");
+    } else {
+        panic!("Expected ToolResult");
+    }
 }
 
 #[tokio::test]
@@ -618,7 +667,7 @@ async fn test_toolbox_concurrent_invocations() {
     for i in 0..5 {
         let service_clone = Arc::clone(&service);
         let handle = tokio::spawn(async move {
-            let call = ToolCall::new(
+            let call = ToolUse::new(
                 format!("concurrent_call_{i}"),
                 "simple_async_tool",
                 json!({
@@ -637,7 +686,11 @@ async fn test_toolbox_concurrent_invocations() {
     // Verify all succeeded
     for result in results {
         let tool_result = result.unwrap().unwrap();
-        assert_eq!(tool_result.name, "simple_async_tool");
+        if let Part::ToolResult { name, .. } = tool_result {
+            assert_eq!(name, "simple_async_tool");
+        } else {
+            panic!("Expected ToolResult");
+        }
     }
 
     // Verify call count increased by 5
@@ -648,50 +701,46 @@ async fn test_toolbox_concurrent_invocations() {
 async fn test_toolbox_infallible_tool() {
     let service = TestToolService::new("InfallibleTest");
 
-    let call = ToolCall::new("infallible_call", "infailable_tool", json!({}));
+    let call = ToolUse::new("infallible_call", "infailable_tool", json!({}));
 
     let result = service.invoke(call).await;
     assert!(result.is_ok(), "Infallible tool invocation should succeed");
 
     let tool_result = result.unwrap();
-    assert_eq!(tool_result.id, "infallible_call");
-    assert_eq!(tool_result.name, "infailable_tool");
-    assert_eq!(tool_result.response.len(), 1);
-
-    // Check that the response contains the expected success message
-    if let Some(message) = tool_result.response.first()
-        && let Some(content) = message.content.first() {
-            match content {
-                Part::ToolResult { content, .. } => {
-                    assert_eq!(*content, json!("Success"));
-                }
-                _ => panic!("Expected tool result content"),
-            }
+    if let Part::ToolResult { id, name, parts, .. } = tool_result {
+        assert_eq!(id, "infallible_call");
+        assert_eq!(name, "infailable_tool");
+        assert_eq!(parts.len(), 1);
+        if let Part::Text { text, .. } = &parts[0] {
+            assert_eq!(text, "Success");
+        } else {
+            panic!("Expected text part");
         }
+    } else {
+        panic!("Expected ToolResult");
+    }
 }
 
 #[tokio::test]
 async fn test_toolbox_side_effect_tool() {
     let service = TestToolService::new("SideEffectTest");
 
-    let call = ToolCall::new("side_effect_call", "side_effect_tool", json!({}));
+    let call = ToolUse::new("side_effect_call", "side_effect_tool", json!({}));
 
     let result = service.invoke(call).await;
     assert!(result.is_ok(), "Side effect tool invocation should succeed");
 
     let tool_result = result.unwrap();
-    assert_eq!(tool_result.id, "side_effect_call");
-    assert_eq!(tool_result.name, "side_effect_tool");
-    assert_eq!(tool_result.response.len(), 1);
-
-    // Check that the response contains null (since it's a side-effect tool)
-    if let Some(message) = tool_result.response.first()
-        && let Some(content) = message.content.first() {
-            match content {
-                Part::ToolResult { content, .. } => {
-                    assert_eq!(*content, serde_json::Value::Null);
-                }
-                _ => panic!("Expected tool result content"),
-            }
+    if let Part::ToolResult { id, name, parts, .. } = tool_result {
+        assert_eq!(id, "side_effect_call");
+        assert_eq!(name, "side_effect_tool");
+        assert_eq!(parts.len(), 1);
+        if let Part::Text { text, .. } = &parts[0] {
+            assert_eq!(text, "Operation completed successfully");
+        } else {
+            panic!("Expected text part");
         }
+    } else {
+        panic!("Expected ToolResult");
+    }
 }

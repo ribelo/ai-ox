@@ -1,4 +1,4 @@
-use crate::tool::{Tool as AiOxTool, ToolCall};
+use crate::tool::{Tool as AiOxTool, ToolUse};
 pub use gemini_ox::tool::{FunctionMetadata as GeminiFunctionMetadata, Tool as GeminiTool};
 use gemini_ox::content::part::FunctionCall as GeminiFunctionCall;
 
@@ -23,12 +23,13 @@ impl From<AiOxTool> for GeminiTool {
     }
 }
 
-impl From<GeminiFunctionCall> for ToolCall {
+impl From<GeminiFunctionCall> for ToolUse {
     fn from(gemini_call: GeminiFunctionCall) -> Self {
-        Self {
+        ToolUse {
             id: uuid::Uuid::new_v4().to_string(), // Gemini does not provide an ID for tool calls
             name: gemini_call.name,
             args: gemini_call.args.unwrap_or_default(),
+            ext: Some(std::collections::BTreeMap::new()),
         }
     }
 }
@@ -111,8 +112,10 @@ mod tests {
             role: MessageRole::User,
             content: vec![Part::Text {
                 text: "Search for information about Rust programming language".to_string(),
+                ext: std::collections::BTreeMap::new(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
+            ext: Some(std::collections::BTreeMap::new()),
         };
 
         // This should work without errors (GoogleSearch tool should be available)

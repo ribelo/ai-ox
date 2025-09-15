@@ -75,7 +75,6 @@ pub enum SttError {
 impl From<groq_ox::GroqRequestError> for SttError {
     fn from(error: groq_ox::GroqRequestError) -> Self {
         match error {
-            groq_ox::GroqRequestError::MissingApiKey => SttError::MissingApiKey,
             groq_ox::GroqRequestError::RateLimit => SttError::RateLimitExceeded,
             groq_ox::GroqRequestError::InvalidModel(model) => SttError::ModelNotFound(model),
             other => SttError::Provider(Box::new(other)),
@@ -83,17 +82,7 @@ impl From<groq_ox::GroqRequestError> for SttError {
     }
 }
 
-#[cfg(feature = "mistral")]
-impl From<mistral_ox::MistralRequestError> for SttError {
-    fn from(error: mistral_ox::MistralRequestError) -> Self {
-        match error {
-            mistral_ox::MistralRequestError::MissingApiKey => SttError::MissingApiKey,
-            mistral_ox::MistralRequestError::RateLimit => SttError::RateLimitExceeded,
-            mistral_ox::MistralRequestError::InvalidModel(model) => SttError::ModelNotFound(model),
-            other => SttError::Provider(Box::new(other)),
-        }
-    }
-}
+
 
 #[cfg(feature = "gemini")]
 impl From<crate::errors::GenerateContentError> for SttError {

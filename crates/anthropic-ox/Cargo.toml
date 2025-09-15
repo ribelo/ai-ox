@@ -14,11 +14,12 @@ leaky-bucket = ["dep:leaky-bucket"]
 # Core messaging and basic functionality
 core = ["tokens", "models"]
 # Data processing APIs (batches, files)
-data-processing = ["batches", "files"] 
+data-processing = ["batches", "files"]
 # Administrative and management APIs
 admin = []
 # Experimental and beta features
 experimental = []
+
 # Granular feature control for backwards compatibility
 tokens = []
 models = []
@@ -51,6 +52,7 @@ tap = "1.0"
 async-stream = "0.3"
 tokio-stream = "0.1"
 backon = { workspace = true }
+
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

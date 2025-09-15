@@ -8,14 +8,15 @@ default = []
 gemini = ["dep:gemini-ox"]
 openrouter = ["dep:openrouter-ox"]
 mistral = ["dep:mistral-ox"]
-groq = ["dep:groq-ox"] 
+groq = ["dep:groq-ox"]
 anthropic = ["dep:anthropic-ox"]
 bedrock = [
     "dep:aws-config",
     "dep:aws-sdk-bedrockruntime",
     "dep:aws-smithy-types"
 ]
-test = ["gemini", "openrouter", "mistral", "groq", "anthropic"]
+
+test = ["gemini", "openrouter", "mistral", "groq", "anthropic", "bedrock"]
 
 [dependencies]
 serde = { workspace = true }
@@ -44,10 +45,17 @@ async-stream = { version = "0.3.5" }
 uuid = { version = "1.8.0", features = ["v4"] }
 async-trait = { workspace = true }
 
+
 [dev-dependencies]
 ai-ox-macros = { path = "../ai-ox-macros" }
+conversion-ox = { path = "../conversion-ox", features = ["all"] }
+anthropic-ox = { path = "../anthropic-ox" }
+openai-ox = { path = "../openai-ox" }
+openrouter-ox = { path = "../openrouter-ox" }
+gemini-ox = { path = "../gemini-ox" }
 ai-ox-common = { path = "../ai-ox-common" }
 anyhow = { workspace = true }
 futures-util = { workspace = true }
 schemars = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+md5 = "0.7"

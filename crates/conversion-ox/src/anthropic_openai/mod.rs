@@ -56,6 +56,7 @@ use ai_ox_common::openai_format::{Message as OpenAIMessage, MessageRole as OpenA
 use crate::ConversionError;
 use self::constants::*;
 use serde_json;
+use uuid;
 
 /// Helper function to extract text from Anthropic content blocks
 fn extract_text_from_contents(contents: Vec<AnthropicContent>) -> String {
@@ -68,6 +69,49 @@ fn extract_text_from_contents(contents: Vec<AnthropicContent>) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Helper function to decode a tool result from encoded text format
+fn decode_tool_result_from_text(text: &str) -> Option<anthropic_ox::tool::ToolResult> {
+    // Check if the text starts with our encoded tool result format
+    if let Some(rest) = text.strip_prefix("[TOOL_RESULT:") {
+        if let Some(end_pos) = rest.find("]") {
+            let tool_use_id = rest[..end_pos].to_string();
+            let encoded_content = &rest[end_pos + 1..];
+
+            let mut content_parts = Vec::new();
+
+            for part in encoded_content.split('|') {
+                if let Some(text_part) = part.strip_prefix("text:") {
+                    content_parts.push(anthropic_ox::tool::ToolResultContent::Text {
+                        text: text_part.to_string()
+                    });
+                } else if let Some(image_part) = part.strip_prefix("image:") {
+                    if let Some(colon_pos) = image_part.find(':') {
+                        let media_type = image_part[..colon_pos].to_string();
+                        let data = image_part[colon_pos + 1..].to_string();
+                        content_parts.push(anthropic_ox::tool::ToolResultContent::Image {
+                            source: anthropic_ox::message::ImageSource::Base64 {
+                                media_type,
+                                data,
+                            }
+                        });
+                    }
+                }
+            }
+
+            if !content_parts.is_empty() {
+                return Some(anthropic_ox::tool::ToolResult {
+                    tool_use_id,
+                    content: content_parts,
+                    is_error: None,
+                    cache_control: None,
+                });
+            }
+        }
+    }
+
+    None
 }
 
 
@@ -403,22 +447,27 @@ pub fn openai_responses_to_anthropic_response(
                 }
             }
             ResponseOutputItem::Message { id: _, status: _, content, role: _ } => {
-                // Extract text from message content items
-                for content_item in content {
-                    match content_item {
-                        ResponseOutputContent::Text { text, annotations: _ } => {
-                            content_blocks.push(AnthropicContent::Text(
-                                AnthropicText::new(text)
-                            ));
-                        }
-                        ResponseOutputContent::Refusal { refusal } => {
-                            content_blocks.push(AnthropicContent::Text(
-                                AnthropicText::new(format!("[Refusal: {}]", refusal))
-                            ));
-                        }
-                    }
-                }
-            }
+                 // Extract text from message content items
+                 for content_item in content {
+                     match content_item {
+                         ResponseOutputContent::Text { text, annotations: _ } => {
+                             // Check if this is an encoded tool result
+                             if let Some(tool_result) = decode_tool_result_from_text(&text) {
+                                 content_blocks.push(AnthropicContent::ToolResult(tool_result));
+                             } else {
+                                 content_blocks.push(AnthropicContent::Text(
+                                     AnthropicText::new(text)
+                                 ));
+                             }
+                         }
+                         ResponseOutputContent::Refusal { refusal } => {
+                             content_blocks.push(AnthropicContent::Text(
+                                 AnthropicText::new(format!("[Refusal: {}]", refusal))
+                             ));
+                         }
+                     }
+                 }
+             }
             ResponseOutputItem::FunctionToolCall { id, details: _ } |
             ResponseOutputItem::FileSearchToolCall { id, details: _ } |
             ResponseOutputItem::ComputerToolCall { id, details: _ } |
@@ -500,13 +549,45 @@ pub fn anthropic_to_openai_responses_response(
                     content: None,
                 });
             }
-            AnthropicContent::Text(text) => {
-                // Collect text for a single message at the end
-                all_text.push(text.text);
-            }
-            _ => {
-                log::debug!("Skipping unsupported content type in conversion");
-            }
+             AnthropicContent::Text(text) => {
+                 // Collect text for a single message at the end
+                 all_text.push(text.text);
+             }
+             AnthropicContent::ToolResult(tool_result) => {
+                 // Convert tool result to a message output item with structured encoding
+                 let mut result_parts = Vec::new();
+
+                 for content in &tool_result.content {
+                     match content {
+                         anthropic_ox::tool::ToolResultContent::Text { text } => {
+                             result_parts.push(format!("text:{}", text));
+                         }
+                         anthropic_ox::tool::ToolResultContent::Image { source } => {
+                             match source {
+                                 anthropic_ox::message::ImageSource::Base64 { media_type, data } => {
+                                     result_parts.push(format!("image:{}:{}", media_type, data));
+                                 }
+                             }
+                         }
+                     }
+                 }
+
+                 if !result_parts.is_empty() {
+                     let encoded_content = result_parts.join("|");
+                     output_items.push(ResponseOutputItem::Message {
+                         id: format!("tool_result_{}", uuid::Uuid::new_v4()),
+                         status: "completed".to_string(),
+                         content: vec![ResponseOutputContent::Text {
+                             text: format!("[TOOL_RESULT:{}]{}", tool_result.tool_use_id, encoded_content),
+                             annotations: vec![],
+                         }],
+                         role: ROLE_ASSISTANT.to_string(),
+                     });
+                 }
+             }
+             _ => {
+                 log::debug!("Skipping unsupported content type in conversion");
+             }
         }
     }
 
@@ -599,7 +680,7 @@ pub fn openai_responses_to_anthropic_request(
     validate_request_params(&openai_request.model, openai_request.max_output_tokens)?;
     
     // Use instructions field as system content if present
-    let mut system_content = openai_request.instructions.clone();
+    let system_content = openai_request.instructions.clone();
     
     // Extract messages from input
     let openai_messages = match openai_request.input {

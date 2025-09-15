@@ -13,7 +13,8 @@ use crate::{
 use async_stream::try_stream;
 use bon::Builder;
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
-use groq_ox::{Groq, tool::ToolChoice, request::ResponseFormat};
+use groq_ox::{Groq, request::ResponseFormat};
+use ai_ox_common::openai_format::ToolChoice;
 
 /// Returns the default tool choice for Groq models.
 /// Defaults to Auto, allowing the model to decide when to use tools.
@@ -83,7 +84,7 @@ impl Model for GroqModel {
                 request,
                 self.model.clone(),
                 self.system_instruction.clone(),
-                &self.tool_choice,
+                Some(self.tool_choice.clone()),
             )?;
             let response = self.client
                 .send(&groq_request)
@@ -106,7 +107,7 @@ impl Model for GroqModel {
                 request,
                 self.model.clone(),
                 self.system_instruction.clone(),
-                &self.tool_choice,
+                Some(self.tool_choice.clone()),
             )?;
             let mut response_stream = client.stream(&groq_request);
 
@@ -133,7 +134,7 @@ impl Model for GroqModel {
                 request,
                 self.model.clone(),
                 self.system_instruction.clone(),
-                &self.tool_choice,
+                Some(self.tool_choice.clone()),
             )?;
             
             // Set response format to JSON schema

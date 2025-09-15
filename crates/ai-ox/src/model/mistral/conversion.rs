@@ -9,12 +9,13 @@ use mistral_ox::{
 
 use crate::{
     ModelResponse,
-    content::{delta::{StreamEvent, StreamStop, FinishReason}, message::{Message, MessageRole}, part::Part},
+    content::{delta::{StreamEvent, StreamStop, FinishReason}, message::{Message, MessageRole}, part::{Part, DataRef}},
     errors::GenerateContentError,
     model::ModelRequest,
-    tool::call::ToolCall,
+    tool::{ToolUse, encode_tool_result_parts, decode_tool_result_parts},
     usage::Usage,
 };
+use std::collections::BTreeMap;
 
 use super::MistralError;
 
@@ -23,7 +24,7 @@ pub fn convert_request_to_mistral(
     request: ModelRequest,
     model: String,
     system_instruction: Option<String>,
-    tool_choice: &MistralToolChoice,
+    tool_choice: Option<mistral_ox::tool::ToolChoice>,
 ) -> Result<ChatRequest, GenerateContentError> {
     let mut mistral_messages = Vec::new();
     
@@ -40,12 +41,12 @@ pub fn convert_request_to_mistral(
 
     // Convert tools if present
     if let Some(tools) = request.tools {
-        let mistral_tools = convert_tools_to_mistral(tools)?;
+        let common_tools = convert_tools_to_mistral(tools)?;
         Ok(ChatRequest::builder()
             .model(model)
             .messages(mistral_messages)
-            .tools(mistral_tools)
-            .tool_choice(tool_choice.clone())
+            .tools(common_tools)
+            .tool_choice(ai_ox_common::openai_format::ToolChoice::Auto)
             .build())
     } else {
         Ok(ChatRequest::builder()
@@ -66,39 +67,50 @@ fn convert_message_to_mistral(message: Message) -> Result<Vec<MistralMessage>, G
             
             for part in message.content {
                 match part {
-                    Part::Text { text } => {
+                    Part::Text { text, .. } => {
                         text_parts.push(MistralContentPart::Text(MistralTextContent::new(text)));
                     }
-                    Part::Image { .. } => {
-                        // Mistral supports images through Pixtral models
-                        // For now, we'll skip image parts
-                        // TODO: Implement image support when needed
-                    }
-                    Part::Audio { audio_uri } => {
-                        text_parts.push(MistralContentPart::Audio(MistralAudioContent::new(audio_uri)));
-                    }
-                    Part::File(_) => {
-                        // Mistral doesn't support generic file uploads
-                    }
-                    Part::ToolCall { .. } => {
-                        return Err(GenerateContentError::message_conversion(
-                            "Tool calls should not appear in user messages",
-                        ));
-                    }
-                    Part::ToolResult { call_id, name: _, content } => {
-                        // If we have accumulated text, flush it as a user message first
-                        if !text_parts.is_empty() {
-                            messages.push(MistralMessage::User(MistralUserMessage::new(
-                                std::mem::take(&mut text_parts)
-                            )));
-                        }
-                        
-                        // Each tool result becomes a separate tool message
-                        let content_str = serde_json::to_string(&content)
-                            .map_err(|e| GenerateContentError::message_conversion(e.to_string()))?;
-                        messages.push(MistralMessage::Tool(MistralToolMessage::new(call_id, content_str)));
-                    }
-                }
+                      Part::Blob { data_ref, mime_type, .. } => {
+                          if mime_type.starts_with("audio/") {
+                              match data_ref {
+                                  DataRef::Uri { uri } => {
+                                      text_parts.push(MistralContentPart::Audio(MistralAudioContent::new(uri)));
+                                  }
+                                  DataRef::Base64 { .. } => {
+                                      return Err(GenerateContentError::message_conversion(
+                                          format!("Mistral does not support base64-encoded audio. Upload the audio and provide a URI instead. (MIME type: {})", mime_type)
+                                      ));
+                                  }
+                              }
+                          } else {
+                              return Err(GenerateContentError::message_conversion(
+                                  format!("Mistral does not support {} content in messages. Only audio content is supported.", mime_type)
+                              ));
+                          }
+                      }
+                     Part::ToolUse { .. } => {
+                         return Err(GenerateContentError::message_conversion(
+                             "Tool calls should not appear in user messages",
+                         ));
+                     }
+                     Part::ToolResult { id, name, parts, .. } => {
+                         // If we have accumulated text, flush it as a user message first
+                         if !text_parts.is_empty() {
+                             messages.push(MistralMessage::User(MistralUserMessage::new(
+                                 std::mem::take(&mut text_parts)
+                             )));
+                         }
+
+                         // Each tool result becomes a separate tool message
+                         let content_str = encode_tool_result_parts(&name, &parts)?;
+                         messages.push(MistralMessage::Tool(MistralToolMessage::new(id, content_str)));
+                     }
+                     Part::Opaque { provider, kind, .. } => {
+                         return Err(GenerateContentError::message_conversion(
+                             format!("Cannot convert opaque content from provider '{}' of type '{}' to Mistral format", provider, kind)
+                         ));
+                     }
+                 }
             }
             
             // If we still have text parts, add them as a final user message
@@ -116,60 +128,80 @@ fn convert_message_to_mistral(message: Message) -> Result<Vec<MistralMessage>, G
         MessageRole::Assistant => {
             let mut text_content = String::new();
             let mut tool_calls = Vec::new();
-            
+
             for part in message.content {
                 match part {
-                    Part::Text { text } => {
+                    Part::Text { text, .. } => {
                         text_content.push_str(&text);
                     }
-                    Part::ToolCall { id, name, args } => {
-                        let args_str = serde_json::to_string(&args)
-                            .map_err(|e| GenerateContentError::message_conversion(e.to_string()))?;
-                        tool_calls.push(MistralToolCall {
-                            id,
-                            r#type: "function".to_string(),
-                            function: mistral_ox::tool::FunctionCall {
-                                name,
-                                arguments: args_str,
-                            },
-                            index: Some(tool_calls.len() as u32),
-                        });
-                    }
-                    _ => {}
+                     Part::ToolUse { id, name, args, .. } => {
+                          let args_str = serde_json::to_string(&args)
+                              .map_err(|e| GenerateContentError::message_conversion(e.to_string()))?;
+                          tool_calls.push(MistralToolCall {
+                              id,
+                              r#type: "function".to_string(),
+                              function: mistral_ox::tool::FunctionCall {
+                                  name,
+                                  arguments: args_str,
+                              },
+                              index: Some(tool_calls.len() as u32),
+                          });
+                      }
+                        Part::Blob { mime_type, .. } => {
+                            return Err(GenerateContentError::message_conversion(
+                                format!("Mistral does not support {} content in assistant messages", mime_type)
+                            ));
+                        }
+                      Part::ToolResult { .. } => {
+                          return Err(GenerateContentError::message_conversion(
+                              "ToolResult should not appear in assistant messages - use a separate message".to_string()
+                          ));
+                      }
+                      Part::Opaque { provider, kind, .. } => {
+                          return Err(GenerateContentError::message_conversion(
+                              format!("Cannot convert opaque content from provider '{}' of type '{}' to Mistral format", provider, kind)
+                          ));
+                      }
                 }
             }
-            
+
             let mut assistant_msg = MistralAssistantMessage::text(text_content);
             if !tool_calls.is_empty() {
                 assistant_msg.tool_calls = Some(tool_calls);
             }
-            
+
             Ok(vec![MistralMessage::Assistant(assistant_msg)])
+        }
+        MessageRole::System => {
+            return Err(GenerateContentError::message_conversion("System messages not supported in Mistral"));
+        }
+        MessageRole::Unknown(role) => {
+            return Err(GenerateContentError::message_conversion(&format!("Unknown role: {}", role)));
         }
     }
 }
 
 /// Convert from ai-ox Tools to Mistral Tools
-fn convert_tools_to_mistral(tools: Vec<crate::tool::Tool>) -> Result<Vec<MistralTool>, GenerateContentError> {
-    let mut mistral_tools = Vec::new();
-    
+fn convert_tools_to_mistral(tools: Vec<crate::tool::Tool>) -> Result<Vec<ai_ox_common::openai_format::Tool>, GenerateContentError> {
+    let mut common_tools = Vec::new();
+
     for tool in tools {
         match tool {
             crate::tool::Tool::FunctionDeclarations(functions) => {
-                for func in functions {
-                    // Defensive fix: if the schema object is {} (tool with no params) 
+                for function in functions {
+                    // Defensive fix: if the schema object is {} (tool with no params)
                     // Mistral rejects it unless you omit the field or supply null
-                    let parameters = if func.parameters == serde_json::json!({}) { 
-                        None 
-                    } else { 
-                        Some(func.parameters) 
+                    let parameters = if function.parameters == serde_json::json!({}) {
+                        None
+                    } else {
+                        Some(function.parameters)
                     };
-                    
-                    mistral_tools.push(MistralTool {
+
+                    common_tools.push(ai_ox_common::openai_format::Tool {
                         r#type: "function".to_string(),
-                        function: ToolFunction {
-                            name: func.name,
-                            description: func.description.unwrap_or_default(),
+                        function: ai_ox_common::openai_format::Function {
+                            name: function.name,
+                            description: function.description,
                             parameters,
                         },
                     });
@@ -177,12 +209,12 @@ fn convert_tools_to_mistral(tools: Vec<crate::tool::Tool>) -> Result<Vec<Mistral
             }
             #[cfg(feature = "gemini")]
             crate::tool::Tool::GeminiTool(_) => {
-                // Skip gemini-specific tools for Mistral
+                // Skip Gemini tools for Mistral
             }
         }
     }
-    
-    Ok(mistral_tools)
+
+    Ok(common_tools)
 }
 
 /// Convert from Mistral ChatResponse to ai-ox ModelResponse
@@ -196,12 +228,11 @@ pub fn convert_mistral_response_to_ai_ox(
     let mut parts = Vec::new();
     
     // Convert content
-    for content_part in choice.message.content.iter() {
-        if let Some(text_content) = content_part.as_text() {
-            parts.push(Part::Text {
-                text: text_content.text.clone(),
-            });
-        }
+    if let Some(content) = &choice.message.content {
+        parts.push(Part::Text {
+            text: content.clone(),
+            ext: BTreeMap::new(),
+        });
     }
     
     // Convert tool calls
@@ -210,10 +241,11 @@ pub fn convert_mistral_response_to_ai_ox(
             let args: serde_json::Value = serde_json::from_str(&tc.function.arguments)
                 .unwrap_or(serde_json::Value::Null);
             
-            parts.push(Part::ToolCall {
+            parts.push(Part::ToolUse {
                 id: tc.id.clone(),
                 name: tc.function.name.clone(),
                 args,
+                ext: BTreeMap::new(),
             });
         }
     }
@@ -221,7 +253,8 @@ pub fn convert_mistral_response_to_ai_ox(
     let message = Message {
         role: MessageRole::Assistant,
         content: parts,
-        timestamp: chrono::Utc::now(),
+        timestamp: Some(chrono::Utc::now()),
+        ext: Some(BTreeMap::new()),
     };
     
     let usage = response.usage.map(|u| {
@@ -264,10 +297,11 @@ pub fn convert_response_to_stream_events(
                      &tc_delta.function.as_ref().and_then(|f| f.arguments.as_ref())) {
                     
                     if let Ok(args_value) = serde_json::from_str::<serde_json::Value>(args) {
-                        events.push(Ok(StreamEvent::ToolCall(ToolCall {
+                        events.push(Ok(StreamEvent::ToolCall(ToolUse {
                             id: id.clone(),
                             name: name.to_string(),
                             args: args_value,
+                            ext: Some(BTreeMap::new()),
                         })));
                     }
                 }
@@ -308,19 +342,22 @@ mod tests {
         let ai_msg = Message {
             role: MessageRole::User,
             content: vec![
-                Part::Text { text: "Here are the results:".into() },
-                Part::ToolResult { 
-                    call_id: "tool_call_1".into(), 
-                    name: "get_weather".into(), 
-                    content: json!({"temperature": 72, "condition": "sunny"})
+                Part::Text { text: "Here are the results:".into(), ext: BTreeMap::new() },
+                Part::ToolResult {
+                    id: "tool_call_1".into(),
+                    name: "get_weather".into(),
+                    parts: vec![Part::text(serde_json::to_string(&json!({"temperature": 72, "condition": "sunny"})).unwrap())],
+                    ext: BTreeMap::new(),
                 },
-                Part::ToolResult { 
-                    call_id: "tool_call_2".into(), 
-                    name: "get_news".into(), 
-                    content: json!({"headlines": ["News 1", "News 2"]})
+                Part::ToolResult {
+                    id: "tool_call_2".into(),
+                    name: "get_news".into(),
+                    parts: vec![Part::text(serde_json::to_string(&json!({"headlines": ["News 1", "News 2"]})).unwrap())],
+                    ext: BTreeMap::new(),
                 },
             ],
-            timestamp: Utc::now(),
+            timestamp: Some(Utc::now()),
+            ext: None,
         };
 
         // Convert to Mistral messages
@@ -346,19 +383,33 @@ mod tests {
         match &result[1] {
             MistralMessage::Tool(tool_msg) => {
                 assert_eq!(tool_msg.tool_call_id, "tool_call_1");
-                let content: serde_json::Value = serde_json::from_str(&tool_msg.content).unwrap();
-                assert_eq!(content["temperature"], 72);
-                assert_eq!(content["condition"], "sunny");
+                let (name, parts) = decode_tool_result_parts(&tool_msg.content).unwrap();
+                assert_eq!(name, "get_weather");
+                assert_eq!(parts.len(), 1);
+                if let Part::Text { text, .. } = &parts[0] {
+                    let content: serde_json::Value = serde_json::from_str(text).unwrap();
+                    assert_eq!(content["temperature"], 72);
+                    assert_eq!(content["condition"], "sunny");
+                } else {
+                    panic!("Expected text part in tool result");
+                }
             }
             _ => panic!("Expected tool message second"),
         }
-        
+
         // Third message should be tool message for second tool result
         match &result[2] {
             MistralMessage::Tool(tool_msg) => {
                 assert_eq!(tool_msg.tool_call_id, "tool_call_2");
-                let content: serde_json::Value = serde_json::from_str(&tool_msg.content).unwrap();
-                assert!(content["headlines"].is_array());
+                let (name, parts) = decode_tool_result_parts(&tool_msg.content).unwrap();
+                assert_eq!(name, "get_news");
+                assert_eq!(parts.len(), 1);
+                if let Part::Text { text, .. } = &parts[0] {
+                    let content: serde_json::Value = serde_json::from_str(text).unwrap();
+                    assert!(content["headlines"].is_array());
+                } else {
+                    panic!("Expected text part in tool result");
+                }
             }
             _ => panic!("Expected tool message third"),
         }
@@ -370,18 +421,21 @@ mod tests {
         let ai_msg = Message {
             role: MessageRole::User,
             content: vec![
-                Part::ToolResult { 
-                    call_id: "call_1".into(), 
-                    name: "func1".into(), 
-                    content: json!({"result": "A"})
+                Part::ToolResult {
+                    id: "call_1".into(),
+                    name: "func1".into(),
+                    parts: vec![Part::text(serde_json::to_string(&json!({"result": "A"})).unwrap())],
+                    ext: BTreeMap::new(),
                 },
-                Part::ToolResult { 
-                    call_id: "call_2".into(), 
-                    name: "func2".into(), 
-                    content: json!({"result": "B"})
+                Part::ToolResult {
+                    id: "call_2".into(),
+                    name: "func2".into(),
+                    parts: vec![Part::text(serde_json::to_string(&json!({"result": "B"})).unwrap())],
+                    ext: BTreeMap::new(),
                 },
             ],
-            timestamp: Utc::now(),
+            timestamp: Some(Utc::now()),
+            ext: None,
         };
 
         let result = convert_message_to_mistral(ai_msg).unwrap();
@@ -400,21 +454,24 @@ mod tests {
         let ai_msg = Message {
             role: MessageRole::User,
             content: vec![
-                Part::Text { text: "First text".into() },
-                Part::ToolResult { 
-                    call_id: "call_1".into(), 
-                    name: "func1".into(), 
-                    content: json!({"data": 1})
+                Part::Text { text: "First text".into(), ext: BTreeMap::new() },
+                Part::ToolResult {
+                    id: "call_1".into(),
+                    name: "func1".into(),
+                    parts: vec![Part::text(serde_json::to_string(&json!({"data": 1})).unwrap())],
+                    ext: BTreeMap::new(),
                 },
-                Part::Text { text: "Second text".into() },
-                Part::ToolResult { 
-                    call_id: "call_2".into(), 
-                    name: "func2".into(), 
-                    content: json!({"data": 2})
+                Part::Text { text: "Second text".into(), ext: BTreeMap::new() },
+                Part::ToolResult {
+                    id: "call_2".into(),
+                    name: "func2".into(),
+                    parts: vec![Part::text(serde_json::to_string(&json!({"data": 2})).unwrap())],
+                    ext: BTreeMap::new(),
                 },
-                Part::Text { text: "Third text".into() },
+                Part::Text { text: "Third text".into(), ext: BTreeMap::new() },
             ],
-            timestamp: Utc::now(),
+            timestamp: Some(Utc::now()),
+            ext: None,
         };
 
         let result = convert_message_to_mistral(ai_msg).unwrap();
@@ -436,14 +493,16 @@ mod tests {
         let ai_msg = Message {
             role: MessageRole::Assistant,
             content: vec![
-                Part::Text { text: "I'll help you with that.".into() },
-                Part::ToolCall { 
-                    id: "call_123".into(), 
-                    name: "get_weather".into(), 
-                    args: json!({"location": "NYC"})
+                Part::Text { text: "I'll help you with that.".into(), ext: BTreeMap::new() },
+                Part::ToolUse {
+                    id: "call_123".into(),
+                    name: "get_weather".into(),
+                    args: json!({"location": "NYC"}),
+                    ext: BTreeMap::new(),
                 },
             ],
-            timestamp: Utc::now(),
+            timestamp: Some(Utc::now()),
+            ext: None,
         };
 
         let result = convert_message_to_mistral(ai_msg).unwrap();
@@ -477,11 +536,20 @@ mod tests {
         let ai_msg = Message {
             role: MessageRole::User,
             content: vec![
-                Part::Text { text: "What is being said in this audio?".into() },
-                Part::Audio { audio_uri: "https://example.com/audio.mp3".into() },
-            ],
-            timestamp: Utc::now(),
-        };
+                Part::Text { text: "What is being said in this audio?".into(), ext: BTreeMap::new() },
+                 Part::Blob {
+                     data_ref: DataRef::Uri {
+                         uri: "https://example.com/audio.mp3".into()
+                     },
+                     mime_type: "audio/mp3".into(),
+                     name: None,
+                     description: None,
+                     ext: BTreeMap::new(),
+                 },
+             ],
+             timestamp: Some(Utc::now()),
+             ext: None,
+         };
 
         // Convert to Mistral messages
         let result = convert_message_to_mistral(ai_msg).unwrap();
@@ -509,5 +577,90 @@ mod tests {
             }
             _ => panic!("Expected user message"),
         }
+    }
+
+    #[test]
+    fn test_user_message_with_unsupported_image_returns_error() {
+        // Create an ai-ox message with image content (unsupported by Mistral)
+        let ai_msg = Message {
+            role: MessageRole::User,
+            content: vec![
+                Part::Text { text: "What do you see in this image?".into(), ext: BTreeMap::new() },
+                Part::Blob {
+                    data_ref: DataRef::Uri {
+                        uri: "https://example.com/image.jpg".into()
+                    },
+                    mime_type: "image/jpeg".into(),
+                    name: None,
+                    description: None,
+                    ext: BTreeMap::new(),
+                },
+            ],
+            timestamp: Some(Utc::now()),
+            ext: None,
+        };
+
+        // Convert should fail with proper error
+        let result = convert_message_to_mistral(ai_msg);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Mistral does not currently support images"));
+    }
+
+    #[test]
+    fn test_user_message_with_base64_audio_returns_error() {
+        // Create an ai-ox message with base64 audio content (unsupported by Mistral)
+        let ai_msg = Message {
+            role: MessageRole::User,
+            content: vec![
+                Part::Text { text: "What is being said?".into(), ext: BTreeMap::new() },
+                Part::Blob {
+                    data_ref: DataRef::Base64 {
+                        data: "base64data".into(),
+                    },
+                    mime_type: "audio/mp3".into(),
+                    name: None,
+                    description: None,
+                    ext: BTreeMap::new(),
+                },
+            ],
+            timestamp: Some(Utc::now()),
+            ext: None,
+        };
+
+        // Convert should fail with proper error
+        let result = convert_message_to_mistral(ai_msg);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Mistral does not support base64-encoded audio"));
+        assert!(error.to_string().contains("audio/mp3"));
+    }
+
+    #[test]
+    fn test_assistant_message_with_unsupported_image_returns_error() {
+        // Create an ai-ox assistant message with image content (unsupported)
+        let ai_msg = Message {
+            role: MessageRole::Assistant,
+            content: vec![
+                Part::Text { text: "I see an image".into(), ext: BTreeMap::new() },
+                Part::Blob {
+                    data_ref: DataRef::Uri {
+                        uri: "https://example.com/image.jpg".into()
+                    },
+                    mime_type: "image/jpeg".into(),
+                    name: None,
+                    description: None,
+                    ext: BTreeMap::new(),
+                },
+            ],
+            timestamp: Some(Utc::now()),
+            ext: Some(BTreeMap::new()),
+        };
+
+        // Convert should fail with proper error
+        let result = convert_message_to_mistral(ai_msg);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Mistral does not support images in assistant messages"));
     }
 }

@@ -38,3 +38,15 @@ impl From<BedrockError> for GenerateContentError {
         }
     }
 }
+
+impl From<GenerateContentError> for BedrockError {
+    fn from(error: GenerateContentError) -> Self {
+        match error {
+            GenerateContentError::NoResponse => BedrockError::NoResponse,
+            GenerateContentError::MessageConversion(msg) => BedrockError::MessageConversion(msg),
+            GenerateContentError::ResponseParsing(msg) => BedrockError::ToolInputParse(msg),
+            GenerateContentError::Configuration(msg) => BedrockError::RequestBuilder(msg),
+            _ => BedrockError::MessageConversion(error.to_string()),
+        }
+    }
+}

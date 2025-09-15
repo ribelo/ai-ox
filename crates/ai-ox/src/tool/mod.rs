@@ -1,14 +1,14 @@
-pub mod call;
+pub mod encoding;
 pub mod error;
 #[cfg(feature = "gemini")]
 pub mod gemini;
-pub mod result;
 pub mod set;
+pub mod types;
 
-pub use call::ToolCall;
+pub use encoding::{decode_tool_result_parts, encode_tool_result_parts};
 pub use error::ToolError;
-pub use result::ToolResult;
 pub use set::ToolSet;
+pub use types::ToolUse;
 
 use futures_util::future::BoxFuture;
 use schemars::{JsonSchema, generate::SchemaSettings};
@@ -126,12 +126,12 @@ pub enum Tool {
 /// function. For tools where danger varies by argument (like bash commands), this means:
 /// 
 /// ```rust
-/// // User approves "execute" for session
-/// agent.approve_dangerous_tools(&["execute"]);
-/// 
+/// // User approves "execute" for session (example - agent would be an Agent instance)
+/// // agent.approve_dangerous_tools(&["execute"]);
+///
 /// // Now ALL commands work without asking:
-/// bash.execute("ls")        // Safe command
-/// bash.execute("rm -rf /")  // DANGEROUS - but still executes!
+/// // bash.execute("ls")        // Safe command
+/// // bash.execute("rm -rf /")  // DANGEROUS - but still executes!
 /// ```
 /// 
 /// ## Implementing Argument-Based Detection
@@ -139,22 +139,26 @@ pub enum Tool {
 /// For fine-grained control, override `invoke_with_hooks()` to inspect arguments:
 /// 
 /// ```rust
-/// fn invoke_with_hooks(&self, call: ToolCall, hooks: ToolHooks) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
+/// # use ai_ox::tool::{ToolUse, ToolHooks, ToolError, ApprovalRequest};
+/// # use ai_ox::content::part::Part;
+/// # use futures_util::future::BoxFuture;
+/// # use std::io::{Error, ErrorKind};
+/// fn invoke_with_hooks(call: ToolUse, hooks: ToolHooks) -> BoxFuture<'static, Result<Part, ToolError>> {
 ///     Box::pin(async move {
 ///         // Check if THIS SPECIFIC invocation is dangerous
-///         if self.is_dangerous_invocation(&call) {
+///         if call.name == "dangerous_command" {
 ///             // Request approval for this specific call
 ///             let request = ApprovalRequest {
 ///                 tool_name: call.name.clone(),
 ///                 args: call.args.clone(),
 ///             };
-///             
+///
 ///             if !hooks.request_approval(request).await {
-///                 return Err(/* denied */);
+///                 return Err(ToolError::execution(&call.name, Error::new(ErrorKind::PermissionDenied, "Permission denied")));
 ///             }
 ///         }
-///         // Safe or approved - execute
-///         self.invoke(call).await
+///         // Safe or approved - execute (placeholder)
+///         Ok(Part::Text { text: "executed".to_string(), ext: std::collections::BTreeMap::new() })
 ///     })
 /// }
 /// ```
@@ -166,9 +170,9 @@ pub trait ToolBox: Send + Sync + 'static {
 
     /// Invokes a tool function with the given call parameters.
     ///
-    /// Returns a boxed future that resolves to either a ToolResult on success
+    /// Returns a boxed future that resolves to either a Part::ToolResult on success
     /// or a ToolError on failure.
-    fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>>;
+    fn invoke(&self, call: ToolUse) -> BoxFuture<'_, Result<crate::content::Part, ToolError>>;
 
     /// Invokes a tool function with hooks for dangerous operations.
     ///
@@ -181,7 +185,11 @@ pub trait ToolBox: Send + Sync + 'static {
     /// # Example
     /// 
     /// ```rust
-    /// fn invoke_with_hooks(&self, call: ToolCall, hooks: ToolHooks) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
+    /// # use ai_ox::tool::{ToolUse, ToolHooks, ToolError, ApprovalRequest};
+    /// # use ai_ox::content::part::Part;
+    /// # use futures_util::future::BoxFuture;
+    /// # use std::io::{Error, ErrorKind};
+    /// fn invoke_with_hooks(call: ToolUse, hooks: ToolHooks) -> BoxFuture<'static, Result<Part, ToolError>> {
     ///     Box::pin(async move {
     ///         // Check command for danger patterns
     ///         if let Some(cmd) = call.args.get("command").and_then(|v| v.as_str()) {
@@ -192,15 +200,16 @@ pub trait ToolBox: Send + Sync + 'static {
     ///                     args: call.args.clone(),
     ///                 };
     ///                 if !hooks.request_approval(request).await {
-    ///                     return Err(ToolError::execution(&call.name, "Permission denied"));
+    ///                     return Err(ToolError::execution(&call.name, Error::new(ErrorKind::PermissionDenied, "Permission denied")));
     ///                 }
     ///             }
     ///         }
-    ///         self.invoke(call).await
+    ///         // Execute (placeholder)
+    ///         Ok(Part::Text { text: "executed".to_string(), ext: std::collections::BTreeMap::new() })
     ///     })
     /// }
     /// ```
-    fn invoke_with_hooks(&self, call: ToolCall, _hooks: ToolHooks) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
+    fn invoke_with_hooks(&self, call: ToolUse, _hooks: ToolHooks) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
         self.invoke(call)
     }
 
@@ -236,11 +245,11 @@ impl<T: ToolBox + ?Sized> ToolBox for Arc<T> {
         self.as_ref().tools()
     }
 
-    fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
+    fn invoke(&self, call: ToolUse) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
         self.as_ref().invoke(call)
     }
 
-    fn invoke_with_hooks(&self, call: ToolCall, hooks: ToolHooks) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
+    fn invoke_with_hooks(&self, call: ToolUse, hooks: ToolHooks) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
         self.as_ref().invoke_with_hooks(call, hooks)
     }
 

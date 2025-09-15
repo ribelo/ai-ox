@@ -1,9 +1,8 @@
 use groq_ox::{
-    message::{Message as GroqMessage, SystemMessage, UserMessage, AssistantMessage},
     request::ChatRequest,
     response::{ChatResponse, ChatCompletionChunk},
-    tool::ToolChoice as GroqToolChoice,
 };
+use ai_ox_common::openai_format::{Message as GroqMessage, MessageRole as GroqMessageRole};
 
 use crate::{
     ModelResponse,
@@ -24,25 +23,32 @@ pub fn convert_request_to_groq(
     request: ModelRequest,
     model: String,
     system_instruction: Option<String>,
-    _tool_choice: &GroqToolChoice,
+    _tool_choice: Option<ai_ox_common::openai_format::ToolChoice>,
 ) -> Result<ChatRequest, GenerateContentError> {
     let mut groq_messages = Vec::new();
-    
+
     // Add system instruction if provided
     if let Some(system_msg) = system_instruction {
-        groq_messages.push(GroqMessage::System(SystemMessage::new(system_msg)));
+        groq_messages.push(GroqMessage::system(system_msg));
     }
-    
+
     // Convert messages - simplified version
     for message in request.messages {
         match message.role {
             MessageRole::User => {
                 let content = extract_text_content(&message.content)?;
-                groq_messages.push(GroqMessage::User(UserMessage::new(content)));
+                groq_messages.push(GroqMessage::user(content));
             }
             MessageRole::Assistant => {
                 let content = extract_text_content(&message.content)?;
-                groq_messages.push(GroqMessage::Assistant(AssistantMessage::new(content)));
+                groq_messages.push(GroqMessage::assistant(content));
+            }
+            MessageRole::System => {
+                let content = extract_text_content(&message.content)?;
+                groq_messages.push(GroqMessage::system(content));
+            }
+            MessageRole::Unknown(role) => {
+                return Err(GenerateContentError::message_conversion(&format!("Unknown role: {}", role)));
             }
         }
     }
@@ -58,7 +64,7 @@ pub fn convert_request_to_groq(
 fn extract_text_content(content: &[Part]) -> Result<String, GenerateContentError> {
     let mut text = String::new();
     for part in content {
-        if let Part::Text { text: part_text } = part {
+        if let Part::Text { text: part_text, .. } = part {
             if !text.is_empty() {
                 text.push('\n');
             }
@@ -85,14 +91,18 @@ pub fn convert_groq_response_to_ai_ox(
     // Add text content if present
     if let Some(text) = &choice.message.content {
         if !text.is_empty() {
-            content_parts.push(Part::Text { text: text.clone() });
+            content_parts.push(Part::Text {
+                text: text.clone(),
+                ext: std::collections::BTreeMap::new(),
+            });
         }
     }
-    
+
     let message = Message {
         role: MessageRole::Assistant,
         content: content_parts,
-        timestamp: chrono::Utc::now(),
+        timestamp: Some(chrono::Utc::now()),
+        ext: None,
     };
     
     let usage = response.usage.map(|u| {

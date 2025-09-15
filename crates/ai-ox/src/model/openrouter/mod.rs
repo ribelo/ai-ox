@@ -14,7 +14,7 @@ use ai_ox_common::openai_format::{Tool as OaiTool, Function as OaiFunction, Tool
 
 use crate::{
     content::delta::StreamEvent,
-    tool::ToolCall,
+    tool::ToolUse,
     errors::GenerateContentError,
     model::{
         Model, ModelInfo, Provider,
@@ -97,10 +97,11 @@ impl OpenRouterStreamProcessor {
                                     serde_json::Value::Object(Default::default())
                                 }
                             };
-                            events.push(StreamEvent::ToolCall(ToolCall {
+                            events.push(StreamEvent::ToolCall(ToolUse {
                                 id: partial.id,
                                 name: partial.name.unwrap(),
                                 args,
+                                ext: None,
                             }));
                         }
                     }
@@ -125,10 +126,11 @@ impl OpenRouterStreamProcessor {
                                 serde_json::Value::Object(Default::default())
                             }
                         };
-                        events.push(StreamEvent::ToolCall(ToolCall {
+                        events.push(StreamEvent::ToolCall(ToolUse {
                             id: partial.id,
                             name: partial.name.unwrap(),
                             args,
+                            ext: None,
                         }));
                     }
                 }

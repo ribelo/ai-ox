@@ -12,6 +12,7 @@
 //! - Dependency injection via RunContext.deps
 //! - Type-safe workflow with proper error handling
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use ai_ox::{
@@ -110,7 +111,7 @@ impl Node<WorkflowState, WorkflowDeps, Email> for WriteEmailNode {
             user.interests.join(", ")
         );
 
-        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt }]);
+        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt, ext: BTreeMap::new() }]);
 
         // Access writer agent from dependencies
         match context
@@ -155,7 +156,7 @@ impl Node<WorkflowState, WorkflowDeps, Email> for FeedbackNode {
             email.body
         );
 
-        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt }]);
+        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt, ext: BTreeMap::new() }]);
 
         // Access feedback agent from dependencies
         match context
@@ -204,7 +205,7 @@ impl Node<WorkflowState, WorkflowDeps, Email> for RewriteEmailNode {
             self.feedback
         );
 
-        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt }]);
+        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt, ext: BTreeMap::new() }]);
 
         // Access writer agent from dependencies
         match context

@@ -14,6 +14,7 @@ description = "Google Gemini API client for Rust"
 default = []
 leaky-bucket = ["dep:leaky-bucket"]
 
+
 # Feature to enable the procedural macros (like #[toolbox])
 # macros = ["dep:gemini-ox-macros"]
 
@@ -54,6 +55,7 @@ url = { workspace = true }
 http = { workspace = true }
 anyhow = { workspace = true }
 ai-ox-common = { workspace = true }
+
 
 # Optional dependencies for audio and video features
 cpal = { version = "0.15", optional = true }

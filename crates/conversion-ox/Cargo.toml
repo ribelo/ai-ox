@@ -15,6 +15,7 @@ default = []
 anthropic-openrouter = ["dep:anthropic-ox", "dep:openrouter-ox"]
 anthropic-gemini = ["dep:anthropic-ox", "dep:gemini-ox"]
 anthropic-openai = ["dep:anthropic-ox", "dep:openai-ox"]
+
 # Convenience feature for all conversions
 all = ["anthropic-openrouter", "anthropic-gemini", "anthropic-openai"]
 # Test feature that enables all functionality for testing
@@ -38,6 +39,9 @@ openrouter-ox = { path = "../openrouter-ox", optional = true }
 gemini-ox = { path = "../gemini-ox", optional = true }
 openai-ox = { path = "../openai-ox", optional = true }
 ai-ox-common = { workspace = true }
+ai-ox = { path = "../ai-ox" }
+
 
 [dev-dependencies]
 tokio = { workspace = true }
+ai-ox = { path = "../ai-ox" }

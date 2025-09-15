@@ -5,14 +5,11 @@
 //!
 //! ## Migration Guide
 //!
-//! Replace From trait usage with explicit conversion functions:
+//! Replace From trait usage with explicit conversion functions from the `conversion-ox` crate:
 //!
-//! ```rust
-//! use conversion_ox::anthropic_openrouter::{
-//!     anthropic_to_openrouter_request, openrouter_to_anthropic_response
-//! };
-//! use conversion_ox::anthropic_openrouter::streaming::AnthropicOpenRouterStreamConverter;
-//! ```
+//! - Use `conversion_ox::anthropic_openrouter::anthropic_to_openrouter_request()`
+//! - Use `conversion_ox::anthropic_openrouter::openrouter_to_anthropic_response()`
+//! - Use `conversion_ox::anthropic_openrouter::streaming::AnthropicOpenRouterStreamConverter`
 
 /// Error type for conversion failures - kept for backwards compatibility
 #[derive(Debug, thiserror::Error)]

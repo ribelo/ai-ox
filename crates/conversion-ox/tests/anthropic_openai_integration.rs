@@ -10,8 +10,8 @@ use openai_ox::{
     request::ChatRequest as OpenAIRequest,
     response::{ChatResponse as OpenAIResponse, Choice as OpenAIChoice},
     responses::{
-        ResponsesRequest, ResponsesResponse, ResponsesInput, 
-        OutputItem, ReasoningItem, ResponseMessage,
+        ResponsesRequest, ResponsesResponse, ResponsesInput,
+        ResponseOutputItem, ResponseOutputContent, ReasoningItem, ResponseMessage,
         response::TextItem,
     },
 };
@@ -330,23 +330,49 @@ fn test_openai_responses_to_anthropic_response_with_reasoning() {
     let responses_response = ResponsesResponse {
         id: "resp-123".to_string(),
         created_at: 1234567890,
+        output_text: String::new(),
+        error: None,
+        incomplete_details: None,
+        instructions: None,
+        metadata: None,
         model: "o3-mini".to_string(),
+        object: "response".to_string(),
         output: vec![
-            OutputItem::ReasoningItem(ReasoningItem {
+            ResponseOutputItem::Reasoning {
                 id: "reasoning-1".to_string(),
-                summary: Some("Let me think about quantum computing step by step...".to_string()),
-                encrypted_content: Some("encrypted_reasoning_data".to_string()),
-                usage: None,
-            }),
-            OutputItem::Message(ResponseMessage {
+                summary: vec![serde_json::json!("Let me think about quantum computing step by step...")],
+                content: Some(vec![serde_json::json!("encrypted_reasoning_data")]),
+            },
+            ResponseOutputItem::Message {
+                id: "msg-1".to_string(),
+                content: vec![ResponseOutputContent::Text {
+                    text: "Quantum computing uses quantum bits (qubits) that can exist in superposition.".to_string(),
+                    annotations: vec![],
+                }],
                 role: "assistant".to_string(),
-                content: "Quantum computing uses quantum bits (qubits) that can exist in superposition.".to_string(),
-                tool_calls: None,
-            }),
+                status: "completed".to_string(),
+            },
         ],
-        status: "completed".to_string(),
+        parallel_tool_calls: true,
+        temperature: None,
+        top_p: None,
+        background: None,
+        conversation: None,
+        max_output_tokens: None,
+        previous_response_id: None,
+        prompt_cache_key: None,
+        max_tool_calls: None,
+        service_tier: None,
+        top_logprobs: None,
+        reasoning: None,
+        safety_identifier: None,
+        status: Some("completed".to_string()),
+        text: None,
         usage: None,
-        system_fingerprint: None,
+        tool_choice: None,
+        tools: vec![],
+        truncation: None,
+        user: None,
     };
 
     // Convert to Anthropic format
@@ -403,23 +429,30 @@ fn test_anthropic_to_openai_responses_response_with_thinking() {
     // Verify conversion
     assert_eq!(responses_response.id, "msg-456");
     assert_eq!(responses_response.model, "claude-3.5-sonnet");
-    assert_eq!(responses_response.status, "completed");
+    assert_eq!(responses_response.status, Some("completed".to_string()));
     
     // Check output items
     assert_eq!(responses_response.output.len(), 2);
     
     // First should be reasoning item
-    if let OutputItem::ReasoningItem(reasoning) = &responses_response.output[0] {
-        assert_eq!(reasoning.summary, Some("I need to break down this complex problem...".to_string()));
-        assert_eq!(reasoning.encrypted_content, Some("sig_abc123".to_string()));
+    if let ResponseOutputItem::Reasoning { summary, .. } = &responses_response.output[0] {
+        assert_eq!(summary.first().unwrap().as_str().unwrap(), "I need to break down this complex problem...");
     } else {
         panic!("Expected reasoning item first");
     }
-    
+
     // Second should be message with combined text
-    if let OutputItem::Message(msg) = &responses_response.output[1] {
-        assert_eq!(msg.role, "assistant");
-        assert_eq!(msg.content, "Here's the solution to your problem:\nStep 1: Initialize the system");
+    if let ResponseOutputItem::Message { content, .. } = &responses_response.output[1] {
+        // Check that content contains the expected text
+        if let Some(content_item) = content.first() {
+            if let openai_ox::responses::ResponseOutputContent::Text { text, .. } = content_item {
+                assert_eq!(text, "Here's the solution to your problem:\nStep 1: Initialize the system");
+            } else {
+                panic!("Expected text content");
+            }
+        } else {
+            panic!("Expected content in message");
+        }
     } else {
         panic!("Expected message item second");
     }
@@ -505,13 +538,36 @@ fn test_responses_api_error_handling() {
     let empty_response = ResponsesResponse {
         id: "empty".to_string(),
         created_at: 1234567890,
+        output_text: String::new(),
+        error: None,
+        incomplete_details: None,
+        instructions: None,
+        metadata: None,
         model: "o3".to_string(),
+        object: "response".to_string(),
         output: vec![],
-        status: "completed".to_string(),
+        parallel_tool_calls: true,
+        temperature: None,
+        top_p: None,
+        background: None,
+        conversation: None,
+        max_output_tokens: None,
+        previous_response_id: None,
+        prompt_cache_key: None,
+        max_tool_calls: None,
+        service_tier: None,
+        top_logprobs: None,
+        reasoning: None,
+        safety_identifier: None,
+        status: Some("completed".to_string()),
+        text: None,
         usage: None,
-        system_fingerprint: None,
+        tool_choice: None,
+        tools: vec![],
+        truncation: None,
+        user: None,
     };
-    
+
     let result = openai_responses_to_anthropic_response(empty_response);
     assert!(result.is_err());
 }

@@ -4,6 +4,7 @@ use crate::usage::Usage;
 use serde::{Deserialize, Serialize};
 
 use super::message::MessageRole as Role;
+use crate::tool::ToolUse;
 
 /// The reason the model stopped generating content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -87,9 +88,9 @@ pub enum StreamEvent {
     /// A delta in text content.
     TextDelta(String),
     /// A complete tool call.
-    ToolCall(crate::tool::ToolCall),
+    ToolCall(ToolUse),
     /// A complete tool result.
-    ToolResult(crate::tool::ToolResult),
+    ToolResult(crate::content::Part),
     /// Usage information.
     Usage(Usage),
     /// The stream has completed. This is the terminal event.

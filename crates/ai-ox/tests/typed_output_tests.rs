@@ -5,6 +5,7 @@ use ai_ox::content::message::{Message, MessageRole};
 use ai_ox::content::part::Part;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema, PartialEq)]
 struct SimpleResponse {
@@ -54,6 +55,7 @@ async fn test_all_providers_simple_typed_output() {
             MessageRole::User,
             vec![Part::Text {
                 text: "Return a simple JSON object with a message 'hello world' and number 42".to_string(),
+                ext: BTreeMap::new(),
             }],
         )];
         
@@ -101,6 +103,7 @@ async fn test_all_providers_complex_typed_output() {
 - items: array with 2 items, each having name and value fields
 - metadata: object with created_at (current date string) and version (1)
 "#.to_string(),
+                ext: BTreeMap::new(),
             }],
         )];
         
@@ -167,6 +170,7 @@ async fn test_all_providers_invalid_json_parsing() {
             MessageRole::User,
             vec![Part::Text {
                 text: "Return the text 'this is not json' exactly as given, with no JSON formatting.".to_string(),
+                ext: BTreeMap::new(),
             }],
         )];
         

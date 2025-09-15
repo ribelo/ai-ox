@@ -11,6 +11,7 @@ use ai_ox::{
 };
 use futures_util::StreamExt;
 use serde_json::json;
+use std::collections::BTreeMap;
 
 /// Test that all providers can handle a simple request/response interaction.
 ///
@@ -28,12 +29,12 @@ async fn test_all_providers_simple_request() {
     for model in models {
         println!("Testing simple request with model: {}", model.name());
 
-        let message = Message {
+        let message = Message { ext: Some(BTreeMap::new()),
             role: MessageRole::User,
-            content: vec![Part::Text {
+            content: vec![Part::Text { ext: BTreeMap::new(),
                 text: "Why is the sky blue? Please respond in exactly one sentence.".to_string(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
         };
 
         let request = ModelRequest {
@@ -52,7 +53,7 @@ async fn test_all_providers_simple_request() {
 
         // Verify we got text content
         let has_text = response.message.content.iter().any(|part| {
-            matches!(part, Part::Text { text } if !text.is_empty())
+            matches!(part, Part::Text { text, .. } if !text.is_empty())
         });
         assert!(has_text, "Model {} did not return any text content", model.name());
 
@@ -80,12 +81,12 @@ async fn test_all_providers_simple_streaming() {
     for model in models {
         println!("Testing streaming with model: {}", model.name());
 
-        let message = Message {
+        let message = Message { ext: Some(BTreeMap::new()),
             role: MessageRole::User,
-            content: vec![Part::Text {
+            content: vec![Part::Text { ext: BTreeMap::new(),
                 text: "Count from 1 to 5, one number per line.".to_string(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
         };
 
         let request = ModelRequest {
@@ -169,12 +170,12 @@ async fn test_all_providers_tool_use() {
     for model in models {
         println!("Testing tool use with model: {}", model.name());
 
-        let message = Message {
+        let message = Message { ext: Some(BTreeMap::new()),
             role: MessageRole::User,
-            content: vec![Part::Text {
+            content: vec![Part::Text { ext: BTreeMap::new(),
                 text: "What's the weather like in Tokyo? Use the weather tool.".to_string(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
         };
 
         let request = ModelRequest {
@@ -192,7 +193,7 @@ async fn test_all_providers_tool_use() {
 
         // Check if the response contains a tool call. This must not be lenient.
         let has_tool_call = response.message.content.iter().any(|part| {
-            matches!(part, Part::ToolCall { name, .. } if name == "get_weather")
+            matches!(part, Part::ToolUse { name, .. } if name == "get_weather")
         });
 
         assert!(has_tool_call, "Model {} failed to call the 'get_weather' tool when explicitly instructed.", model.name());

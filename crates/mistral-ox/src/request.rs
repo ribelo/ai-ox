@@ -1,8 +1,8 @@
 use bon::Builder;
 #[cfg(feature = "schema")]
 use schemars::{generate::SchemaSettings, JsonSchema};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 
 use crate::message::{Messages, Message};
 

@@ -21,9 +21,9 @@ fn main() {
     let tool_result_message = Message {
         role: MessageRole::User,
         content: vec![Part::ToolResult {
-            call_id: "call_123".to_string(),
+            id: "call_123".to_string(),
             name: "knowledge_search".to_string(),
-            content: tool_result_content,
+            content: vec![Part::Text { text: serde_json::to_string(&tool_result_content).unwrap() }],
         }],
         timestamp: chrono::Utc::now(),
     };

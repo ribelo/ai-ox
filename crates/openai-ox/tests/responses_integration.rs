@@ -34,8 +34,8 @@ async fn test_real_responses_api_basic() {
     let reasoning_items = response.reasoning_items();
     if !reasoning_items.is_empty() {
         println!("Reasoning items found: {}", reasoning_items.len());
-        for (i, reasoning) in reasoning_items.iter().enumerate() {
-            println!("Reasoning {}: {:?}", i, reasoning.summary);
+        for (i, (id, content)) in reasoning_items.iter().enumerate() {
+            println!("Reasoning {}: id={}, content={:?}", i, id, content);
         }
     }
     
@@ -74,12 +74,13 @@ async fn test_real_responses_api_with_encrypted_reasoning() {
     assert!(response.is_completed());
     
     // Check if we got encrypted reasoning
-    if response.has_encrypted_reasoning() {
+    let reasoning_items = response.reasoning_items();
+    let has_encrypted = reasoning_items.iter().any(|(_, content)| !content.is_empty());
+    if has_encrypted {
         println!("✓ Encrypted reasoning content received");
-        let reasoning_items = response.reasoning_items();
         for reasoning in reasoning_items {
-            if let Some(_) = &reasoning.encrypted_content {
-                println!("✓ Found encrypted content for reasoning item: {}", reasoning.id);
+            if !reasoning.1.is_empty() {
+                println!("✓ Found encrypted content for reasoning item: {}", reasoning.0);
             }
         }
     } else {

@@ -1,10 +1,11 @@
 use super::error::BedrockError;
 use crate::{
-    content::{message::Message, part::Part, message::MessageRole, delta::FinishReason},
+    content::{message::Message, part::{Part, DataRef}, message::MessageRole, delta::FinishReason},
     model::response::ModelResponse,
-    tool::Tool,
+    tool::{Tool, encode_tool_result_parts, decode_tool_result_parts},
     usage::Usage,
 };
+use std::collections::BTreeMap;
 use aws_sdk_bedrockruntime::types::{
     ContentBlock, Message as BedrockMessage, StopReason,
     ToolSpecification, ToolUseBlock, ToolResultBlock,
@@ -66,6 +67,8 @@ pub(super) fn convert_ai_ox_messages_to_bedrock(
         let role = match message.role {
             MessageRole::User => "user",
             MessageRole::Assistant => "assistant",
+            MessageRole::System => "system",
+            MessageRole::Unknown(_) => "user", // Map unknown to user
         };
 
         let content_blocks = convert_parts_to_content_blocks(message.content)?;
@@ -88,51 +91,70 @@ fn convert_parts_to_content_blocks(parts: Vec<Part>) -> Result<Vec<ContentBlock>
 
     for part in parts {
         let content_block = match part {
-            Part::Text { text } => {
+            Part::Text { text, .. } => {
                 ContentBlock::Text(text)
             },
-            Part::Image { source } => {
-                match source {
-                    crate::content::part::ImageSource::Base64 { media_type, data } => {
-                        let image_format = determine_image_format(&media_type)?;
-                        let decoded_data = BASE64_STANDARD.decode(&data)
-                            .map_err(|e| BedrockError::MessageConversion(
-                                format!("Invalid base64 image data: {}", e)
-                            ))?;
+            Part::Blob { mime_type, data_ref, .. } => {
+                if mime_type.starts_with("image/") {
+                    match data_ref {
+                        DataRef::Base64 { data } => {
+                            let image_format = determine_image_format(&mime_type)?;
+                            let decoded_data = BASE64_STANDARD.decode(&data)
+                                .map_err(|e| BedrockError::MessageConversion(
+                                    format!("Invalid base64 image data: {}", e)
+                                ))?;
 
-                        let image_block = aws_sdk_bedrockruntime::types::ImageBlock::builder()
-                            .format(image_format)
-                            .source(aws_sdk_bedrockruntime::types::ImageSource::Bytes(
-                                aws_smithy_types::Blob::new(decoded_data)
-                            ))
-                            .build()
-                            .map_err(|e| BedrockError::MessageConversion(
-                                format!("Failed to build image block: {}", e)
-                            ))?;
-                        ContentBlock::Image(image_block)
+                            let image_block = aws_sdk_bedrockruntime::types::ImageBlock::builder()
+                                .format(image_format)
+                                .source(aws_sdk_bedrockruntime::types::ImageSource::Bytes(
+                                    aws_smithy_types::Blob::new(decoded_data)
+                                ))
+                                .build()
+                                .map_err(|e| BedrockError::MessageConversion(
+                                    format!("Failed to build image block: {}", e)
+                                ))?;
+                            ContentBlock::Image(image_block)
+                        }
+                        _ => return Err(BedrockError::MessageConversion("Unsupported data_ref for image".to_string())),
+                    }
+                } else if mime_type.starts_with("audio/") {
+                    return Err(BedrockError::MessageConversion(
+                        "Audio content is not supported by Bedrock".to_string()
+                    ));
+                } else {
+                    // treat as document
+                    match data_ref {
+                        DataRef::Uri { uri } => {
+                            if uri.starts_with("file://") {
+                                let path = uri.strip_prefix("file://").unwrap_or(&uri);
+                                let document_format = determine_document_format(&mime_type)?;
+                                let file_contents = std::fs::read(&path)
+                                    .map_err(|e| BedrockError::MessageConversion(
+                                        format!("Failed to read file {}: {}", path, e)
+                                    ))?;
+
+                                let document_block = aws_sdk_bedrockruntime::types::DocumentBlock::builder()
+                                    .format(document_format)
+                                    .name("document".to_string())
+                                    .source(aws_sdk_bedrockruntime::types::DocumentSource::Bytes(
+                                        aws_smithy_types::Blob::new(file_contents)
+                                    ))
+                                    .build()
+                                    .map_err(|e| BedrockError::MessageConversion(
+                                        format!("Failed to build document block: {}", e)
+                                    ))?;
+                                ContentBlock::Document(document_block)
+                            } else {
+                                return Err(BedrockError::MessageConversion(
+                                    format!("Unsupported URI scheme for document: {}", uri)
+                                ));
+                            }
+                        }
+                        _ => return Err(BedrockError::MessageConversion("Unsupported data_ref for document".to_string())),
                     }
                 }
             },
-            Part::File(file_data) => {
-                let document_format = determine_document_format(&file_data.mime_type)?;
-                let file_contents = std::fs::read(&file_data.file_uri)
-                    .map_err(|e| BedrockError::MessageConversion(
-                        format!("Failed to read file {}: {}", file_data.file_uri, e)
-                    ))?;
-
-                let document_block = aws_sdk_bedrockruntime::types::DocumentBlock::builder()
-                    .format(document_format)
-                    .name(file_data.display_name.unwrap_or_else(|| "document".into()))
-                    .source(aws_sdk_bedrockruntime::types::DocumentSource::Bytes(
-                        aws_smithy_types::Blob::new(file_contents)
-                    ))
-                    .build()
-                    .map_err(|e| BedrockError::MessageConversion(
-                        format!("Failed to build document block: {}", e)
-                    ))?;
-                ContentBlock::Document(document_block)
-            },
-            Part::ToolCall { id, name, args } => {
+            Part::ToolUse { id, name, args, .. } => {
                 let input_doc = aws_smithy_types::Document::Object(
                     args.as_object()
                         .ok_or_else(|| BedrockError::MessageConversion("Tool args must be an object".to_string()))?
@@ -151,23 +173,18 @@ fn convert_parts_to_content_blocks(parts: Vec<Part>) -> Result<Vec<ContentBlock>
                     ))?;
                 ContentBlock::ToolUse(tool_use_block)
             },
-            Part::ToolResult { call_id, name: _, content } => {
+            Part::ToolResult { id, name, parts, .. } => {
+                let encoded = encode_tool_result_parts(&name, &parts).map_err(|e| BedrockError::MessageConversion(format!("Failed to encode tool result: {}", e)))?;
                 let tool_result_block = ToolResultBlock::builder()
-                    .tool_use_id(call_id)
-                    .content(aws_sdk_bedrockruntime::types::ToolResultContentBlock::Text(content.to_string()))
+                    .tool_use_id(id)
+                    .content(aws_sdk_bedrockruntime::types::ToolResultContentBlock::Text(encoded))
                     .build()
                     .map_err(|e| BedrockError::MessageConversion(
                         format!("Failed to build tool result block: {}", e)
                     ))?;
                 ContentBlock::ToolResult(tool_result_block)
             },
-            Part::Audio { .. } => {
-                // Bedrock doesn't support audio content directly
-                // Skip audio parts or return an error based on requirements
-                return Err(BedrockError::MessageConversion(
-                    "Audio content is not supported by Bedrock".to_string()
-                ));
-            },
+            Part::Opaque { .. } => return Err(BedrockError::MessageConversion("Opaque parts are not supported by Bedrock".to_string())),
         };
         content_blocks.push(content_block);
     }
@@ -225,7 +242,8 @@ pub(super) fn convert_bedrock_response_to_ai_ox(
     let ai_ox_message = Message {
         role: MessageRole::Assistant,
         content: parts,
-        timestamp: chrono::Utc::now(),
+        timestamp: Some(chrono::Utc::now()),
+        ext: None,
     };
 
     let ai_ox_usage = convert_token_usage_to_ai_ox(usage);
@@ -244,10 +262,10 @@ fn convert_content_blocks_to_parts(content_blocks: &[ContentBlock]) -> Result<Ve
 
     for block in content_blocks {
         let part = match block {
-            ContentBlock::Text(text) => Part::Text { text: text.clone() },
+            ContentBlock::Text(text) => Part::Text { text: text.clone(), ext: Default::default() },
             ContentBlock::Image(image_block) => {
                 let format = image_block.format();
-                let media_type = match format {
+                let mime_type = match format {
                     aws_sdk_bedrockruntime::types::ImageFormat::Png => "image/png",
                     aws_sdk_bedrockruntime::types::ImageFormat::Jpeg => "image/jpeg",
                     aws_sdk_bedrockruntime::types::ImageFormat::Gif => "image/gif",
@@ -262,18 +280,20 @@ fn convert_content_blocks_to_parts(content_blocks: &[ContentBlock]) -> Result<Ve
                     _ => return Err(BedrockError::MessageConversion("Unsupported image source".to_string())),
                 };
 
-                Part::Image {
-                    source: crate::content::part::ImageSource::Base64 {
-                        media_type: media_type.to_string(),
-                        data,
-                    }
+                Part::Blob {
+                    mime_type: mime_type.to_string(),
+                    data_ref: DataRef::Base64 { data },
+                    name: None,
+                    description: None,
+                    ext: Default::default()
                 }
             },
             ContentBlock::ToolUse(tool_use) => {
-                Part::ToolCall {
+                Part::ToolUse {
                     id: tool_use.tool_use_id().to_string(),
                     name: tool_use.name().to_string(),
                     args: document_to_json(tool_use.input()),
+                    ext: Default::default(),
                 }
             },
             ContentBlock::ToolResult(tool_result) => {
@@ -286,14 +306,16 @@ fn convert_content_blocks_to_parts(content_blocks: &[ContentBlock]) -> Result<Ve
                                 _ => None,
                             })
                             .collect::<Vec<_>>()
-                            .join("\n")
+                            .join("")
                     },
                 };
 
+                let (decoded_name, parts) = decode_tool_result_parts(&content_text)?;
                 Part::ToolResult {
-                    call_id: tool_result.tool_use_id().to_string(),
-                    name: "unknown".into(), // Bedrock doesn't preserve tool name in results
-                    content: Value::String(content_text),
+                    id: tool_result.tool_use_id().to_string(),
+                    name: decoded_name,
+                    parts,
+                    ext: Default::default(),
                 }
             },
             _ => return Err(BedrockError::MessageConversion("Unsupported content block type".to_string())),
@@ -390,7 +412,8 @@ mod tests {
         Message {
             role,
             content,
-            timestamp: Utc::now(),
+            timestamp: Some(Utc::now()),
+            ext: None,
         }
     }
 
@@ -398,7 +421,7 @@ mod tests {
     fn test_convert_text_message() {
         let ai_ox_message = create_test_message(
             MessageRole::User,
-            vec![Part::Text { text: "Hello, world!".to_string() }]
+            vec![Part::Text { text: "Hello, world!".to_string(), ext: Default::default() }]
         );
 
         let result = convert_ai_ox_messages_to_bedrock(vec![ai_ox_message]).unwrap();
@@ -418,7 +441,7 @@ mod tests {
     fn test_convert_assistant_message() {
         let ai_ox_message = create_test_message(
             MessageRole::Assistant,
-            vec![Part::Text { text: "Assistant response".to_string() }]
+            vec![Part::Text { text: "Assistant response".to_string(), ext: Default::default() }]
         );
 
         let result = convert_ai_ox_messages_to_bedrock(vec![ai_ox_message]).unwrap();
@@ -431,8 +454,8 @@ mod tests {
         let ai_ox_message = create_test_message(
             MessageRole::User,
             vec![
-                Part::Text { text: "First part".to_string() },
-                Part::Text { text: "Second part".to_string() },
+                Part::Text { text: "First part".to_string(), ext: Default::default() },
+                Part::Text { text: "Second part".to_string(), ext: Default::default() },
             ]
         );
 

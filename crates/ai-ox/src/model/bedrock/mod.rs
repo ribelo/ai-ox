@@ -7,7 +7,7 @@ use crate::{
     content::{delta::StreamEvent, part::Part},
     errors::GenerateContentError,
     model::{request::ModelRequest, response::ModelResponse, Model, ModelInfo, Provider},
-    tool::ToolCall,
+    tool::ToolUse,
 };
 use async_stream::try_stream;
 use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
@@ -102,7 +102,7 @@ impl BedrockModel {
                 let system_text = system_message.content
                     .into_iter()
                     .filter_map(|part| match part {
-                        Part::Text { text } => Some(text),
+                        Part::Text { text, .. } => Some(text),
                         _ => None,
                     })
                     .collect::<Vec<_>>()
@@ -239,7 +239,7 @@ impl Model for BedrockModel {
                                 ))?;
 
                             // Yield the complete tool call
-                            yield StreamEvent::ToolCall(ToolCall::new(id, name, args));
+                            yield StreamEvent::ToolCall(ToolUse::new(id, name, args));
 
                             // Reset state for next tool call
                             current_tool_input.clear();

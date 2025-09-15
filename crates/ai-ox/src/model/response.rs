@@ -2,6 +2,7 @@
 
 use crate::content::Part;
 use crate::content::message::Message;
+use crate::tool::ToolUse;
 use crate::usage::Usage;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -72,7 +73,7 @@ impl ModelResponse {
             .content
             .iter()
             .filter_map(|part| match part {
-                Part::Text { text } => Some(text.as_str()),
+                Part::Text { text, .. } => Some(text.as_str()),
                 _ => None,
             })
             .collect();
@@ -84,23 +85,24 @@ impl ModelResponse {
         }
     }
 
-    /// Converts the response message into a `Vec` of `ToolCall`s.
+    /// Converts the response message into a `Vec` of `ToolUse`s.
     ///
     /// # Returns
     ///
-    /// Returns `Some(Vec<ToolCall>)` containing all tool calls found in the response,
+    /// Returns `Some(Vec<ToolUse>)` containing all tool calls found in the response,
     /// or `None` if no tool calls are found.
-    pub fn to_tool_calls(&self) -> Option<Vec<crate::tool::ToolCall>> {
-        let calls: Vec<crate::tool::ToolCall> = self
+    pub fn to_tool_calls(&self) -> Option<Vec<ToolUse>> {
+        let calls: Vec<ToolUse> = self
             .message
             .content
             .iter()
             .filter_map(|part| match part {
-                Part::ToolCall { id, name, args } => Some(crate::tool::ToolCall::new(
-                    id.clone(),
-                    name.clone(),
-                    args.clone(),
-                )),
+                Part::ToolUse { id, name, args, .. } => Some(ToolUse {
+                    id: id.clone(),
+                    name: name.clone(),
+                    args: args.clone(),
+                    ext: None,
+                }),
                 _ => None,
             })
             .collect();

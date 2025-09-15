@@ -1,7 +1,7 @@
 use crate::{
     ModelResponse,
     content::delta::StreamEvent,
-    tool::{ToolCall, ToolResult},
+    tool::ToolUse,
 };
 
 /// Events that can occur during agent execution.
@@ -17,10 +17,10 @@ pub enum AgentEvent {
     StreamEvent(StreamEvent),
 
     /// Agent is executing a tool call.
-    ToolExecution(ToolCall),
+    ToolExecution(ToolUse),
 
     /// Agent completed a tool call execution.
-    ToolResult(ToolResult),
+    ToolResult(Vec<crate::content::Message>),
 
     /// Agent completed processing and has a final response.
     Completed(ModelResponse),

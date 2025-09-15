@@ -14,12 +14,13 @@
           pkgs = import nixpkgs {
             inherit system;
           };
-          native-libs = with pkgs; [ cmake pkg-config ];
+          native-libs = with pkgs; [ cmake pkg-config clang ];
 
           libs = with pkgs; [
             uv
             alsa-lib.dev
             portaudio
+            libclang
             (python3.withPackages (ps: with ps; [
             ]))
           ];
@@ -32,6 +33,7 @@
             shellHook = ''
               export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.lib.makeLibraryPath libs}:./"
               export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib.outPath}/lib:$LD_LIBRARY_PATH"
+              export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
             '';
           };
         });

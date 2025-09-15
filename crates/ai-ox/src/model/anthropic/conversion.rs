@@ -9,18 +9,18 @@ use anthropic_ox::{
         ChatResponse, ContentBlockDelta, StopReason as AnthropicStopReason,
         StreamEvent as AnthropicStreamEvent,
     },
-    tool::{Tool, ToolChoice},
+    tool::{Tool, ToolChoice, ToolResultContent},
 };
 
 use crate::{
     content::{
         delta::{FinishReason, StreamEvent, StreamStop},
         message::{Message, MessageRole},
-        part::Part,
+        part::{Part, DataRef},
     },
     errors::GenerateContentError,
     model::ModelRequest,
-    tool::Tool as AiOxTool,
+    tool::{Tool as AiOxTool, encoding::{encode_tool_result_parts, decode_tool_result_parts}},
     usage::Usage,
     ModelResponse,
 };
@@ -57,6 +57,11 @@ pub fn convert_request_to_anthropic(
         let role = match message.role {
             MessageRole::User => AnthropicRole::User,
             MessageRole::Assistant => AnthropicRole::Assistant,
+            MessageRole::System => AnthropicRole::User, // Map System to User since Anthropic doesn't have System role
+            MessageRole::Unknown(_) => {
+                // Map unknown roles to User as default
+                AnthropicRole::User
+            }
         };
         anthropic_messages.push(AnthropicMessage::new(role, content));
     }
@@ -101,24 +106,35 @@ fn extract_content_from_parts(content: &[Part]) -> Result<Vec<AnthropicContent>,
     
     for part in content {
         match part {
-            Part::Text { text } => {
+            Part::Text { text, .. } => {
                 anthropic_content.push(AnthropicContent::Text(AnthropicText::new(text.clone())));
             }
-            Part::Image { source } => {
-                // Convert ai-ox ImageSource to Anthropic ImageSource
-                match source {
-                    crate::content::part::ImageSource::Base64 { media_type, data } => {
-                        let anthropic_source = AnthropicImageSource::Base64 {
-                            media_type: media_type.clone(),
-                            data: data.clone(),
-                        };
-                        anthropic_content.push(AnthropicContent::Image { 
-                            source: anthropic_source 
-                        });
-                    }
-                }
-            }
-            Part::ToolCall { id, name, args } => {
+             Part::Blob { data_ref, mime_type, .. } => {
+                 // Convert ai-ox DataRef to Anthropic ImageSource for image types
+                 match data_ref {
+                     DataRef::Base64 { data } => {
+                         if mime_type.starts_with("image/") {
+                             let anthropic_source = AnthropicImageSource::Base64 {
+                                 media_type: mime_type.clone(),
+                                 data: data.clone(),
+                             };
+                             anthropic_content.push(AnthropicContent::Image {
+                                 source: anthropic_source
+                             });
+                         } else {
+                             return Err(GenerateContentError::message_conversion(
+                                 &format!("Unsupported blob mime_type for Anthropic: {}", mime_type)
+                             ));
+                         }
+                     }
+                     DataRef::Uri { uri } => {
+                         return Err(GenerateContentError::message_conversion(
+                             &format!("URI data references not supported by Anthropic provider for mime_type: {}", mime_type)
+                         ));
+                     }
+                 }
+             }
+            Part::ToolUse { id, name, args, .. } => {
                 let tool_use = anthropic_ox::tool::ToolUse::new(
                     id.clone(),
                     name.clone(),
@@ -126,19 +142,19 @@ fn extract_content_from_parts(content: &[Part]) -> Result<Vec<AnthropicContent>,
                 );
                 anthropic_content.push(AnthropicContent::ToolUse(tool_use));
             }
-            Part::ToolResult { call_id, name: _, content } => {
-                // Preserve JSON structure when possible
-                let content_text = match content {
-                    serde_json::Value::String(s) => s.clone(),
-                    other => serde_json::to_string_pretty(other)
-                        .unwrap_or_else(|_| other.to_string()),
-                };
-                
-                let tool_result = anthropic_ox::tool::ToolResult::text(
-                    call_id.clone(),
-                    content_text,
-                );
-                anthropic_content.push(AnthropicContent::ToolResult(tool_result));
+             Part::ToolResult { id, name, parts, .. } => {
+                 // Use the standardized encoding function to convert parts to string
+                 let content_text = encode_tool_result_parts(name, parts)?;
+                 let tool_result = anthropic_ox::tool::ToolResult::text(
+                     id.clone(),
+                     content_text,
+                 );
+                 anthropic_content.push(AnthropicContent::ToolResult(tool_result));
+             }
+            Part::Opaque { provider, .. } => {
+                return Err(GenerateContentError::message_conversion(
+                    &format!("Opaque parts not supported by Anthropic provider. Provider: {}", provider)
+                ));
             }
             unsupported => {
                 return Err(GenerateContentError::message_conversion(
@@ -190,56 +206,83 @@ pub fn convert_anthropic_response_to_ai_ox(
     for content in response.content {
         match content {
             AnthropicContent::Text(text) => {
-                content_parts.push(Part::Text { text: text.text });
+                content_parts.push(Part::Text { text: text.text, ext: std::collections::BTreeMap::new() });
             }
-            AnthropicContent::Image { source } => {
-                let source = match source {
-                    AnthropicImageSource::Base64 { media_type, data } => {
-                        crate::content::part::ImageSource::Base64 { media_type, data }
-                    }
-                };
-                content_parts.push(Part::Image { source });
-            }
+             AnthropicContent::Image { source } => {
+                 let (data_ref, mime_type) = match source {
+                     AnthropicImageSource::Base64 { media_type, data } => {
+                         (DataRef::Base64 { data }, media_type)
+                     }
+                 };
+                 content_parts.push(Part::Blob {
+                     data_ref,
+                     mime_type,
+                     name: None,
+                     description: None,
+                     ext: std::collections::BTreeMap::new(),
+                 });
+             }
             AnthropicContent::ToolUse(tool_use) => {
-                content_parts.push(Part::ToolCall {
+                content_parts.push(Part::ToolUse {
                     id: tool_use.id,
                     name: tool_use.name,
                     args: tool_use.input,
+                    ext: std::collections::BTreeMap::new(),
                 });
             }
-            AnthropicContent::ToolResult(tool_result) => {
-                // Convert tool result content to JSON value
-                let content = serde_json::json!({
-                    "content": tool_result.content,
-                    "is_error": tool_result.is_error
-                });
-                
-                // Get the tool name from our mapping, fallback to extracting from ID
-                let tool_name = tool_id_to_name.get(&tool_result.tool_use_id)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        // Fallback: try to extract name from tool_use_id pattern
-                        tool_result.tool_use_id.split('_')
-                            .next()
-                            .unwrap_or("unknown_tool")
-                            .to_string()
-                    });
-                    
-                content_parts.push(Part::ToolResult {
-                    call_id: tool_result.tool_use_id,
-                    name: tool_name,
-                    content,
-                });
-            }
+             AnthropicContent::ToolResult(tool_result) => {
+                  // Get the tool name from our mapping, fallback to extracting from ID
+                  let tool_name = tool_id_to_name.get(&tool_result.tool_use_id)
+                      .cloned()
+                      .unwrap_or_else(|| {
+                          // Fallback: try to extract name from tool_use_id pattern
+                          tool_result.tool_use_id.split('_')
+                              .next()
+                              .unwrap_or("unknown_tool")
+                              .to_string()
+                      });
+
+                   // Extract the text content from ToolResultContent
+                   let content_text = tool_result.content
+                       .iter()
+                       .filter_map(|content| match content {
+                           ToolResultContent::Text { text } => Some(text.as_str()),
+                           ToolResultContent::Image { .. } => None,
+                       })
+                       .collect::<Vec<&str>>()
+                       .join("");
+
+                   if content_text.is_empty() {
+                       return Err(GenerateContentError::message_conversion(
+                           "Tool result contains no text content"
+                       ));
+                   }
+
+                   // Use the standardized decoding function to convert content string to parts
+                   let (decoded_name, parts) = decode_tool_result_parts(&content_text)?;
+                  // Verify the decoded name matches the expected tool name
+                  if decoded_name != tool_name {
+                      return Err(GenerateContentError::message_conversion(
+                          &format!("Tool name mismatch: expected '{}', got '{}'", tool_name, decoded_name)
+                      ));
+                  }
+
+                  content_parts.push(Part::ToolResult {
+                      id: tool_result.tool_use_id,
+                      name: tool_name,
+                      parts,
+                      ext: std::collections::BTreeMap::new(),
+                  });
+             }
             AnthropicContent::Thinking(thinking) => {
                 // Thinking content is internal to Claude and not exposed in ai-ox format
                 // We can either skip it or include it as a text part
-                content_parts.push(Part::Text { text: thinking.text });
+                content_parts.push(Part::Text { text: thinking.text, ext: std::collections::BTreeMap::new() });
             }
             AnthropicContent::SearchResult(search_result) => {
                 // Convert search result to text content
                 let content = format!("Search result: {}", serde_json::to_string(&search_result).unwrap_or_else(|_| "Invalid search result".to_string()));
-                content_parts.push(Part::Text { text: content });
+                content_parts.push(Part::Text { text: content, ext: std::collections::BTreeMap::new() });
             }
         }
     }
@@ -247,7 +290,8 @@ pub fn convert_anthropic_response_to_ai_ox(
     let message = Message {
         role: MessageRole::Assistant,
         content: content_parts,
-        timestamp: chrono::Utc::now(),
+        timestamp: None,
+        ext: Some(std::collections::BTreeMap::new()),
     };
     
     let usage = {
@@ -491,6 +535,7 @@ mod tests {
     use crate::tool::{Tool as AiOxTool, FunctionMetadata};
     use serde_json::json;
 
+    #[cfg(feature = "schema")]
     #[test]
     fn test_convert_tools_to_anthropic_multiple_functions() {
         let function1 = FunctionMetadata {
@@ -498,7 +543,7 @@ mod tests {
             description: Some("Get weather information".to_string()),
             parameters: json!({"type": "object", "properties": {"location": {"type": "string"}}}),
         };
-        
+
         let function2 = FunctionMetadata {
             name: "get_time".to_string(),
             description: Some("Get current time".to_string()),
@@ -509,8 +554,16 @@ mod tests {
         let result = convert_tools_to_anthropic(tools).unwrap();
 
         assert_eq!(result.len(), 2);
-        assert_eq!(result[0].name, "get_weather");
-        assert_eq!(result[1].name, "get_time");
+        if let anthropic_ox::tool::Tool::Custom(tool) = &result[0] {
+            assert_eq!(tool.name, "get_weather");
+        } else {
+            panic!("Expected Custom tool");
+        }
+        if let anthropic_ox::tool::Tool::Custom(tool) = &result[1] {
+            assert_eq!(tool.name, "get_time");
+        } else {
+            panic!("Expected Custom tool");
+        }
     }
 
     #[test]
@@ -542,25 +595,33 @@ mod tests {
 
         let parts = vec![
             Part::ToolResult {
-                call_id: "call_123".to_string(),
+                id: "call_123".to_string(),
                 name: "get_weather".to_string(),
-                content: json_content.clone(),
+                parts: vec![Part::Text {
+                    text: serde_json::to_string_pretty(&json_content).unwrap(),
+                    ext: std::collections::BTreeMap::new(),
+                }],
+                ext: std::collections::BTreeMap::new(),
             }
         ];
 
         let result = extract_content_from_parts(&parts).unwrap();
         assert_eq!(result.len(), 1);
-        
+
         if let AnthropicContent::ToolResult(tool_result) = &result[0] {
             assert_eq!(tool_result.tool_use_id, "call_123");
-            // The JSON should be pretty-printed, not just stringified
+            // The JSON should be preserved through encoding/decoding
             let content_text = match &tool_result.content[0] {
                 anthropic_ox::tool::ToolResultContent::Text { text } => text,
                 _ => panic!("Expected text content"),
             };
-            // Should be valid JSON that can be parsed back
-            let parsed: serde_json::Value = serde_json::from_str(content_text).unwrap();
-            assert_eq!(parsed, json_content);
+            // Decode the content and verify it matches the original
+            let (decoded_name, decoded_parts) = decode_tool_result_parts(content_text).unwrap();
+            assert_eq!(decoded_name, "get_weather");
+            assert_eq!(decoded_parts, vec![Part::Text {
+                text: serde_json::to_string_pretty(&json_content).unwrap(),
+                ext: std::collections::BTreeMap::new(),
+            }]);
         } else {
             panic!("Expected ToolResult content");
         }
@@ -568,25 +629,35 @@ mod tests {
 
     #[test]
     fn test_tool_result_string_preservation() {
-        let string_content = json!("Just a simple string response");
+        let string_content = "Just a simple string response";
 
         let parts = vec![
             Part::ToolResult {
-                call_id: "call_456".to_string(),
+                id: "call_456".to_string(),
                 name: "simple_func".to_string(),
-                content: string_content,
+                parts: vec![Part::Text {
+                    text: string_content.to_string(),
+                    ext: std::collections::BTreeMap::new(),
+                }],
+                ext: std::collections::BTreeMap::new(),
             }
         ];
 
         let result = extract_content_from_parts(&parts).unwrap();
         assert_eq!(result.len(), 1);
-        
+
         if let AnthropicContent::ToolResult(tool_result) = &result[0] {
             let content_text = match &tool_result.content[0] {
                 anthropic_ox::tool::ToolResultContent::Text { text } => text,
                 _ => panic!("Expected text content"),
             };
-            assert_eq!(content_text, "Just a simple string response");
+            // Decode the content and verify it matches the original
+            let (decoded_name, decoded_parts) = decode_tool_result_parts(content_text).unwrap();
+            assert_eq!(decoded_name, "simple_func");
+            assert_eq!(decoded_parts, vec![Part::Text {
+                text: string_content.to_string(),
+                ext: std::collections::BTreeMap::new(),
+            }]);
         } else {
             panic!("Expected ToolResult content");
         }
@@ -697,6 +768,7 @@ mod tests {
             usage: Some(Usage {
                 input_tokens: Some(100),
                 output_tokens: Some(50),
+                thinking_tokens: None,
             }),
         };
         
@@ -799,5 +871,41 @@ mod tests {
         assert_eq!(parse_stop_reason(Some("tool_use")), Some(AnthropicStopReason::ToolUse));
         assert_eq!(parse_stop_reason(Some("unknown")), None);
         assert_eq!(parse_stop_reason(None), None);
+    }
+
+    #[test]
+    fn test_unknown_role_conversion() {
+        let request = ModelRequest {
+            messages: vec![Message {
+                role: MessageRole::Unknown("custom_role".to_string()),
+                content: vec![Part::Text { text: "Test message".to_string(), ext: std::collections::BTreeMap::new() }],
+                timestamp: None,
+                ext: None,
+            }],
+            system_message: None,
+            tools: None,
+        };
+
+        let result = convert_request_to_anthropic(request, "test-model".to_string(), None, 100, None);
+        assert!(result.is_ok());
+        let chat_request = result.unwrap();
+        assert_eq!(chat_request.messages.len(), 1);
+        assert_eq!(chat_request.messages[0].role, AnthropicRole::User); // Should map to User
+    }
+
+    #[test]
+    fn test_opaque_part_error() {
+        let parts = vec![Part::Opaque {
+            provider: "test_provider".to_string(),
+            kind: "test_kind".to_string(),
+            payload: serde_json::json!({"test": "data"}),
+            ext: std::collections::BTreeMap::new(),
+        }];
+
+        let result = extract_content_from_parts(&parts);
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Opaque parts not supported by Anthropic provider"));
+        assert!(error.to_string().contains("test_provider"));
     }
 }

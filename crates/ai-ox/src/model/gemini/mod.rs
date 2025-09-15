@@ -246,11 +246,8 @@ mod tests {
         let _complex_schema = schema_for!(ComplexData);
 
         // Test that we can use ResponseSchema::from which is what the implementation uses
-        #[cfg(feature = "schema")]
-        {
-            let _response_schema_cat = <gemini_ox::ResponseSchema>::from::<Cat>();
-            let _response_schema_complex = <gemini_ox::ResponseSchema>::from::<ComplexData>();
-        }
+        let _response_schema_cat = <gemini_ox::ResponseSchema>::from::<Cat>();
+        let _response_schema_complex = <gemini_ox::ResponseSchema>::from::<ComplexData>();
     }
 
     #[tokio::test]
@@ -274,8 +271,10 @@ mod tests {
             role: MessageRole::User,
             content: vec![Part::Text {
                 text: "Why is the sky blue?".to_string(),
+                ext: std::collections::BTreeMap::new(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
+            ext: Some(std::collections::BTreeMap::new()),
         }];
 
         let result = model
@@ -294,7 +293,7 @@ mod tests {
         assert!(!response.message.content.is_empty());
 
         // Check that we got text content back
-        if let Some(Part::Text { text }) = response.message.content.first() {
+        if let Some(Part::Text { text, .. }) = response.message.content.first() {
             assert!(!text.is_empty());
             println!("Response from model: {text}");
         } else {
@@ -311,8 +310,10 @@ mod tests {
             role: MessageRole::User,
             content: vec![Part::Text {
                 text: "Return a JSON object with a cat named 'Fluffy'".to_string(),
+                ext: std::collections::BTreeMap::new(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
+            ext: Some(std::collections::BTreeMap::new()),
         };
 
         let result: Result<StructuredResponse<Cat>, _> =
@@ -341,8 +342,10 @@ mod tests {
             role: MessageRole::User,
             content: vec![Part::Text {
                 text: "Generate a JSON object with a count between 1-100, some tags related to programming, and active set to true".to_string(),
+                ext: std::collections::BTreeMap::new(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
+            ext: Some(std::collections::BTreeMap::new()),
         };
 
         let result: Result<StructuredResponse<ComplexData>, _> =
@@ -374,22 +377,28 @@ mod tests {
                 role: MessageRole::User,
                 content: vec![Part::Text {
                     text: "Hello, I'm going to ask you about cats.".to_string(),
+                    ext: std::collections::BTreeMap::new(),
                 }],
-                timestamp: chrono::Utc::now(),
+                timestamp: Some(chrono::Utc::now()),
+                ext: Some(std::collections::BTreeMap::new()),
             },
             Message {
                 role: MessageRole::Assistant,
                 content: vec![Part::Text {
                     text: "Hello! I'd be happy to help you with questions about cats.".to_string(),
+                    ext: std::collections::BTreeMap::new(),
                 }],
-                timestamp: chrono::Utc::now(),
+                timestamp: Some(chrono::Utc::now()),
+                ext: Some(std::collections::BTreeMap::new()),
             },
             Message {
                 role: MessageRole::User,
                 content: vec![Part::Text {
                     text: "What are some popular cat breeds?".to_string(),
+                    ext: std::collections::BTreeMap::new(),
                 }],
-                timestamp: chrono::Utc::now(),
+                timestamp: Some(chrono::Utc::now()),
+                ext: Some(std::collections::BTreeMap::new()),
             },
         ];
 
@@ -408,7 +417,7 @@ mod tests {
         assert_eq!(response.message.role, MessageRole::Assistant);
         assert!(!response.message.content.is_empty());
 
-        if let Some(Part::Text { text }) = response.message.content.first() {
+        if let Some(Part::Text { text, .. }) = response.message.content.first() {
             assert!(!text.is_empty());
             assert!(text.to_lowercase().contains("cat") || text.to_lowercase().contains("breed"));
             println!("Response about cat breeds: {text}");
@@ -426,8 +435,10 @@ mod tests {
             role: MessageRole::User,
             content: vec![Part::Text {
                 text: "Tell me a short story about a robot. Make it 2-3 sentences.".to_string(),
+                ext: std::collections::BTreeMap::new(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
+            ext: Some(std::collections::BTreeMap::new()),
         }];
 
         let request = ModelRequest {
@@ -541,8 +552,10 @@ Received {} events total",
             role: MessageRole::User,
             content: vec![Part::Text {
                 text: "What's the weather like in San Francisco?".to_string(),
+                ext: std::collections::BTreeMap::new(),
             }],
-            timestamp: chrono::Utc::now(),
+            timestamp: Some(chrono::Utc::now()),
+            ext: Some(std::collections::BTreeMap::new()),
         };
 
         // Test the conversion function directly (without making API call)
@@ -586,35 +599,5 @@ Received {} events total",
         }
     }
 
-    #[tokio::test]
-    #[ignore = "Requires ANTHROPIC_API_KEY environment variable and makes actual API calls"]
-    async fn test_anthropic_model_request_structured_simple() {
-        use crate::model::anthropic::AnthropicModel;
 
-        let model = AnthropicModel::new("claude-3-opus-20240229").await.unwrap();
-
-        let message = Message {
-            role: MessageRole::User,
-            content: vec![Part::Text {
-                text: "Return a JSON object with a cat named 'Fluffy'".to_string(),
-            }],
-            timestamp: chrono::Utc::now(),
-        };
-
-        let result: Result<StructuredResponse<Cat>, _> =
-            model.request_structured(vec![message]).await;
-
-        match result {
-            Ok(response) => {
-                assert!(!response.data.name.is_empty());
-                assert_eq!(response.vendor_name, "anthropic");
-                assert_eq!(response.model_name, "claude-3-opus-20240229");
-
-                println!("Generated cat: {:?}", response.data);
-            }
-            Err(e) => {
-                panic!("Integration test failed: {e:?}");
-            }
-        }
-    }
 }

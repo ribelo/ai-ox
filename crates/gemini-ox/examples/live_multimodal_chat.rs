@@ -631,7 +631,7 @@ async fn send_video_chunk(
     println!(
         "📤 DEBUG: Preparing to send video chunk as RealtimeInput (mime_type: {:?}, data length: {})",
         chunk.mime_type,
-        chunk.data.as_ref().map_or(0, |d| d.len())
+        chunk.data.len()
     );
 
     let payload = RealtimeInputPayload {

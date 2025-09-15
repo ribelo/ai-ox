@@ -1,6 +1,6 @@
 use openai_ox::{
     OpenAI, ResponsesRequest, ResponsesResponse, ResponsesInput, ReasoningConfig,
-    OutputItem, ReasoningItem, ResponseMessage, ResponsesUsage, Message
+    ResponseOutputItem, ResponseOutputContent, Message
 };
 use serde_json::json;
 
@@ -56,22 +56,32 @@ async fn test_responses_request_with_messages() {
 async fn test_responses_response_deserialization() {
     let json = json!({
         "id": "resp_123",
+        "object": "response",
         "created_at": 1234567890u64,
         "model": "o3-mini",
+        "parallel_tool_calls": true,
+        "tools": [],
         "output": [
-            {
-                "type": "reasoning",
-                "id": "reasoning_1",
-                "summary": "I need to add 2 and 2 together.",
-                "usage": {
-                    "reasoning_tokens": 15
-                }
-            },
-            {
-                "type": "message",
-                "role": "assistant",
-                "content": "The answer is 4."
-            }
+             {
+                 "type": "reasoning",
+                 "id": "reasoning_1",
+                 "summary": ["I need to add 2 and 2 together."],
+                 "usage": {
+                     "reasoning_tokens": 15
+                 }
+             },
+             {
+                 "type": "message",
+                 "id": "msg_1",
+                 "role": "assistant",
+                 "content": [
+                     {
+                         "type": "text",
+                         "text": "The answer is 4."
+                     }
+                 ],
+                 "status": "completed"
+             }
         ],
         "status": "completed",
         "usage": {
@@ -86,21 +96,25 @@ async fn test_responses_response_deserialization() {
     
     assert_eq!(response.id, "resp_123");
     assert_eq!(response.model, "o3-mini");
-    assert_eq!(response.status, "completed");
+    assert_eq!(response.status.as_deref(), Some("completed"));
     assert_eq!(response.output.len(), 2);
     
     // Check reasoning item
-    if let OutputItem::ReasoningItem(reasoning) = &response.output[0] {
-        assert_eq!(reasoning.id, "reasoning_1");
-        assert_eq!(reasoning.summary.as_ref().unwrap(), "I need to add 2 and 2 together.");
+    if let ResponseOutputItem::Reasoning { id, summary, .. } = &response.output[0] {
+        assert_eq!(id, "reasoning_1");
+        assert_eq!(summary[0].as_str().unwrap(), "I need to add 2 and 2 together.");
     } else {
         panic!("Expected reasoning item");
     }
     
     // Check message item
-    if let OutputItem::Message(message) = &response.output[1] {
-        assert_eq!(message.role, "assistant");
-        assert_eq!(message.content, "The answer is 4.");
+    if let ResponseOutputItem::Message { role, content, .. } = &response.output[1] {
+        assert_eq!(role, "assistant");
+        if let ResponseOutputContent::Text { text, .. } = &content[0] {
+            assert_eq!(text, "The answer is 4.");
+        } else {
+            panic!("Expected text content");
+        }
     } else {
         panic!("Expected message item");
     }
@@ -117,29 +131,47 @@ async fn test_responses_response_deserialization() {
 async fn test_responses_response_helper_methods() {
     let json = json!({
         "id": "resp_456",
+        "object": "response",
         "created_at": 1234567890u64,
         "model": "gpt-5",
+        "parallel_tool_calls": true,
+        "tools": [],
         "output": [
-            {
-                "type": "reasoning",
-                "id": "reasoning_1",
-                "summary": "Thinking step 1",
-                "encrypted_content": "encrypted_data_123"
-            },
-            {
-                "type": "reasoning", 
-                "id": "reasoning_2",
-                "summary": "Thinking step 2"
-            },
-            {
-                "type": "text",
-                "text": "Here's my analysis:"
-            },
-            {
-                "type": "message",
-                "role": "assistant",
-                "content": "The final answer is 42."
-            }
+             {
+                 "type": "reasoning",
+                 "id": "reasoning_1",
+                 "summary": ["Thinking step 1"],
+                 "encrypted_content": "encrypted_data_123"
+             },
+             {
+                 "type": "reasoning",
+                 "id": "reasoning_2",
+                 "summary": ["Thinking step 2"]
+             },
+             {
+                 "type": "message",
+                 "id": "msg_2",
+                 "role": "assistant",
+                 "content": [
+                     {
+                         "type": "text",
+                         "text": "Here's my analysis:"
+                     }
+                 ],
+                 "status": "completed"
+             },
+             {
+                 "type": "message",
+                 "id": "msg_3",
+                 "role": "assistant",
+                 "content": [
+                     {
+                         "type": "text",
+                         "text": "The final answer is 42."
+                     }
+                 ],
+                 "status": "completed"
+             }
         ],
         "status": "completed",
         "usage": {
@@ -158,16 +190,20 @@ async fn test_responses_response_helper_methods() {
     assert!(!response.is_failed());
     
     assert_eq!(response.reasoning_tokens(), 75);
-    assert!(response.has_encrypted_reasoning());
-    
+
     let reasoning_items = response.reasoning_items();
     assert_eq!(reasoning_items.len(), 2);
-    assert_eq!(reasoning_items[0].id, "reasoning_1");
-    assert_eq!(reasoning_items[1].id, "reasoning_2");
+    assert_eq!(reasoning_items[0].0, "reasoning_1");
+    assert_eq!(reasoning_items[1].0, "reasoning_2");
     
     let messages = response.messages();
-    assert_eq!(messages.len(), 1);
-    assert_eq!(messages[0].content, "The final answer is 42.");
+    assert_eq!(messages.len(), 2);
+    // Check the content of the second message (messages[1].2 is the content vector)
+    if let ResponseOutputContent::Text { text, .. } = &messages[1].2[0] {
+        assert_eq!(text, "The final answer is 42.");
+    } else {
+        panic!("Expected text content in second message");
+    }
     
     let content = response.content().unwrap();
     assert!(content.contains("Thinking step 1"));

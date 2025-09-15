@@ -5,13 +5,12 @@
 //! not just the function being called.
 
 use ai_ox::{
-    tool::{ToolBox, ToolCall, ToolResult, ToolError, ToolHooks, ApprovalRequest, Tool, FunctionMetadata},
-    content::message::{Message, MessageRole},
+    tool::{ToolBox, ToolUse, ToolError, ToolHooks, ApprovalRequest, Tool, FunctionMetadata},
     content::part::Part,
 };
 use futures_util::future::BoxFuture;
 use serde_json::json;
-use std::collections::HashSet;
+use std::collections::{HashSet, BTreeMap};
 use std::process::Command;
 use thiserror::Error;
 
@@ -67,7 +66,7 @@ impl ToolBox for SmartBashTool {
         ])]
     }
     
-    fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
+    fn invoke(&self, call: ToolUse) -> BoxFuture<'_, Result<Part, ToolError>> {
         Box::pin(async move {
             // Extract command from args
             let command = call.args
@@ -79,24 +78,21 @@ impl ToolBox for SmartBashTool {
                 ))?;
             
             // Execute the command
-            match self.execute(command.to_string()).await {
-                Ok(output) => {
-                    let response = Message::new(
-                        MessageRole::Assistant,
-                        vec![Part::Text { text: output }]
-                    );
-                    Ok(ToolResult::new(
-                        call.id.clone(),
-                        "execute",
-                        vec![response]
-                    ))
-                },
+             match self.execute(command.to_string()).await {
+                 Ok(output) => {
+                     Ok(Part::ToolResult {
+                         id: call.id.clone(),
+                         name: "execute".to_string(),
+                         parts: vec![Part::Text { text: output, ext: BTreeMap::new() }],
+                         ext: BTreeMap::new(),
+                     })
+                 },
                 Err(e) => Err(ToolError::execution("execute", e))
             }
         })
     }
     
-    fn invoke_with_hooks(&self, call: ToolCall, hooks: ToolHooks) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
+    fn invoke_with_hooks(&self, call: ToolUse, hooks: ToolHooks) -> BoxFuture<'_, Result<Part, ToolError>> {
         Box::pin(async move {
             // Extract command for analysis
             if let Some(command) = call.args.get("command").and_then(|v| v.as_str()) {

@@ -15,6 +15,7 @@ use ai_ox::{
     toolbox,
     workflow::{Next, Node, RunContext, Workflow, WorkflowError},
 };
+use std::collections::BTreeMap;
 use async_trait::async_trait;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -149,7 +150,7 @@ impl Node<MultiAgentState, (), String> for AgentNode {
                         // Final step - extract text response
                         if let Some(text) =
                             response.message.content.iter().find_map(|part| match part {
-                                Part::Text { text } => Some(text.clone()),
+                                Part::Text { text, .. } => Some(text.clone()),
                                 _ => None,
                             })
                         {
@@ -205,6 +206,7 @@ async fn multi_agent_weather_workflow() {
         MessageRole::User,
         vec![Part::Text {
             text: "What is the weather like in Paris?".to_string(),
+            ext: BTreeMap::new(),
         }],
     );
     let initial_state = MultiAgentState::new(

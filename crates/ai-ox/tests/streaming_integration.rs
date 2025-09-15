@@ -8,6 +8,7 @@ use ai_ox::{
 use futures_util::StreamExt;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 // Mock weather service that guarantees tool usage
 #[derive(Debug, Clone)]
@@ -66,6 +67,7 @@ async fn test_all_providers_streaming_with_tools() {
             MessageRole::User,
             vec![Part::Text {
                 text: "What's the weather like in Tokyo? Please use the weather function to get current conditions.".to_string(),
+                ext: BTreeMap::new(),
             }],
         )];
 
@@ -118,24 +120,31 @@ async fn test_all_providers_streaming_with_tools() {
                         println!("⚠ Unexpected tool execution: {}", tool_call.name);
                     }
                 }
-                AgentEvent::ToolResult(tool_result) => {
-                    if tool_result.name == "get_weather" {
-                        tool_result_received = true;
-                        println!("\n✓ Tool result event received: get_weather");
-                        println!("  Tool result ID: {}", tool_result.id);
-                        println!("  Response messages: {}", tool_result.response.len());
+                AgentEvent::ToolResult(messages) => {
+                    // Look for tool result information in the messages
+                    for message in messages {
+                        for part in &message.content {
+                            if let Part::ToolResult { name, id, .. } = part {
+                                if name == "get_weather" {
+                                    tool_result_received = true;
+                                    println!("\n✓ Tool result event received: get_weather");
+                                    println!("  Tool result ID: {}", id);
+                                    println!("  Response messages: {}", messages.len());
 
-                        // Verify the tool result has proper structure
-                        assert!(
-                            !tool_result.name.is_empty(),
-                            "Tool result should have a name"
-                        );
-                        assert!(
-                            !tool_result.response.is_empty(),
-                            "Tool result should have response messages"
-                        );
-                    } else {
-                        println!("⚠ Unexpected tool result: {}", tool_result.name);
+                                    // Verify the tool result has proper structure
+                                    assert!(
+                                        !name.is_empty(),
+                                        "Tool result should have a name"
+                                    );
+                                    assert!(
+                                        !messages.is_empty(),
+                                        "Tool result should have response messages"
+                                    );
+                                } else {
+                                    println!("⚠ Unexpected tool result: {}", name);
+                                }
+                            }
+                        }
                     }
                 }
                 AgentEvent::Completed(response) => {
@@ -219,6 +228,7 @@ async fn test_all_providers_streaming_without_tools() {
             MessageRole::User,
             vec![Part::Text {
                 text: "Write a haiku about coding. Make it creative.".to_string(),
+                ext: BTreeMap::new(),
             }],
         )];
 

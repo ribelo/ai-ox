@@ -1,5 +1,6 @@
-use super::{Tool, ToolBox, ToolCall, ToolError, ToolResult, ToolHooks};
+use super::{Tool, ToolBox, ToolUse, ToolError, ToolHooks};
 use futures_util::future::BoxFuture;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// A container that holds multiple toolboxes and provides a unified interface
@@ -66,7 +67,7 @@ impl ToolSet {
 
     /// Invokes a tool function by finding the appropriate toolbox and
     /// delegating the call to it.
-    pub async fn invoke(&self, call: ToolCall) -> Result<ToolResult, ToolError> {
+    pub async fn invoke(&self, call: ToolUse) -> Result<crate::content::Part, ToolError> {
         let toolbox = self
             .find_toolbox_for_function(&call.name)
             .ok_or_else(|| ToolError::not_found(&call.name))?;
@@ -75,7 +76,7 @@ impl ToolSet {
     }
 
     /// Invokes a tool function with hooks for dangerous operations.
-    pub async fn invoke_with_hooks(&self, call: ToolCall, hooks: ToolHooks) -> Result<ToolResult, ToolError> {
+    pub async fn invoke_with_hooks(&self, call: ToolUse, hooks: ToolHooks) -> Result<crate::content::Part, ToolError> {
         let toolbox = self
             .find_toolbox_for_function(&call.name)
             .ok_or_else(|| ToolError::not_found(&call.name))?;
@@ -107,12 +108,12 @@ impl ToolBox for ToolSet {
         self.get_all_tools()
     }
 
-    fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
-        Box::pin(async move { self.invoke(call).await })
+    fn invoke(&self, call: ToolUse) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
+        Box::pin(async move { ToolSet::invoke(self, call).await })
     }
 
-    fn invoke_with_hooks(&self, call: ToolCall, hooks: ToolHooks) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
-        Box::pin(async move { self.invoke_with_hooks(call, hooks).await })
+    fn invoke_with_hooks(&self, call: ToolUse, hooks: ToolHooks) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
+        Box::pin(async move { ToolSet::invoke_with_hooks(self, call, hooks).await })
     }
 
     fn dangerous_functions(&self) -> &[&str] {
@@ -122,7 +123,7 @@ impl ToolBox for ToolSet {
     }
 
     fn has_function(&self, name: &str) -> bool {
-        self.has_function(name)
+        ToolSet::has_function(self, name)
     }
 }
 
@@ -157,15 +158,16 @@ mod tests {
             }])]
         }
 
-        fn invoke(&self, call: ToolCall) -> BoxFuture<'_, Result<ToolResult, ToolError>> {
+    fn invoke(&self, call: ToolUse) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
             let function_name = self.function_name.clone();
             async move {
                 if call.name == function_name {
-                    Ok(ToolResult::new(
-                        call.id,
-                        call.name,
-                        std::iter::empty::<crate::content::Message>(), // Empty response for mock
-                    ))
+                    Ok(crate::content::Part::ToolResult {
+                        id: call.id,
+                        name: call.name,
+                        parts: vec![],
+                        ext: BTreeMap::new(),
+                    })
                 } else {
                     Err(ToolError::not_found(call.name))
                 }
@@ -180,7 +182,7 @@ mod tests {
         assert!(!toolset.has_function("any_function"));
         assert!(toolset.get_all_tools().is_empty());
 
-        let call = ToolCall::new("1", "missing_function", json!({}));
+        let call = ToolUse::new("1", "missing_function", json!({}));
         let result = toolset.invoke(call).await;
         assert!(matches!(result, Err(ToolError::NotFound { .. })));
     }
@@ -197,12 +199,12 @@ mod tests {
         assert_eq!(tools.len(), 1);
 
         // Test successful invocation
-        let call = ToolCall::new("1", "test_function", json!({}));
+        let call = ToolUse::new("1", "test_function", json!({}));
         let result = toolset.invoke(call).await;
         assert!(result.is_ok());
 
         // Test missing function
-        let call = ToolCall::new("2", "missing_function", json!({}));
+        let call = ToolUse::new("2", "missing_function", json!({}));
         let result = toolset.invoke(call).await;
         assert!(matches!(result, Err(ToolError::NotFound { .. })));
     }
@@ -221,12 +223,12 @@ mod tests {
         assert_eq!(tools.len(), 2);
 
         // Test invocation of function from first toolbox
-        let call = ToolCall::new("1", "function_a", json!({}));
+        let call = ToolUse::new("1", "function_a", json!({}));
         let result = toolset.invoke(call).await;
         assert!(result.is_ok());
 
         // Test invocation of function from second toolbox
-        let call = ToolCall::new("2", "function_b", json!({}));
+        let call = ToolUse::new("2", "function_b", json!({}));
         let result = toolset.invoke(call).await;
         assert!(result.is_ok());
     }
@@ -244,10 +246,10 @@ mod tests {
         assert!(set2.has_function("shared_function"));
 
         // Both toolsets should be able to invoke the shared function
-        let call1 = ToolCall::new("1", "shared_function", json!({}));
+        let call1 = ToolUse::new("1", "shared_function", json!({}));
         assert!(set1.invoke(call1).await.is_ok());
 
-        let call2 = ToolCall::new("2", "shared_function", json!({}));
+        let call2 = ToolUse::new("2", "shared_function", json!({}));
         assert!(set2.invoke(call2).await.is_ok());
     }
 }

@@ -4,7 +4,7 @@ pub mod part;
 
 // Re-export commonly used types
 pub use message::{Message, MessageRole};
-pub use part::{FileData, ImageSource, Part};
+pub use part::{Part, DataRef};
 
 #[cfg(test)]
 mod tests {
@@ -21,8 +21,10 @@ mod tests {
             role: MessageRole::User,
             content: vec![Part::Text {
                 text: "Hello".to_string(),
+                ext: std::collections::BTreeMap::new(),
             }],
-            timestamp,
+            timestamp: Some(timestamp),
+            ext: None,
         };
 
         let json = serde_json::to_value(&message).unwrap();
@@ -40,7 +42,7 @@ mod tests {
         let message: Message = serde_json::from_value(json).unwrap();
         assert_eq!(
             message.timestamp,
-            Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap()
+            Some(Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap())
         );
     }
 }

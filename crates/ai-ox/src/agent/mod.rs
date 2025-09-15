@@ -7,7 +7,7 @@ use crate::{
     content::{
         delta::StreamEvent,
         message::{Message, MessageRole},
-        part::Part,
+        Part,
     },
     errors::GenerateContentError,
     model::{
@@ -15,7 +15,7 @@ use crate::{
         request::ModelRequest,
         response::{ModelResponse, StructuredResponse},
     },
-    tool::{ToolBox, ToolCall, ToolSet, ToolHooks, ApprovalRequest},
+    tool::{ToolBox, ToolUse, ToolSet, ToolHooks, ApprovalRequest, ToolError},
     usage::Usage,
 };
 
@@ -128,6 +128,45 @@ impl Agent {
     /// Check if a specific dangerous tool is pre-approved.
     pub fn is_dangerous_tool_approved(&self, tool_name: &str) -> bool {
         self.approved_dangerous_tools.contains(tool_name)
+    }
+
+    /// Execute a tool call with dangerous tool approval logic.
+    async fn execute_tool_call(
+        tools: &ToolSet,
+        approved_dangerous_tools: &HashSet<String>,
+        call: ToolUse, 
+        hooks: Option<&ToolHooks>
+    ) -> Result<Part, ToolError> {
+        let call_name = &call.name;
+        if tools.is_dangerous_function(call_name) {
+            if approved_dangerous_tools.contains(call_name) {
+                return tools.invoke(call).await;
+            }
+            if let Some(h) = hooks {
+                let req = ApprovalRequest { 
+                    tool_name: call_name.clone(), 
+                    args: call.args.clone() 
+                };
+                if h.request_approval(req).await {
+                    return tools.invoke(call).await;
+                }
+                return Err(ToolError::execution(
+                    call_name, 
+                    std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied, 
+                        "User denied execution of dangerous operation"
+                    )
+                ));
+            }
+            return Err(ToolError::execution(
+                call_name, 
+                std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied, 
+                    "Dangerous operation requires approval but no hooks provided"
+                )
+            ));
+        }
+        tools.invoke(call).await
     }
 
     /// Generates a response without tool execution.
@@ -258,9 +297,11 @@ impl Agent {
                     })?;
                     match tool_result {
                         Ok(result) => {
-                            // The ToolResult contains one or more messages (e.g., the tool output)
-                            // that should be added to the conversation history.
-                            conversation.extend(result.response);
+                            // The tool result is a Part that should be added to the conversation history.
+                            conversation.push(crate::content::Message::new(
+                                crate::content::MessageRole::Assistant,
+                                vec![result]
+                            ));
                         }
                         Err(e) => {
                             // If any tool fails, abort the execution.
@@ -526,9 +567,39 @@ impl Agent {
 
                         match tool_result {
                             Ok(tool_result) => {
-                                yield events::AgentEvent::ToolResult(tool_result.clone());
-                                // Add tool result messages to conversation
-                                conversation.extend(tool_result.response);
+                                // Extract messages from Part::ToolResult
+                                if let crate::content::Part::ToolResult { parts, .. } = &tool_result {
+                                    // Try to extract messages from parts
+                                    let messages: Vec<crate::content::Message> = parts.iter()
+                                        .filter_map(|part| {
+                                            if let crate::content::Part::Text { .. } = part {
+                                                Some(crate::content::Message::new(
+                                                    crate::content::MessageRole::Assistant,
+                                                    vec![part.clone()]
+                                                ))
+                                            } else {
+                                                None
+                                            }
+                                        })
+                                        .collect();
+
+                                    if messages.is_empty() {
+                                        // If no text parts found, create a single message with all parts
+                                        let messages = vec![crate::content::Message::new(
+                                            crate::content::MessageRole::Assistant,
+                                            parts.clone()
+                                        )];
+                                        yield events::AgentEvent::ToolResult(messages.clone());
+                                        conversation.extend(messages);
+                                    } else {
+                                        yield events::AgentEvent::ToolResult(messages.clone());
+                                        conversation.extend(messages);
+                                    }
+                                } else {
+                                    // This shouldn't happen, but handle it gracefully
+                                    yield events::AgentEvent::Failed("Invalid tool result format".to_string());
+                                    return;
+                                }
                             }
                             Err(tool_error) => {
                                 yield events::AgentEvent::Failed(format!("Tool execution failed: {tool_error}"));
@@ -561,7 +632,7 @@ impl Agent {
 /// Helper struct for accumulating streaming events into a final Message.
 struct StreamAccumulator {
     text: String,
-    tool_calls: Vec<ToolCall>,
+    tool_calls: Vec<ToolUse>,
     usage: Option<Usage>,
 }
 
@@ -595,13 +666,18 @@ impl StreamAccumulator {
         self.usage.clone().unwrap_or_default()
     }
 
-    fn finalize(self) -> (Message, Vec<ToolCall>) {
+    fn finalize(self) -> (Message, Vec<ToolUse>) {
         let mut content = vec![];
         if !self.text.is_empty() {
-            content.push(Part::Text { text: self.text });
+            content.push(Part::Text { text: self.text, ext: std::collections::BTreeMap::new() });
         }
 
-        content.extend(self.tool_calls.iter().cloned().map(Part::from));
+        content.extend(self.tool_calls.iter().cloned().map(|tool_use| Part::ToolUse {
+            id: tool_use.id,
+            name: tool_use.name,
+            args: tool_use.args,
+            ext: tool_use.ext.unwrap_or_default(),
+        }));
 
         let message = Message::new(MessageRole::Assistant, content);
         (message, self.tool_calls)
@@ -620,9 +696,10 @@ impl Agent {
 
         if let Some(ref system_instruction) = self.system_instruction {
             request.system_message = Some(Message::new(
-                MessageRole::User,
+                MessageRole::System,
                 vec![Part::Text {
                     text: system_instruction.clone(),
+                    ext: std::collections::BTreeMap::new(),
                 }],
             ));
         }

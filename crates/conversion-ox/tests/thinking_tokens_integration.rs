@@ -60,7 +60,7 @@ fn test_real_gemini_thinking_response_conversion() {
     };
 
     // Convert Gemini response to Anthropic response
-    let anthropic_response = gemini_to_anthropic_response(gemini_response);
+    let anthropic_response = gemini_to_anthropic_response(gemini_response).unwrap();
 
     // Verify the conversion
     assert_eq!(anthropic_response.content.len(), 2);
@@ -212,7 +212,7 @@ fn test_gemini_to_anthropic_to_gemini_round_trip() {
     };
 
     // Step 1: Convert Gemini -> Anthropic
-    let anthropic_response = gemini_to_anthropic_response(original_gemini_response);
+    let anthropic_response = gemini_to_anthropic_response(original_gemini_response).unwrap();
 
     // Verify Anthropic conversion
     assert_eq!(anthropic_response.content.len(), 2);
@@ -365,7 +365,7 @@ fn test_anthropic_to_gemini_to_anthropic_round_trip() {
     };
 
     // Step 4: Convert Gemini -> Anthropic (complete round trip)
-    let final_anthropic_response = gemini_to_anthropic_response(simulated_gemini_response);
+    let final_anthropic_response = gemini_to_anthropic_response(simulated_gemini_response).unwrap();
 
     // Step 5: Verify round-trip preservation
     assert_eq!(final_anthropic_response.content.len(), 2);
@@ -431,7 +431,7 @@ fn test_full_gemini_to_anthropic_to_gemini_round_trip() {
     };
 
     // Step 2: Convert Gemini -> Anthropic
-    let anthropic_response = gemini_to_anthropic_response(original_gemini_response);
+    let anthropic_response = gemini_to_anthropic_response(original_gemini_response).unwrap();
 
     // Verify the Anthropic conversion
     assert_eq!(anthropic_response.content.len(), 2);

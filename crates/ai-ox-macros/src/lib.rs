@@ -187,71 +187,126 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
         let result_handling_code = match (output_ty, error_ty) {
             (Some(out_ty), Some(err_ty)) => {
                 // Fallible tool - returns Result<O, E>
-                quote_spanned! {span=>
-                    // The actual method call happens here
-                    let result: Result<#out_ty, #err_ty> = #call_code;
+                // Check if the output type is String to avoid double JSON encoding
+                let is_string_output = matches!(out_ty, Type::Path(type_path) if
+                    type_path.qself.is_none() &&
+                    type_path.path.segments.len() == 1 &&
+                    type_path.path.segments[0].ident == "String"
+                );
 
-                    // Process the result from the tool method
-                    match result {
-                        Ok(output) => {
-                            // Serialize the successful output (O) into a serde_json::Value
-                            let response_value = serde_json::to_value(output).map_err(|e| {
-                                #crate_prefix::tool::ToolError::output_serialization(
-                                     #method_name_str, e
-                                )
-                            })?; // Early return on serialization error
+                if is_string_output {
+                    // For String returns, use the string directly
+                    quote_spanned! {span=>
+                        // The actual method call happens here
+                        let result: Result<#out_ty, #err_ty> = #call_code;
 
-                            // Create a message from the tool response
-                            let message = #crate_prefix::content::message::Message::from_tool_response(
-                                call.id.clone(),
-                                call.name.clone(),
-                                response_value
-                            );
-
-                            // Wrap in a ToolResult
-                            Ok(#crate_prefix::tool::ToolResult::new(
-                                call.id.clone(),
-                                call.name.clone(),
-                                message
-                            ))
+                        // Process the result from the tool method
+                        match result {
+                            Ok(output) => {
+                                // Return the ToolResult with the string directly
+                                Ok(#crate_prefix::content::part::Part::ToolResult {
+                                    id: call.id.clone(),
+                                    name: call.name.clone(),
+                                    parts: vec![#crate_prefix::content::part::Part::Text { text: output, ext: std::collections::BTreeMap::new() }],
+                                    ext: std::collections::BTreeMap::new(),
+                                })
+                            }
+                            Err(user_err) => {
+                                // The tool method returned an error (E)
+                                // Map the user's error (E) into ToolError::Execution
+                                Err(#crate_prefix::tool::ToolError::execution(
+                                    #method_name_str, user_err
+                                ))
+                            },
                         }
-                        Err(user_err) => {
-                            // The tool method returned an error (E)
-                            // Map the user's error (E) into ToolError::Execution
-                            Err(#crate_prefix::tool::ToolError::execution(
-                                #method_name_str, user_err
-                            ))
-                        },
+                    }
+                } else {
+                    // For other types, serialize to JSON
+                    quote_spanned! {span=>
+                        // The actual method call happens here
+                        let result: Result<#out_ty, #err_ty> = #call_code;
+
+                        // Process the result from the tool method
+                        match result {
+                            Ok(output) => {
+                                // Serialize the successful output (O) into a serde_json::Value
+                                let response_value = serde_json::to_value(output).map_err(|e| {
+                                    #crate_prefix::tool::ToolError::output_serialization(
+                                         #method_name_str, e
+                                    )
+                                })?; // Early return on serialization error
+
+                                // Return the ToolResult directly with the response_value
+                                Ok(#crate_prefix::content::part::Part::ToolResult {
+                                    id: call.id.clone(),
+                                    name: call.name.clone(),
+                                    parts: vec![#crate_prefix::content::part::Part::Text { text: serde_json::to_string(&response_value).unwrap(), ext: std::collections::BTreeMap::new() }],
+                                    ext: std::collections::BTreeMap::new(),
+                                })
+                            }
+                            Err(user_err) => {
+                                // The tool method returned an error (E)
+                                // Map the user's error (E) into ToolError::Execution
+                                Err(#crate_prefix::tool::ToolError::execution(
+                                    #method_name_str, user_err
+                                ))
+                            },
+                        }
                     }
                 }
             }
             (Some(out_ty), None) => {
                 // Infallible tool - returns O directly
-                quote_spanned! {span=>
-                    // The actual method call happens here - this returns O directly
-                    let output: #out_ty = #call_code;
+                // Check if the output type is String to avoid double JSON encoding
+                let is_string_output = matches!(out_ty, Type::Path(type_path) if
+                    type_path.qself.is_none() &&
+                    type_path.path.segments.len() == 1 &&
+                    type_path.path.segments[0].ident == "String"
+                );
 
-                    // Serialize the output (O) into a serde_json::Value
-                    let response_value = serde_json::to_value(output).map_err(|e| {
-                        #crate_prefix::tool::ToolError::output_serialization(
-                             #method_name_str, e
-                        )
-                    })?; // Early return on serialization error
+                if is_string_output {
+                    // For String returns, use the string directly
+                    quote_spanned! {span=>
+                        // The actual method call happens here - this returns String directly
+                        let output: #out_ty = #call_code;
 
-                    // Create a message from the tool response
-                    let message = #crate_prefix::content::message::Message::from_tool_response(
-                        call.id.clone(),
-                        call.name.clone(),
-                        response_value
-                    );
+                        // Create a message from the tool response
+                        let message = #crate_prefix::content::Message::from_tool_response(
+                            call.id.clone(),
+                            call.name.clone(),
+                            serde_json::Value::String(output)
+                        );
 
-                    // Wrap in a ToolResult
-                    Ok(#crate_prefix::tool::ToolResult::new(
-                        call.id.clone(),
-                        call.name.clone(),
-                        message
-                    ))
-                }
+                          // Return the ToolResult
+                          Ok(#crate_prefix::content::part::Part::ToolResult {
+                              id: call.id.clone(),
+                              name: call.name.clone(),
+                              parts: vec![#crate_prefix::content::part::Part::Text { text: output, ext: std::collections::BTreeMap::new() }],
+                              ext: std::collections::BTreeMap::new(),
+                          })
+                    }
+                } else {
+                    // For other types, serialize to JSON
+                    quote_spanned! {span=>
+                        // The actual method call happens here - this returns O directly
+                        let output: #out_ty = #call_code;
+
+                        // Serialize the output (O) into a serde_json::Value
+                        let response_value = serde_json::to_value(output).map_err(|e| {
+                            #crate_prefix::tool::ToolError::output_serialization(
+                                 #method_name_str, e
+                            )
+                        })?; // Early return on serialization error
+
+                          // Return the ToolResult directly with the response_value
+                          Ok(#crate_prefix::content::part::Part::ToolResult {
+                              id: call.id.clone(),
+                              name: call.name.clone(),
+                              parts: vec![#crate_prefix::content::part::Part::Text { text: serde_json::to_string(&response_value).unwrap(), ext: std::collections::BTreeMap::new() }],
+                              ext: std::collections::BTreeMap::new(),
+                          })
+                     }
+                 }
             }
             (None, None) => {
                 // Side-effect tool - returns () (unit type)
@@ -259,19 +314,13 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
                     // The actual method call happens here - this is for side effects only
                     #call_code;
 
-                    // For side-effect tools, we return a success message with null content
-                    let message = #crate_prefix::content::message::Message::from_tool_response(
-                        call.id.clone(),
-                        call.name.clone(),
-                        serde_json::Value::Null
-                    );
-
-                    // Wrap in a ToolResult
-                    Ok(#crate_prefix::tool::ToolResult::new(
-                        call.id.clone(),
-                        call.name.clone(),
-                        message
-                    ))
+                    // For side-effect tools, we return success content
+                    Ok(#crate_prefix::content::part::Part::ToolResult {
+                        id: call.id.clone(),
+                        name: call.name.clone(),
+                        parts: vec![#crate_prefix::content::part::Part::Text { text: "Operation completed successfully".to_string(), ext: std::collections::BTreeMap::new() }],
+                        ext: std::collections::BTreeMap::new(),
+                    })
                 }
             }
             (None, Some(_)) => {
@@ -286,7 +335,7 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
         quote_spanned! {span=>
             #method_name_str => {
                 #deserialize_code
-                // The result handling code now evaluates to Result<ToolResult, ToolError>
+                // The result handling code now evaluates to Result<Part, ToolError>
                 #result_handling_code
             }
         }
@@ -319,10 +368,10 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
             /// result handling, and output serialization.
             // Manually implement async fn using BoxFuture
             // Use standard lifetime syntax 'a directly
-             fn invoke(
-                 &self,
-                 call: #crate_prefix::tool::ToolCall,
-            ) -> futures_util::future::BoxFuture<Result<#crate_prefix::tool::ToolResult, #crate_prefix::tool::ToolError>> {
+            fn invoke(
+                  &self,
+                  call: #crate_prefix::tool::ToolUse,
+            ) -> futures_util::future::BoxFuture<Result<#crate_prefix::content::part::Part, #crate_prefix::tool::ToolError>> {
                  Box::pin(async move { // Wrap the body in Box::pin(async move { ... })
                      let function_name = call.name.clone(); // Clone name for use in match
                      match function_name.as_str() {

@@ -72,7 +72,7 @@ mod tests {
         assert_eq!(usage.total_tokens, 150);
 
         let cost = usage.calculate_cost(0.001, 0.002);
-        assert!((cost - 0.2).abs() < f64::EPSILON); // 0.1 + 0.1 = 0.2
+        assert!((cost - 0.0002).abs() < f64::EPSILON); // 0.0001 + 0.0001 = 0.0002
     }
 
     #[test]

@@ -83,7 +83,7 @@ impl Model for MistralModel {
                 request,
                 self.model.clone(),
                 self.system_instruction.clone(),
-                &self.tool_choice,
+                Some(mistral_ox::tool::ToolChoice::Auto),
             )?;
             let response = self.client
                 .send(&mistral_request)
@@ -106,7 +106,7 @@ impl Model for MistralModel {
                 request,
                 self.model.clone(),
                 self.system_instruction.clone(),
-                &self.tool_choice,
+                Some(mistral_ox::tool::ToolChoice::Auto),
             )?;
             let mut response_stream = client.stream(&mistral_request);
 
@@ -133,7 +133,7 @@ impl Model for MistralModel {
                 request,
                 self.model.clone(),
                 self.system_instruction.clone(),
-                &self.tool_choice,
+                Some(self.tool_choice.clone()),
             )?;
             
             // Set response format to JSON
@@ -150,11 +150,11 @@ impl Model for MistralModel {
             let text = response
                 .choices
                 .first()
-                .and_then(|choice| choice.message.content.iter().find_map(|part| part.as_text()))
+                .and_then(|choice| choice.message.content.as_ref())
                 .ok_or_else(|| MistralError::ResponseParsing("No response content".to_string()))?;
 
             // Parse the text as JSON
-            let json = serde_json::from_str(&text.text)
+            let json = serde_json::from_str(text)
                 .map_err(|e| MistralError::ResponseParsing(e.to_string()))?;
 
             let usage = response

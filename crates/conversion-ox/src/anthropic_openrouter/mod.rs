@@ -42,6 +42,7 @@ use openrouter_ox::{
 };
 
 use crate::ConversionError;
+use ai_ox::tool::{decode_tool_result_parts};
 
 pub mod streaming;
 
@@ -285,21 +286,25 @@ fn convert_anthropic_messages_to_openrouter(
                                 }
                             }
                         }
-                        AnthropicContent::ToolResult(tool_result) => {
-                            // Tool results become separate ToolMessage
-                            let content_str = match &tool_result.content[0] {
-                                anthropic_ox::tool::ToolResultContent::Text { text } => text.clone(),
-                                anthropic_ox::tool::ToolResultContent::Image { .. } => {
-                                    "[Image content]".to_string()
-                                }
-                            };
+                         AnthropicContent::ToolResult(tool_result) => {
+                             // Tool results become separate ToolMessage
+                             let content_str = match &tool_result.content[0] {
+                                 anthropic_ox::tool::ToolResultContent::Text { text } => text.clone(),
+                                 anthropic_ox::tool::ToolResultContent::Image { .. } => {
+                                     "[Image content]".to_string()
+                                 }
+                             };
 
-                            tool_results.push(ToolMessage::with_name(
-                                tool_result.tool_use_id,
-                                content_str,
-                                "unknown".to_string(), // OpenRouter doesn't preserve tool names
-                            ));
-                        }
+                              // Try to decode the tool name from the encoded content
+                              let (name, _) = decode_tool_result_parts(&content_str)
+                                  .map_err(|e| ConversionError::ContentConversion(e.to_string()))?;
+
+                             tool_results.push(ToolMessage::with_name(
+                                 tool_result.tool_use_id,
+                                 content_str,
+                                 name,
+                             ));
+                         }
                         AnthropicContent::ToolUse(_) => {
                             // Tool use should not appear in user messages
                             log::warn!("ToolUse content found in user message, skipping");

@@ -58,7 +58,7 @@ async fn main() {
         });
         
     // Test invoking with hooks - should work
-    let call = ai_ox::tool::ToolCall::new(
+    let call = ai_ox::tool::ToolUse::new(
         "test_id",
         "delete_file", 
         serde_json::json!("/tmp/test.txt")

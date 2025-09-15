@@ -25,11 +25,11 @@
 //!     let request = client
 //!         .chat()
 //!         .model("gpt-3.5-turbo")
-//!         .user("Hello, world!")
+//!         .user_message("Hello, world!")
 //!         .build();
 //!
 //!     let response = client.send(&request).await?;
-//!     println!("{}", response.content());
+//!     println!("{}", response.content().unwrap_or("No content"));
 //!
 //!     Ok(())
 //! }

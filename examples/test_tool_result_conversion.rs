@@ -50,9 +50,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let tool_result_message = Message {
         role: MessageRole::User,
         content: vec![Part::ToolResult {
-            call_id: "tool_0_knowledge_search".to_string(),
-            name: Some("knowledge_search".to_string()),
-            content: tool_result_content,
+            id: "tool_0_knowledge_search".to_string(),
+            name: "knowledge_search".to_string(),
+            content: vec![Part::Text { text: serde_json::to_string(&tool_result_content).unwrap() }],
         }],
         timestamp: chrono::Utc::now(),
     };
@@ -74,7 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             },
             Message {
                 role: MessageRole::Assistant,
-                content: vec![Part::ToolCall {
+                content: vec![Part::ToolUse {
                     id: "tool_0_knowledge_search".to_string(),
                     name: "knowledge_search".to_string(),
                     args: json!({"query": "corn fertilizers"}),
