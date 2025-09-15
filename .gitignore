@@ -39,3 +39,8 @@ tasks/
 
 # Resources (test files, etc)
 resources/
+*.log
+test_*.rs
+run_*.sh
+test_output*
+test_results*
