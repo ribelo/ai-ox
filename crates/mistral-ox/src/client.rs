@@ -97,18 +97,11 @@ impl Mistral {
 
 impl Clone for Mistral {
     fn clone(&self) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .expect("Failed to create HTTP client");
-
-        let helper = MistralRequestHelper::new(client.clone(), &self.base_url, &self.api_key);
-
         Self {
             api_key: self.api_key.clone(),
             base_url: self.base_url.clone(),
-            client,
-            helper,
+            client: self.client.clone(),
+            helper: self.helper.clone(),
         }
     }
 }

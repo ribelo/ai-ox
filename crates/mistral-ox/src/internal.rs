@@ -8,6 +8,8 @@ use futures_util::stream::BoxStream as FuturesBoxStream;
 
 /// Mistral client helper methods using the common RequestBuilder
 pub struct MistralRequestHelper {
+    client: reqwest::Client,
+    config: RequestConfig,
     request_builder: RequestBuilder,
 }
 
@@ -21,9 +23,15 @@ impl std::fmt::Debug for MistralRequestHelper {
 
 impl Clone for MistralRequestHelper {
     fn clone(&self) -> Self {
-        // We can't actually clone RequestBuilder, so this is a placeholder
-        // In practice, this should not be called since we don't use Clone on MistralRequestHelper
-        unimplemented!("MistralRequestHelper cannot be cloned")
+        let client = self.client.clone();
+        let config = self.config.clone();
+        let request_builder = RequestBuilder::new(client.clone(), config.clone());
+
+        Self {
+            client,
+            config,
+            request_builder,
+        }
     }
 }
 
@@ -33,9 +41,13 @@ impl MistralRequestHelper {
             .with_auth(AuthMethod::Bearer(api_key.to_string()))
             .with_header("accept", "application/json");
 
-        let request_builder = RequestBuilder::new(client, config);
+        let request_builder = RequestBuilder::new(client.clone(), config.clone());
 
-        Self { request_builder }
+        Self {
+            client,
+            config,
+            request_builder,
+        }
     }
 
     /// Send a chat completion request
