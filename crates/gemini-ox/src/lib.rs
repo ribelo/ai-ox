@@ -47,17 +47,16 @@ pub use crate::embedding::EmbedContentRequest;
 use core::fmt;
 // use std::sync::Arc; // Unused import removed - ensure this line is gone
 
+use crate::internal::GeminiRequestHelper;
 use bon::Builder;
 #[cfg(feature = "leaky-bucket")] // Add cfg attribute here
 use leaky_bucket::RateLimiter;
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
+use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
 use serde_json::Value;
 #[cfg(feature = "leaky-bucket")] // Add cfg attribute here
 use std::sync::Arc;
 use thiserror::Error;
-
-const BASE_URL: &str = "https://generativelanguage.googleapis.com";
 
 #[derive(
     Debug,
@@ -338,6 +337,16 @@ impl Gemini {
     pub fn project_id(&self) -> Option<&str> {
         self.project_id.as_deref()
     }
+
+    pub(crate) fn request_helper(&self) -> Result<GeminiRequestHelper, GeminiRequestError> {
+        GeminiRequestHelper::for_standard(self)
+    }
+
+    pub(crate) fn request_helper_for_api_key(
+        &self,
+    ) -> Result<GeminiRequestHelper, GeminiRequestError> {
+        GeminiRequestHelper::new_for_api_key(self)
+    }
 }
 
 impl fmt::Debug for Gemini {
@@ -550,6 +559,34 @@ fn parse_error_response(status: reqwest::StatusCode, bytes: bytes::Bytes) -> Gem
 #[cfg(test)]
 mod oauth_tests {
     use super::*;
+    use serde::Deserialize;
+    use std::{env, fs, path::PathBuf};
+
+    #[derive(Deserialize)]
+    struct GeminiCliCreds {
+        access_token: String,
+    }
+
+    fn load_oauth_token() -> Option<String> {
+        if let Ok(token) = env::var("GOOGLE_OAUTH_TOKEN") {
+            if !token.is_empty() {
+                return Some(token);
+            }
+        }
+
+        let override_path = env::var("GEMINI_OAUTH_CREDS_PATH").ok();
+        let creds_path = override_path.map(PathBuf::from).or_else(|| {
+            env::var("HOME")
+                .ok()
+                .map(PathBuf::from)
+                .map(|home| home.join(".gemini").join("oauth_creds.json"))
+        })?;
+
+        let contents = fs::read_to_string(creds_path).ok()?;
+        serde_json::from_str::<GeminiCliCreds>(&contents)
+            .ok()
+            .map(|creds| creds.access_token)
+    }
 
     #[test]
     fn test_oauth_constructor() {
@@ -589,8 +626,10 @@ mod oauth_tests {
     #[test]
     #[ignore = "Requires GOOGLE_OAUTH_TOKEN environment variable and makes actual API calls"]
     fn test_oauth_integration_with_real_token() {
-        let oauth_token = std::env::var("GOOGLE_OAUTH_TOKEN")
-            .expect("GOOGLE_OAUTH_TOKEN environment variable not set");
+        let Some(oauth_token) = load_oauth_token() else {
+            eprintln!("Skipping OAuth integration test: token not available");
+            return;
+        };
 
         let gemini = Gemini::with_oauth_token(oauth_token);
         assert!(gemini.oauth_token.is_some());

@@ -34,7 +34,12 @@ pub fn model_request_to_gemini_request(
         if gemini_tools.is_empty() {
             None
         } else {
-            Some(gemini_tools.into_iter().map(|tool| serde_json::to_value(tool).unwrap()).collect())
+            Some(
+                gemini_tools
+                    .into_iter()
+                    .map(|tool| serde_json::to_value(tool).unwrap())
+                    .collect(),
+            )
         }
     } else {
         None

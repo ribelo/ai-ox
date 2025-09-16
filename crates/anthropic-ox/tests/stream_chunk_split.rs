@@ -1,14 +1,9 @@
-use anthropic_ox::{
-    message::Message,
-    request::ChatRequest,
-    response::StreamEvent,
-    Anthropic,
-};
+use anthropic_ox::{Anthropic, message::Message, request::ChatRequest, response::StreamEvent};
 use futures_util::StreamExt;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpListener,
-    time::{sleep, Duration},
+    time::{Duration, sleep},
 };
 
 #[tokio::test]

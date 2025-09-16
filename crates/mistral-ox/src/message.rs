@@ -175,7 +175,10 @@ impl From<&str> for Content {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemMessage {
-    #[serde(serialize_with = "serialize_content", deserialize_with = "deserialize_content")]
+    #[serde(
+        serialize_with = "serialize_content",
+        deserialize_with = "deserialize_content"
+    )]
     content: Content,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -280,7 +283,10 @@ impl From<String> for SystemMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserMessage {
-    #[serde(serialize_with = "serialize_content", deserialize_with = "deserialize_content")]
+    #[serde(
+        serialize_with = "serialize_content",
+        deserialize_with = "deserialize_content"
+    )]
     pub content: Content,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,

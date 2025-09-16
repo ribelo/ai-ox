@@ -1,12 +1,8 @@
 use std::collections::BTreeMap;
 
 use ai_ox_common::openai_format::{
-    Function as OpenAIFunction,
-    FunctionCall as OpenAIFunctionCall,
-    Message as OpenAIMessage,
-    MessageRole as OpenAIRole,
-    Tool as OpenAITool,
-    ToolCall as OpenAIToolCall,
+    Function as OpenAIFunction, FunctionCall as OpenAIFunctionCall, Message as OpenAIMessage,
+    MessageRole as OpenAIRole, Tool as OpenAITool, ToolCall as OpenAIToolCall,
 };
 use openai_ox::request::ChatRequest as OpenAIChatRequest;
 use serde_json::Value;
@@ -109,12 +105,13 @@ pub fn openai_chat_request_to_model_request(
                 }
                 if let Some(tool_calls) = &message.tool_calls {
                     for call in tool_calls {
-                        let args = serde_json::from_str(&call.function.arguments).map_err(|err| {
-                            GenerateContentError::message_conversion(&format!(
-                                "Failed to parse tool call arguments: {}",
-                                err
-                            ))
-                        })?;
+                        let args =
+                            serde_json::from_str(&call.function.arguments).map_err(|err| {
+                                GenerateContentError::message_conversion(&format!(
+                                    "Failed to parse tool call arguments: {}",
+                                    err
+                                ))
+                            })?;
                         tool_call_names.insert(call.id.clone(), call.function.name.clone());
                         parts.push(Part::ToolUse {
                             id: call.id.clone(),
@@ -127,17 +124,12 @@ pub fn openai_chat_request_to_model_request(
                 messages.push(Message::new(MessageRole::Assistant, parts));
             }
             OpenAIRole::Tool => {
-                let (name, parts, ext) = decode_tool_result_content(
-                    message
-                        .content
-                        .as_deref()
-                        .unwrap_or("{\"ai_ox_tool_result\": {\"name\": \"unknown\", \"content\": []}}"),
-                )?;
+                let (name, parts, ext) =
+                    decode_tool_result_content(message.content.as_deref().unwrap_or(
+                        "{\"ai_ox_tool_result\": {\"name\": \"unknown\", \"content\": []}}",
+                    ))?;
                 if let Some(tool_call_id) = &message.tool_call_id {
-                    let resolved_name = tool_call_names
-                        .get(tool_call_id)
-                        .cloned()
-                        .unwrap_or(name);
+                    let resolved_name = tool_call_names.get(tool_call_id).cloned().unwrap_or(name);
                     messages.push(Message::new(
                         MessageRole::Assistant,
                         vec![Part::ToolResult {
@@ -211,7 +203,12 @@ fn convert_message_to_openai(
                     },
                 });
             }
-            Part::ToolResult { id, name, parts, ext } => {
+            Part::ToolResult {
+                id,
+                name,
+                parts,
+                ext,
+            } => {
                 let content = encode_tool_result_payload(name, parts, ext)?;
                 tool_messages.push(OpenAIMessage {
                     role: OpenAIRole::Tool,
@@ -289,9 +286,9 @@ fn decode_tool_result_content(
     let object = payload
         .get("ai_ox_tool_result")
         .and_then(|v| v.as_object())
-        .ok_or_else(|| GenerateContentError::message_conversion(
-            "Missing ai_ox_tool_result in tool content",
-        ))?;
+        .ok_or_else(|| {
+            GenerateContentError::message_conversion("Missing ai_ox_tool_result in tool content")
+        })?;
 
     let name = object
         .get("name")

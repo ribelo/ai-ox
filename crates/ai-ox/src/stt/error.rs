@@ -74,8 +74,6 @@ pub enum SttError {
     ProviderError(ProviderError),
 }
 
-
-
 // Conversion implementations for provider-specific errors
 
 #[cfg(feature = "groq")]

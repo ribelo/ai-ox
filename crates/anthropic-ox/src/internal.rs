@@ -1,91 +1,18 @@
 use crate::error::{self, AnthropicRequestError};
+use ai_ox_common::{
+    request_builder::{
+        AuthMethod, Endpoint as CommonEndpoint, RequestBuilder, RequestConfig,
+    },
+    CommonRequestError,
+};
 use async_stream::try_stream;
-use futures_util::stream::{BoxStream, StreamExt};
-use reqwest::{Method, RequestBuilder as ReqwestRequestBuilder, Response};
-use serde::{Deserialize, Serialize};
+use futures_util::{stream::BoxStream, StreamExt};
+use serde::{de::DeserializeOwned, Serialize};
 use std::collections::HashMap;
 
-/// HTTP method for API endpoints
-#[derive(Debug, Clone)]
-pub enum HttpMethod {
-    Get,
-    Post,
-    Delete,
-}
+pub use ai_ox_common::request_builder::HttpMethod;
 
-#[derive(Default)]
-struct SseParser {
-    buffer: String,
-    data_lines: Vec<String>,
-}
-
-impl SseParser {
-    fn feed<T>(&mut self, chunk: &str) -> Result<Vec<T>, AnthropicRequestError>
-    where
-        T: for<'de> Deserialize<'de>,
-    {
-        self.buffer.push_str(chunk);
-        let mut events = Vec::new();
-
-        while let Some(newline_idx) = self.buffer.find('\n') {
-            let mut line = self.buffer[..newline_idx].to_string();
-            if line.ends_with('\r') {
-                line.pop();
-            }
-            self.buffer.drain(..=newline_idx);
-
-            if line.is_empty() {
-                if self.data_lines.is_empty() {
-                    continue;
-                }
-
-                let payload = self.data_lines.join("\n");
-                self.data_lines.clear();
-
-                if payload == "[DONE]" || payload.is_empty() {
-                    continue;
-                }
-
-                let event: T = serde_json::from_str(&payload)
-                    .map_err(|e| AnthropicRequestError::InvalidEventData(e.to_string()))?;
-                events.push(event);
-                continue;
-            }
-
-            if line.starts_with(':') {
-                // Comment line; ignore and continue.
-                continue;
-            }
-
-            if let Some(value) = line.strip_prefix("data:") {
-                let data = value.trim_start_matches(' ');
-
-                if data == "[DONE]" {
-                    self.data_lines.clear();
-                    continue;
-                }
-
-                if !data.is_empty() {
-                    self.data_lines.push(data.to_string());
-                }
-            }
-        }
-
-        Ok(events)
-    }
-}
-
-impl From<HttpMethod> for Method {
-    fn from(method: HttpMethod) -> Self {
-        match method {
-            HttpMethod::Get => Method::GET,
-            HttpMethod::Post => Method::POST,
-            HttpMethod::Delete => Method::DELETE,
-        }
-    }
-}
-
-/// Represents an API endpoint with its configuration
+/// Represents an API endpoint with Anthropic-specific metadata.
 #[derive(Debug, Clone)]
 pub struct Endpoint {
     pub path: String,
@@ -113,242 +40,138 @@ impl Endpoint {
         self.query_params = Some(params);
         self
     }
-}
 
-/// Centralized request builder that handles all the duplicated HTTP logic
-pub struct RequestBuilder<'a> {
-    client: &'a reqwest::Client,
-    base_url: &'a str,
-    api_key: &'a Option<String>,
-    oauth_token: &'a Option<String>,
-    api_version: &'a str,
-    headers: &'a HashMap<String, String>,
-}
-
-impl<'a> RequestBuilder<'a> {
-    pub fn new(
-        client: &'a reqwest::Client,
-        base_url: &'a str,
-        api_key: &'a Option<String>,
-        oauth_token: &'a Option<String>,
-        api_version: &'a str,
-        headers: &'a HashMap<String, String>,
-    ) -> Self {
-        Self {
-            client,
-            base_url,
-            api_key,
-            oauth_token,
-            api_version,
-            headers,
+    fn to_common(&self) -> CommonEndpoint {
+        let mut endpoint = CommonEndpoint::new(self.path.clone(), self.method.clone());
+        if let Some(params) = &self.query_params {
+            endpoint = endpoint.with_query_params(params.clone());
         }
+        if let Some(beta) = &self.requires_beta {
+            endpoint = endpoint.with_header("anthropic-beta", beta.clone());
+        }
+        endpoint
     }
+}
 
-    /// Build a request for the given endpoint
-    pub fn build_request(
-        &self,
-        endpoint: &Endpoint,
-    ) -> Result<ReqwestRequestBuilder, AnthropicRequestError> {
-        let url = format!("{}/{}", self.base_url, endpoint.path);
-        let method: Method = endpoint.method.clone().into();
+#[derive(Clone)]
+pub struct AnthropicRequestHelper {
+    client: reqwest::Client,
+    config: RequestConfig,
+}
 
-        let mut req = self.client.request(method, &url);
-
-        // Add query parameters if provided
-        if let Some(ref params) = endpoint.query_params {
-            req = req.query(&params);
-        }
-
-        // Add authentication
-        if let Some(oauth_token) = self.oauth_token {
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = self.api_key {
-            req = req.header("x-api-key", api_key);
+impl AnthropicRequestHelper {
+    pub fn new(
+        client: reqwest::Client,
+        base_url: &str,
+        api_key: &Option<String>,
+        oauth_token: &Option<String>,
+        api_version: &str,
+        headers: &HashMap<String, String>,
+    ) -> Result<Self, AnthropicRequestError> {
+        let auth_method = if let Some(token) = oauth_token {
+            AuthMethod::OAuth {
+                header_name: "authorization".to_string(),
+                token: token.clone(),
+            }
+        } else if let Some(key) = api_key {
+            AuthMethod::ApiKey {
+                header_name: "x-api-key".to_string(),
+                key: key.clone(),
+            }
         } else {
             return Err(AnthropicRequestError::AuthenticationMissing);
+        };
+
+        let mut config = RequestConfig::new(base_url.to_string())
+            .with_auth(auth_method)
+            .with_header("anthropic-version", api_version.to_string());
+
+        for (key, value) in headers {
+            config = config.with_header(key.clone(), value.clone());
         }
 
-        // Add standard headers
-        req = req.header("anthropic-version", self.api_version);
-
-        // Only add content-type for POST requests
-        if matches!(endpoint.method, HttpMethod::Post) {
-            req = req.header("content-type", "application/json");
-        }
-
-        // Add beta header if required
-        if let Some(ref beta) = endpoint.requires_beta {
-            req = req.header("anthropic-beta", beta);
-        }
-
-        // Add custom headers
-        for (key, value) in self.headers {
-            req = req.header(key, value);
-        }
-
-        Ok(req)
+        Ok(Self { client, config })
     }
 
-    /// Execute a request with JSON body and return deserialized response
-    pub async fn request_json<T: for<'de> Deserialize<'de>, B: Serialize>(
+    fn builder(&self) -> RequestBuilder {
+        RequestBuilder::new(self.client.clone(), self.config.clone())
+    }
+
+    fn endpoint(&self, endpoint: &Endpoint) -> CommonEndpoint {
+        endpoint.to_common()
+    }
+
+    pub async fn request_json<T, B>(
         &self,
         endpoint: &Endpoint,
         body: Option<&B>,
-    ) -> Result<T, AnthropicRequestError> {
-        let mut req = self.build_request(endpoint)?;
-
-        if let Some(body) = body {
-            req = req.json(body);
-        }
-
-        let res = req.send().await?;
-        self.handle_response(res).await
+    ) -> Result<T, AnthropicRequestError>
+    where
+        T: DeserializeOwned,
+        B: Serialize,
+    {
+        self.builder()
+            .request_json::<T, B>(&self.endpoint(endpoint), body)
+            .await
+            .map_err(AnthropicRequestError::from)
     }
 
-    /// Execute a request without body and return deserialized response
-    pub async fn request<T: for<'de> Deserialize<'de>>(
-        &self,
-        endpoint: &Endpoint,
-    ) -> Result<T, AnthropicRequestError> {
-        let req = self.build_request(endpoint)?;
-        let res = req.send().await?;
-        self.handle_response(res).await
+    pub async fn request<T>(&self, endpoint: &Endpoint) -> Result<T, AnthropicRequestError>
+    where
+        T: DeserializeOwned,
+    {
+        self.builder()
+            .request::<T>(&self.endpoint(endpoint))
+            .await
+            .map_err(AnthropicRequestError::from)
     }
 
-    /// Handle response and parse errors
-    pub async fn handle_response<T: for<'de> Deserialize<'de>>(
-        &self,
-        res: Response,
-    ) -> Result<T, AnthropicRequestError> {
-        if res.status().is_success() {
-            Ok(res.json::<T>().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
-    }
-
-    /// Execute a request and return unit type (for delete operations)
     pub async fn request_unit(&self, endpoint: &Endpoint) -> Result<(), AnthropicRequestError> {
-        let req = self.build_request(endpoint)?;
-        let res = req.send().await?;
-
-        if res.status().is_success() {
-            Ok(())
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        self.builder()
+            .request_unit(&self.endpoint(endpoint))
+            .await
+            .map_err(AnthropicRequestError::from)
     }
 
-    /// Execute a request and return raw bytes (for file downloads)
     pub async fn request_bytes(
         &self,
         endpoint: &Endpoint,
     ) -> Result<bytes::Bytes, AnthropicRequestError> {
-        let req = self.build_request(endpoint)?;
-        let res = req.send().await?;
-
-        if res.status().is_success() {
-            Ok(res.bytes().await?)
-        } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
-            Err(error::parse_error_response(status, bytes))
-        }
+        self.builder()
+            .request_bytes(&self.endpoint(endpoint))
+            .await
+            .map_err(AnthropicRequestError::from)
     }
 
-    /// Generic streaming method for SSE endpoints
     pub fn stream<T, B>(
         &self,
         endpoint: &Endpoint,
         body: Option<&B>,
     ) -> BoxStream<'static, Result<T, AnthropicRequestError>>
     where
-        T: for<'de> Deserialize<'de> + Send + 'static,
+        T: DeserializeOwned + Send + 'static,
         B: Serialize,
     {
-        let client = self.client.clone();
-        let base_url = self.base_url.to_string();
-        let api_key = self.api_key.clone();
-        let oauth_token = self.oauth_token.clone();
-        let api_version = self.api_version.to_string();
-        let headers = self.headers.clone();
-        let endpoint = endpoint.clone();
-        let body_data = body.map(|b| serde_json::to_value(b).ok()).flatten();
+        let common_endpoint = self.endpoint(endpoint);
+        let stream = self.builder().stream(&common_endpoint, body);
 
-        Box::pin(try_stream! {
-            // Rebuild the request builder for the stream context
-            let stream_builder = RequestBuilder::new(
-                &client,
-                &base_url,
-                &api_key,
-                &oauth_token,
-                &api_version,
-                &headers,
-            );
-            let mut req = stream_builder.build_request(&endpoint)?;
-
-            // Add body if provided and set stream=true
-            if let Some(body_value) = body_data {
-                let mut body_obj = body_value.as_object().unwrap().clone();
-                body_obj.insert("stream".to_string(), serde_json::Value::Bool(true));
-                req = req.json(&serde_json::Value::Object(body_obj));
-            }
-
-            let response = req.send().await?;
-            let status = response.status();
-
-            if !status.is_success() {
-                let bytes = response.bytes().await?;
-                Err(error::parse_error_response(status, bytes))?;
-            } else {
-                let mut byte_stream = response.bytes_stream();
-                let mut parser = SseParser::default();
-
-                while let Some(chunk_result) = byte_stream.next().await {
-                    let chunk = chunk_result?;
-                    let chunk_str = String::from_utf8(chunk.to_vec())
-                        .map_err(|e| AnthropicRequestError::InvalidEventData(format!("UTF-8 decode error: {e}")))?;
-
-                    for event in parser.feed::<T>(&chunk_str)? {
-                        yield event;
-                    }
-                }
-            }
-        })
+        Box::pin(stream.map(|result| result.map_err(AnthropicRequestError::from)))
     }
 
-    /// Stream JSONL data (for batch results)
     #[cfg(feature = "batches")]
     pub fn stream_jsonl<T>(
         &self,
         endpoint: &Endpoint,
     ) -> BoxStream<'static, Result<T, AnthropicRequestError>>
     where
-        T: for<'de> Deserialize<'de> + Send + 'static,
+        T: DeserializeOwned + Send + 'static,
     {
         let client = self.client.clone();
-        let base_url = self.base_url.to_string();
-        let api_key = self.api_key.clone();
-        let oauth_token = self.oauth_token.clone();
-        let api_version = self.api_version.to_string();
-        let headers = self.headers.clone();
-        let endpoint = endpoint.clone();
+        let config = self.config.clone();
+        let common_endpoint = self.endpoint(endpoint);
 
         Box::pin(try_stream! {
-            // Rebuild the request builder for the stream context
-            let stream_builder = RequestBuilder::new(
-                &client,
-                &base_url,
-                &api_key,
-                &oauth_token,
-                &api_version,
-                &headers,
-            );
-            let req = stream_builder.build_request(&endpoint)?;
+            let req = RequestBuilder::new(client.clone(), config.clone()).build_request(&common_endpoint)?;
             let response = req.send().await?;
             let status = response.status();
 
@@ -363,30 +186,91 @@ impl<'a> RequestBuilder<'a> {
                     let chunk = chunk_result?;
                     buffer.extend_from_slice(&chunk);
 
-                    // Process lines from buffer
                     while let Some(pos) = buffer.iter().position(|&b| b == b'\n') {
                         let line_bytes = buffer.drain(..=pos).collect::<Vec<u8>>();
                         let line = String::from_utf8(line_bytes)
                             .map_err(|e| AnthropicRequestError::InvalidEventData(e.to_string()))?;
                         if !line.trim().is_empty() {
-                            let result: T = serde_json::from_str(&line)
+                            let result: T = serde_json::from_str(line.trim())
                                 .map_err(AnthropicRequestError::SerdeError)?;
                             yield result;
                         }
                     }
                 }
 
-                // Process any remaining data in the buffer
                 if !buffer.is_empty() {
                     let line = String::from_utf8(buffer)
                         .map_err(|e| AnthropicRequestError::InvalidEventData(e.to_string()))?;
                     if !line.trim().is_empty() {
-                        let result: T = serde_json::from_str(&line)
+                        let result: T = serde_json::from_str(line.trim())
                             .map_err(AnthropicRequestError::SerdeError)?;
                         yield result;
                     }
                 }
             }
         })
+    }
+}
+
+impl From<CommonRequestError> for AnthropicRequestError {
+    fn from(err: CommonRequestError) -> Self {
+        match err {
+            CommonRequestError::Http(message) => AnthropicRequestError::UnexpectedResponse(
+                format!("HTTP request failed: {}", message),
+            ),
+            CommonRequestError::Json(message) => AnthropicRequestError::InvalidEventData(message),
+            CommonRequestError::Io(message) => AnthropicRequestError::Stream(message),
+            CommonRequestError::InvalidRequest {
+                code,
+                message,
+                details,
+            } => {
+                let param = details
+                    .as_ref()
+                    .and_then(|value| value.get("param"))
+                    .and_then(|v| v.as_str())
+                    .map(ToString::to_string);
+
+                AnthropicRequestError::InvalidRequestError {
+                    message,
+                    param,
+                    code,
+                }
+            }
+            CommonRequestError::RateLimit => AnthropicRequestError::RateLimit,
+            CommonRequestError::AuthenticationMissing => {
+                AnthropicRequestError::AuthenticationMissing
+            }
+            CommonRequestError::InvalidModel(model) => AnthropicRequestError::InvalidRequestError {
+                message: format!("Invalid model: {}", model),
+                param: None,
+                code: None,
+            },
+            CommonRequestError::UnexpectedResponse(message) => {
+                AnthropicRequestError::UnexpectedResponse(message)
+            }
+            CommonRequestError::InvalidEventData(message) => {
+                AnthropicRequestError::InvalidEventData(message)
+            }
+            CommonRequestError::UrlBuildError(message) => {
+                AnthropicRequestError::InvalidRequestError {
+                    message,
+                    param: None,
+                    code: None,
+                }
+            }
+            CommonRequestError::Stream(message) => AnthropicRequestError::Stream(message),
+            CommonRequestError::InvalidMimeType(message) => {
+                AnthropicRequestError::InvalidRequestError {
+                    message,
+                    param: None,
+                    code: None,
+                }
+            }
+            CommonRequestError::Utf8Error(message) => AnthropicRequestError::InvalidUtf8(message),
+            CommonRequestError::JsonDeserializationError(message) => {
+                AnthropicRequestError::Deserialization(message)
+            }
+        }
     }
 }

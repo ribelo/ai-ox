@@ -1,37 +1,61 @@
 use gemini_ox::{
-    Gemini, Model,
     content::{Content, Part, Role, Text},
     request::GenerateContentRequest,
+    Gemini, Model,
 };
-use serde_json;
-use std::fs;
+use serde::Deserialize;
+use std::{env, fs, path::PathBuf};
+
+fn read_token_from_env() -> Option<String> {
+    env::var("GOOGLE_OAUTH_TOKEN")
+        .ok()
+        .filter(|token| !token.is_empty())
+}
+
+#[derive(Deserialize)]
+struct GeminiCliCreds {
+    access_token: String,
+}
+
+fn creds_path() -> Option<PathBuf> {
+    let override_path = env::var("GEMINI_OAUTH_CREDS_PATH").ok();
+    if let Some(path) = override_path {
+        return Some(PathBuf::from(path));
+    }
+
+    let home = env::var("HOME").ok().map(PathBuf::from);
+    home.map(|h| h.join(".gemini").join("oauth_creds.json"))
+}
+
+fn read_token_from_gemini_cli() -> Option<String> {
+    let path = creds_path()?;
+    let contents = fs::read_to_string(path).ok()?;
+    serde_json::from_str::<GeminiCliCreds>(&contents)
+        .ok()
+        .map(|creds| creds.access_token)
+}
 
 fn get_oauth_token() -> Option<String> {
-    match fs::read_to_string("/home/ribelo/.gemini/oauth_creds.json") {
-        Ok(oauth_creds) => match serde_json::from_str::<serde_json::Value>(&oauth_creds) {
-            Ok(creds) => creds["access_token"].as_str().map(|s| s.to_string()),
-            Err(_) => None,
-        },
-        Err(_) => None,
-    }
+    read_token_from_env().or_else(read_token_from_gemini_cli)
 }
 
 #[tokio::test]
 #[ignore = "Requires OAuth credentials and makes actual API calls"]
 async fn test_oauth_without_project_fails_as_expected() {
-    let token = get_oauth_token().expect("OAuth token not available");
+    let Some(token) = get_oauth_token() else {
+        eprintln!("Skipping OAuth test: token not available");
+        return;
+    };
     let gemini = Gemini::with_oauth_token(token);
 
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
-        .content_list(vec![
-            Content::builder()
-                .parts(vec![Part::new(Text::from(
-                    "Hello! Just respond 'OK' to test OAuth.",
-                ))])
-                .role(Role::User)
-                .build(),
-        ])
+        .content_list(vec![Content::builder()
+            .parts(vec![Part::new(Text::from(
+                "Hello! Just respond 'OK' to test OAuth.",
+            ))])
+            .role(Role::User)
+            .build()])
         .build();
 
     let response = request.send(&gemini).await;
@@ -43,11 +67,12 @@ async fn test_oauth_without_project_fails_as_expected() {
     );
 
     if let Err(e) = response {
-        // Should get RESOURCE_PROJECT_INVALID error
+        // Error should be related to invalid request (project missing) regardless of exact wording
         let error_string = format!("{:?}", e);
         assert!(
-            error_string.contains("RESOURCE_PROJECT_INVALID"),
-            "Should get project invalid error, got: {}",
+            error_string.contains("RESOURCE_PROJECT_INVALID")
+                || error_string.contains("Invalid resource field value"),
+            "Unexpected error for missing project: {}",
             error_string
         );
     }
@@ -56,19 +81,20 @@ async fn test_oauth_without_project_fails_as_expected() {
 #[tokio::test]
 #[ignore = "Requires OAuth credentials with project and makes actual API calls"]
 async fn test_oauth_with_project() {
-    let token = get_oauth_token().expect("OAuth token not available");
+    let Some(token) = get_oauth_token() else {
+        eprintln!("Skipping OAuth test: token not available");
+        return;
+    };
     let gemini = Gemini::with_oauth_token_and_project(token, "pioneering-trilogy-xq6tl");
 
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
-        .content_list(vec![
-            Content::builder()
-                .parts(vec![Part::new(Text::from(
-                    "Hello! Just respond 'OK' to test OAuth with project.",
-                ))])
-                .role(Role::User)
-                .build(),
-        ])
+        .content_list(vec![Content::builder()
+            .parts(vec![Part::new(Text::from(
+                "Hello! Just respond 'OK' to test OAuth with project.",
+            ))])
+            .role(Role::User)
+            .build()])
         .build();
 
     let response = request.send(&gemini).await;
@@ -84,17 +110,18 @@ async fn test_oauth_with_project() {
 async fn test_oauth_streaming() {
     use futures_util::StreamExt;
 
-    let token = get_oauth_token().expect("OAuth token not available");
+    let Some(token) = get_oauth_token() else {
+        eprintln!("Skipping OAuth test: token not available");
+        return;
+    };
     let gemini = Gemini::with_oauth_token_and_project(token, "pioneering-trilogy-xq6tl");
 
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
-        .content_list(vec![
-            Content::builder()
-                .parts(vec![Part::new(Text::from("Count to 3 slowly."))])
-                .role(Role::User)
-                .build(),
-        ])
+        .content_list(vec![Content::builder()
+            .parts(vec![Part::new(Text::from("Count to 3 slowly."))])
+            .role(Role::User)
+            .build()])
         .build();
 
     let mut stream = request.stream(&gemini);
@@ -141,16 +168,14 @@ fn test_oauth_client_construction() {
 fn test_oauth_request_construction() {
     let token = "test_oauth_token";
     let project = "test_project";
-    let gemini = Gemini::with_oauth_token_and_project(token, project);
+    let _gemini = Gemini::with_oauth_token_and_project(token, project);
 
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
-        .content_list(vec![
-            Content::builder()
-                .parts(vec![Part::new(Text::from("Test message"))])
-                .role(Role::User)
-                .build(),
-        ])
+        .content_list(vec![Content::builder()
+            .parts(vec![Part::new(Text::from("Test message"))])
+            .role(Role::User)
+            .build()])
         .build();
 
     // Test that we can create OAuth requests without panicking

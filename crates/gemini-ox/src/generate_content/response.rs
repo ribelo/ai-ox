@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::tool::{ToolBox, error::FunctionCallError};
+use crate::tool::{error::FunctionCallError, ToolBox};
 
-use super::{PromptFeedback, ResponseCandidate, usage::UsageMetadata};
+use super::{usage::UsageMetadata, PromptFeedback, ResponseCandidate};
 use crate::content::{Content, FunctionCall, Part, Role};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

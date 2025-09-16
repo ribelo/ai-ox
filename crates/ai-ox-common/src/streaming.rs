@@ -8,6 +8,7 @@ pub struct SseParser {
         Box<dyn futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>,
     >,
     buffer: Vec<u8>,
+    data_lines: Vec<String>,
 }
 
 impl SseParser {
@@ -15,6 +16,7 @@ impl SseParser {
         Self {
             byte_stream: Box::pin(response.bytes_stream()),
             buffer: Vec::new(),
+            data_lines: Vec::new(),
         }
     }
 
@@ -53,7 +55,7 @@ impl SseParser {
             let line_bytes = self.buffer.drain(..=pos).collect::<Vec<u8>>();
             let line = String::from_utf8(line_bytes)?;
 
-            if let Some(event) = Self::parse_sse_line::<T>(&line)? {
+            if let Some(event) = self.process_line::<T>(&line)? {
                 return Ok(Some(event));
             }
         }
@@ -70,39 +72,66 @@ impl SseParser {
         }
 
         let line = String::from_utf8(std::mem::take(&mut self.buffer))?;
-        Self::parse_sse_line::<T>(&line)
-    }
-
-    /// Parse a single SSE line into an event
-    fn parse_sse_line<T: for<'de> Deserialize<'de>>(
-        line: &str,
-    ) -> Result<Option<T>, CommonRequestError> {
-        let line = line.trim();
-
-        // Skip empty lines and comments
-        if line.is_empty() || line.starts_with(':') {
-            return Ok(None);
-        }
-
-        // Parse SSE format: "data: <json>"
-        if line.starts_with("data: ") {
-            let json_data = line.trim_start_matches("data: ").trim();
-
-            // Skip [DONE] markers and empty data
-            if json_data.is_empty() || json_data == "[DONE]" {
-                return Ok(None);
-            }
-
-            // Parse JSON
-            let event: T = serde_json::from_str(json_data).map_err(|e| {
-                CommonRequestError::InvalidEventData(format!("JSON parse error: {}", e))
-            })?;
-
+        if let Some(event) = self.process_line::<T>(&line)? {
             return Ok(Some(event));
         }
 
-        // Handle other SSE fields (event, id, retry) - for now, ignore them
+        self.finalize_event::<T>()
+    }
+
+    fn process_line<T: for<'de> Deserialize<'de>>(
+        &mut self,
+        line: &str,
+    ) -> Result<Option<T>, CommonRequestError> {
+        let line = line.trim_end_matches(|c| c == '\n' || c == '\r');
+        let trimmed = line.trim_end();
+
+        if trimmed.is_empty() {
+            return self.finalize_event();
+        }
+
+        if trimmed.starts_with(':') {
+            return Ok(None);
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("data:") {
+            let data = rest.trim_start();
+
+            if data == "[DONE]" {
+                self.data_lines.clear();
+                return Ok(None);
+            }
+
+            if !data.is_empty() {
+                self.data_lines.push(data.to_string());
+            }
+
+            return Ok(None);
+        }
+
+        // Ignore other SSE fields (event, id, retry)
         Ok(None)
+    }
+
+    fn finalize_event<T: for<'de> Deserialize<'de>>(
+        &mut self,
+    ) -> Result<Option<T>, CommonRequestError> {
+        if self.data_lines.is_empty() {
+            return Ok(None);
+        }
+
+        let payload = self.data_lines.join("\n");
+        self.data_lines.clear();
+
+        if payload.is_empty() || payload == "[DONE]" {
+            return Ok(None);
+        }
+
+        let event: T = serde_json::from_str(&payload).map_err(|e| {
+            CommonRequestError::InvalidEventData(format!("JSON parse error: {}", e))
+        })?;
+
+        Ok(Some(event))
     }
 }
 
@@ -111,14 +140,61 @@ pub fn parse_sse_events<T: for<'de> Deserialize<'de>>(
     chunk: &str,
 ) -> Result<Vec<T>, CommonRequestError> {
     let mut events = Vec::new();
+    let mut data_lines = Vec::new();
 
     for line in chunk.lines() {
-        if let Some(event) = SseParser::parse_sse_line::<T>(line)? {
-            events.push(event);
+        let line = line.trim_end_matches('\r');
+
+        if line.is_empty() {
+            if let Some(event) = finalize_data_lines::<T>(&mut data_lines)? {
+                events.push(event);
+            }
+            continue;
+        }
+
+        if line.starts_with(':') {
+            continue;
+        }
+
+        if let Some(rest) = line.strip_prefix("data:") {
+            let data = rest.trim_start();
+
+            if data == "[DONE]" {
+                data_lines.clear();
+                continue;
+            }
+
+            if !data.is_empty() {
+                data_lines.push(data.to_string());
+            }
         }
     }
 
+    if let Some(event) = finalize_data_lines::<T>(&mut data_lines)? {
+        events.push(event);
+    }
+
     Ok(events)
+}
+
+fn finalize_data_lines<T: for<'de> Deserialize<'de>>(
+    data_lines: &mut Vec<String>,
+) -> Result<Option<T>, CommonRequestError> {
+    if data_lines.is_empty() {
+        return Ok(None);
+    }
+
+    let payload = data_lines.join("\n");
+    data_lines.clear();
+
+    if payload.is_empty() || payload == "[DONE]" {
+        return Ok(None);
+    }
+
+    let event: T = serde_json::from_str(&payload)
+        .map_err(|e| CommonRequestError::InvalidEventData(format!("JSON parse error: {}", e)))?;
+
+    Ok(Some(event))
 }
 
 #[cfg(test)]

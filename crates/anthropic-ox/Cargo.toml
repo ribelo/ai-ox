@@ -52,6 +52,7 @@ tap = "1.0"
 async-stream = "0.3"
 tokio-stream = "0.1"
 backon = { workspace = true }
+ai-ox-common = { path = "../ai-ox-common" }
 
 
 [dev-dependencies]

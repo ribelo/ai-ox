@@ -2,17 +2,9 @@
 mod tests {
     use mistral_ox::message::{Message, Messages};
     use mistral_ox::request::{
-        AgentsRequest,
-        BatchJobRequest,
-        ChatModerationRequest,
-        EmbeddingInput,
-        EmbeddingsRequest,
-        FineTuningHyperparameters,
-        FineTuningRequest,
-        FimRequest,
-        ModerationInput,
-        ModerationRequest,
-        TrainingFile,
+        AgentsRequest, BatchJobRequest, ChatModerationRequest, EmbeddingInput, EmbeddingsRequest,
+        FimRequest, FineTuningHyperparameters, FineTuningRequest, ModerationInput,
+        ModerationRequest, TrainingFile,
     };
     use mistral_ox::*;
 

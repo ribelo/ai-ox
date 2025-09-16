@@ -115,7 +115,8 @@
 //! - Consider using `output_dimensionality` to reduce storage requirements
 //! - Batch processing is not supported by this endpoint; use multiple requests for multiple texts
 
-use crate::{BASE_URL, GeminiRequestError, parse_error_response};
+use crate::GeminiRequestError;
+use ai_ox_common::request_builder::{Endpoint, HttpMethod};
 
 pub mod request;
 pub mod response;
@@ -137,58 +138,23 @@ impl EmbedContentRequest {
     /// - `GeminiRequestError::JsonDeserializationError` - if the API response cannot be parsed as JSON
     /// - `GeminiRequestError::UnexpectedResponse` - if the API returns an unexpected response format or error
     pub async fn send(&self) -> Result<EmbedContentResponse, GeminiRequestError> {
-        // Construct the API URL properly using reqwest::Url
-        let mut url = reqwest::Url::parse(BASE_URL)
-            .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
+        let helper = self.gemini.request_helper()?;
+        let endpoint = Endpoint::new(
+            format!(
+                "{}/models/{}:embedContent",
+                self.gemini.api_version, self.model
+            ),
+            HttpMethod::Post,
+        );
 
-        // Join the path elements properly
-        url.path_segments_mut()
-            .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
-            .push(&self.gemini.api_version)
-            .push("models")
-            .push(&format!("{}:embedContent", self.model));
-
-        // Handle authentication
-        let mut req = self.gemini.client.post(url);
-
-        if let Some(oauth_token) = &self.gemini.oauth_token {
-            // OAuth: use Authorization header
-            req = req.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.gemini.api_key {
-            // API key: use query parameter
-            req = req.query(&[("key", api_key)]);
-        } else {
-            return Err(GeminiRequestError::AuthenticationMissing);
-        }
-
-        // Send the HTTP request
-        let res = req.json(self).send().await?;
-        let status = res.status();
-
-        // Read the response body once
-        let body_bytes = res.bytes().await?;
-
-        match status.as_u16() {
-            // Success responses
-            200 | 201 => {
-                // Try to deserialize the successful response
-                match serde_json::from_slice::<EmbedContentResponse>(&body_bytes) {
-                    Ok(data) => Ok(data),
-                    Err(e) => Err(GeminiRequestError::JsonDeserializationError(e)),
-                }
-            }
-            // Rate limit response
-            429 => Err(GeminiRequestError::RateLimit),
-            // All other status codes are errors
-            _ => Err(parse_error_response(status, body_bytes)),
-        }
+        helper.request_json(endpoint, Some(self)).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Gemini, Model, content::Content};
+    use crate::{content::Content, Gemini, Model};
 
     #[tokio::test]
     #[ignore = "Requires GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
@@ -280,8 +246,8 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "Requires GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
-    async fn test_embedding_with_output_dimensionality()
-    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn test_embedding_with_output_dimensionality(
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let api_key = match std::env::var("GEMINI_API_KEY")
             .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
         {

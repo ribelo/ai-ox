@@ -3,7 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::response::AuthTokenResponse;
-use crate::{BASE_URL, Gemini, GeminiRequestError, parse_error_response};
+use crate::{Gemini, GeminiRequestError};
+use ai_ox_common::request_builder::{Endpoint, HttpMethod};
 
 #[derive(Debug, Clone, Builder, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -49,14 +50,6 @@ struct ApiCreateAuthTokenPayload<'a> {
 
 impl CreateAuthTokenOperation {
     pub async fn send(&self) -> Result<AuthTokenResponse, GeminiRequestError> {
-        // Auth tokens API only supports API key authentication, not OAuth
-        let api_key = self
-            .gemini
-            .api_key
-            .as_ref()
-            .ok_or(GeminiRequestError::AuthenticationMissing)?;
-        let url = format!("{BASE_URL}/auth_tokens?key={api_key}");
-
         let final_field_mask = build_final_field_mask(
             self.live_constrained_parameters.as_ref(),
             self.lock_additional_fields.as_ref(),
@@ -69,18 +62,10 @@ impl CreateAuthTokenOperation {
             field_mask: final_field_mask,
         };
 
-        let response = self.gemini.client.post(&url).json(&payload).send().await?;
+        let helper = self.gemini.request_helper_for_api_key()?;
+        let endpoint = Endpoint::new("auth_tokens", HttpMethod::Post);
 
-        if response.status().is_success() {
-            response
-                .json::<AuthTokenResponse>()
-                .await
-                .map_err(GeminiRequestError::from)
-        } else {
-            let status = response.status();
-            let bytes = response.bytes().await?;
-            Err(parse_error_response(status, bytes))
-        }
+        helper.request_json(endpoint, Some(&payload)).await
     }
 }
 
@@ -290,7 +275,7 @@ mod tests {
 
         let error_bytes = serde_json::to_vec(&error_json).unwrap();
         let status = reqwest::StatusCode::BAD_REQUEST;
-        let error = parse_error_response(status, error_bytes.into());
+        let error = crate::parse_error_response(status, error_bytes.into());
 
         match error {
             GeminiRequestError::InvalidRequestError { message, .. } => {

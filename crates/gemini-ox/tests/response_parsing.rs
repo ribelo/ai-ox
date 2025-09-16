@@ -28,7 +28,10 @@ fn test_response_with_only_usage_metadata() {
             println!("Response: {:?}", response);
             assert!(response.candidates.is_empty());
             assert!(response.usage_metadata.is_some());
-            assert_eq!(response.usage_metadata.as_ref().unwrap().prompt_token_count, 181);
+            assert_eq!(
+                response.usage_metadata.as_ref().unwrap().prompt_token_count,
+                181
+            );
         }
         Err(e) => {
             panic!("❌ Failed to parse response: {}", e);

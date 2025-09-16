@@ -24,7 +24,7 @@ mod tests {
         // Test multi-part content serialization (should be array)
         let system_msg = message::SystemMessage::new(vec![
             message::TextContent::new("You are a helpful assistant."),
-            message::TextContent::new("Be concise.")
+            message::TextContent::new("Be concise."),
         ]);
         let json = serde_json::to_string(&system_msg).unwrap();
         println!("Multi-part SystemMessage JSON: {}", json);

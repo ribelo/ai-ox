@@ -1,65 +1,200 @@
 use crate::{
-    Gemini, GeminiRequestError,
     generate_content::{request::GenerateContentRequest, response::GenerateContentResponse},
+    Gemini, GeminiRequestError,
 };
 use ai_ox_common::{
+    request_builder::{
+        AuthMethod, Endpoint, HttpMethod, RequestBuilder, RequestConfig, StreamOptions,
+    },
     BoxStream, CommonRequestError,
-    request_builder::{AuthMethod, Endpoint, HttpMethod, RequestBuilder, RequestConfig},
 };
 use futures_util::stream::BoxStream as FuturesBoxStream;
+use serde::de::DeserializeOwned;
+use serde::Serialize;
+use serde_json::Value;
+use std::io::{Error as IoError, ErrorKind};
 
 /// Convert CommonRequestError to GeminiRequestError
 impl From<CommonRequestError> for GeminiRequestError {
     fn from(err: CommonRequestError) -> Self {
         match err {
-            CommonRequestError::Http(e) => GeminiRequestError::InvalidEventData(e),
-            CommonRequestError::Json(e) => GeminiRequestError::InvalidEventData(e),
-            CommonRequestError::Io(e) => GeminiRequestError::InvalidEventData(e),
-            CommonRequestError::InvalidRequest { message, .. } => {
+            CommonRequestError::Http(message) => {
+                GeminiRequestError::UnexpectedResponse(format!("HTTP request failed: {}", message))
+            }
+            CommonRequestError::Json(message) => GeminiRequestError::SerdeError(
+                serde_json::Error::io(IoError::new(ErrorKind::Other, message)),
+            ),
+            CommonRequestError::Io(message) => {
+                GeminiRequestError::IoError(IoError::new(ErrorKind::Other, message))
+            }
+            CommonRequestError::InvalidRequest {
+                code,
+                message,
+                details,
+            } => GeminiRequestError::InvalidRequestError {
+                code,
+                message,
+                status: None,
+                details: details.unwrap_or(Value::Null),
+            },
+            CommonRequestError::RateLimit => GeminiRequestError::RateLimit,
+            CommonRequestError::AuthenticationMissing => GeminiRequestError::AuthenticationMissing,
+            CommonRequestError::InvalidModel(model) => GeminiRequestError::InvalidRequestError {
+                code: Some("INVALID_MODEL".to_string()),
+                message: format!("Invalid model: {}", model),
+                status: None,
+                details: Value::Null,
+            },
+            CommonRequestError::UnexpectedResponse(message) => {
+                GeminiRequestError::UnexpectedResponse(message)
+            }
+            CommonRequestError::InvalidEventData(message) => {
                 GeminiRequestError::InvalidEventData(message)
             }
-            CommonRequestError::RateLimit => {
-                GeminiRequestError::InvalidEventData("Rate limit exceeded".to_string())
+            CommonRequestError::UrlBuildError(message) => {
+                GeminiRequestError::UrlBuildError(message)
             }
-            CommonRequestError::AuthenticationMissing => GeminiRequestError::AuthenticationMissing,
-            CommonRequestError::InvalidMimeType(msg) => GeminiRequestError::InvalidEventData(msg),
-            CommonRequestError::InvalidEventData(msg) => GeminiRequestError::InvalidEventData(msg),
-            CommonRequestError::Utf8Error(msg) => GeminiRequestError::InvalidEventData(msg),
-            _ => GeminiRequestError::InvalidEventData(format!("Unknown error: {:?}", err)),
+            CommonRequestError::Stream(message) => GeminiRequestError::InvalidEventData(message),
+            CommonRequestError::InvalidMimeType(message) => {
+                GeminiRequestError::InvalidEventData(message)
+            }
+            CommonRequestError::Utf8Error(message) => GeminiRequestError::InvalidEventData(message),
+            CommonRequestError::JsonDeserializationError(message) => {
+                GeminiRequestError::JsonDeserializationError(serde_json::Error::io(IoError::new(
+                    ErrorKind::Other,
+                    message,
+                )))
+            }
         }
     }
 }
 
 /// Gemini client helper methods using the common RequestBuilder
+#[derive(Clone)]
 pub struct GeminiRequestHelper {
-    request_builder: RequestBuilder,
+    client: reqwest::Client,
+    config: RequestConfig,
     is_oauth: bool,
 }
 
 impl GeminiRequestHelper {
-    pub fn new(gemini: &Gemini) -> Result<Self, GeminiRequestError> {
-        // Determine authentication method
-        let (auth_method, is_oauth) = if let Some(oauth_token) = &gemini.oauth_token {
-            (AuthMethod::Bearer(oauth_token.clone()), true)
-        } else if let Some(api_key) = &gemini.api_key {
-            (
+    const STANDARD_BASE: &'static str = "https://generativelanguage.googleapis.com";
+    const CLOUD_BASE: &'static str = "https://cloudcode-pa.googleapis.com";
+
+    fn select_auth(
+        gemini: &Gemini,
+        allow_oauth: bool,
+    ) -> Result<(AuthMethod, bool), GeminiRequestError> {
+        if allow_oauth {
+            if let Some(oauth_token) = &gemini.oauth_token {
+                return Ok((AuthMethod::Bearer(oauth_token.clone()), true));
+            }
+        }
+
+        if let Some(api_key) = &gemini.api_key {
+            Ok((
                 AuthMethod::QueryParam("key".to_string(), api_key.clone()),
                 false,
-            )
+            ))
+        } else if allow_oauth {
+            Err(GeminiRequestError::AuthenticationMissing)
         } else {
-            return Err(GeminiRequestError::AuthenticationMissing);
-        };
+            Err(GeminiRequestError::AuthenticationMissing)
+        }
+    }
 
-        let config = RequestConfig::new(gemini.base_url())
+    fn new_with_base_url(
+        gemini: &Gemini,
+        base_url: &str,
+        allow_oauth: bool,
+    ) -> Result<Self, GeminiRequestError> {
+        let (auth_method, is_oauth) = Self::select_auth(gemini, allow_oauth)?;
+        let config = RequestConfig::new(base_url.to_string())
             .with_auth(auth_method)
             .with_header("content-type", "application/json");
 
-        let request_builder = RequestBuilder::new(gemini.client.clone(), config);
-
         Ok(Self {
-            request_builder,
+            client: gemini.client.clone(),
+            config,
             is_oauth,
         })
+    }
+
+    pub fn for_standard(gemini: &Gemini) -> Result<Self, GeminiRequestError> {
+        Self::new_with_base_url(gemini, Self::STANDARD_BASE, false)
+    }
+
+    pub fn for_generate(gemini: &Gemini) -> Result<Self, GeminiRequestError> {
+        if gemini.oauth_token.is_some() {
+            Self::new_with_base_url(gemini, Self::CLOUD_BASE, true)
+        } else {
+            Self::new_with_base_url(gemini, Self::STANDARD_BASE, false)
+        }
+    }
+
+    pub fn new_for_api_key(gemini: &Gemini) -> Result<Self, GeminiRequestError> {
+        Self::new_with_base_url(gemini, Self::STANDARD_BASE, false)
+    }
+
+    fn builder(&self) -> RequestBuilder {
+        RequestBuilder::new(self.client.clone(), self.config.clone())
+    }
+
+    pub fn is_oauth(&self) -> bool {
+        self.is_oauth
+    }
+
+    pub async fn request_json<T, B>(
+        &self,
+        endpoint: Endpoint,
+        body: Option<&B>,
+    ) -> Result<T, GeminiRequestError>
+    where
+        T: DeserializeOwned,
+        B: Serialize,
+    {
+        self.builder()
+            .request_json::<T, B>(&endpoint, body)
+            .await
+            .map_err(GeminiRequestError::from)
+    }
+
+    pub async fn request<T>(&self, endpoint: Endpoint) -> Result<T, GeminiRequestError>
+    where
+        T: DeserializeOwned,
+    {
+        self.builder()
+            .request::<T>(&endpoint)
+            .await
+            .map_err(GeminiRequestError::from)
+    }
+
+    pub async fn request_unit(&self, endpoint: Endpoint) -> Result<(), GeminiRequestError> {
+        self.builder()
+            .request_unit(&endpoint)
+            .await
+            .map_err(GeminiRequestError::from)
+    }
+
+    fn build_generate_content_body(
+        &self,
+        request: &GenerateContentRequest,
+        gemini: &Gemini,
+    ) -> Result<Value, GeminiRequestError> {
+        if self.is_oauth {
+            let minimal_request = serde_json::json!({
+                "contents": request.contents,
+                "generationConfig": request.generation_config,
+                "systemInstruction": request.system_instruction
+            });
+            Ok(serde_json::json!({
+                "model": request.model.to_string(),
+                "project": gemini.project_id,
+                "request": minimal_request
+            }))
+        } else {
+            Ok(serde_json::to_value(request).map_err(GeminiRequestError::SerdeError)?)
+        }
     }
 
     /// Send a generate content request
@@ -80,31 +215,15 @@ impl GeminiRequestHelper {
 
         let endpoint = Endpoint::new(endpoint_path, HttpMethod::Post);
 
-        // Prepare request body based on API type
-        let request_body = if self.is_oauth {
-            // Cloud Code Assist API: wrapped format
-            let minimal_request = serde_json::json!({
-                "contents": request.contents,
-                "generationConfig": request.generation_config,
-                "systemInstruction": request.system_instruction
-            });
-            serde_json::json!({
-                "model": request.model.to_string(),
-                "project": gemini.project_id,
-                "request": minimal_request
-            })
-        } else {
-            // Standard API: direct format
-            serde_json::to_value(request).map_err(GeminiRequestError::SerdeError)?
-        };
+        let request_body = self.build_generate_content_body(request, gemini)?;
 
-        let response: serde_json::Value = self
-            .request_builder
-            .request_json(&endpoint, Some(&request_body))
-            .await?;
-
-        // Handle wrapped response for OAuth
         if self.is_oauth {
+            let response: Value = self
+                .builder()
+                .request_json(&endpoint, Some(&request_body))
+                .await
+                .map_err(GeminiRequestError::from)?;
+
             if let Some(inner_response) = response.get("response") {
                 Ok(serde_json::from_value(inner_response.clone())?)
             } else {
@@ -113,58 +232,49 @@ impl GeminiRequestHelper {
                 ))
             }
         } else {
-            Ok(serde_json::from_value(response)?)
+            self.builder()
+                .request_json(&endpoint, Some(&request_body))
+                .await
+                .map_err(GeminiRequestError::from)
         }
     }
 
     /// Stream a generate content request
     pub fn stream_generate_content_request(
-        self,
+        &self,
         request: GenerateContentRequest,
         gemini: Gemini,
     ) -> FuturesBoxStream<'static, Result<GenerateContentResponse, GeminiRequestError>> {
         // Build endpoint based on authentication method
         let endpoint_path = if self.is_oauth {
-            format!("v1internal:streamGenerateContent?alt=sse")
+            "v1internal:streamGenerateContent".to_string()
         } else {
             format!(
-                "{}/models/{}:streamGenerateContent?alt=sse",
+                "{}/models/{}:streamGenerateContent",
                 gemini.api_version, request.model
             )
         };
 
-        let endpoint = Endpoint::new(endpoint_path, HttpMethod::Post);
+        let endpoint = Endpoint::new(endpoint_path, HttpMethod::Post)
+            .with_query_params(vec![("alt".to_string(), "sse".to_string())]);
 
-        // Prepare request body based on API type
-        let request_body = if self.is_oauth {
-            // Cloud Code Assist API: wrapped format
-            let minimal_request = serde_json::json!({
-                "contents": request.contents,
-                "generationConfig": request.generation_config,
-                "systemInstruction": request.system_instruction
-            });
-            serde_json::json!({
-                "model": request.model.to_string(),
-                "project": gemini.project_id,
-                "request": minimal_request
-            })
-        } else {
-            // Standard API: direct format
-            match serde_json::to_value(&request) {
-                Ok(value) => value,
-                Err(e) => {
-                    return Box::pin(futures_util::stream::once(async move {
-                        Err(GeminiRequestError::from(CommonRequestError::Json(
-                            e.to_string(),
-                        )))
-                    }));
-                }
+        let request_body = match self.build_generate_content_body(&request, &gemini) {
+            Ok(body) => body,
+            Err(err) => {
+                return Box::pin(futures_util::stream::once(async move { Err(err) }));
             }
         };
 
-        // Use the common streaming implementation and convert errors
-        let common_stream: BoxStream<'static, Result<serde_json::Value, CommonRequestError>> =
-            self.request_builder.stream(&endpoint, Some(&request_body));
+        let common_stream: BoxStream<'static, Result<Value, CommonRequestError>> =
+            self.builder().stream_with_options(
+                &endpoint,
+                Some(request_body),
+                StreamOptions {
+                    set_stream_field: false,
+                },
+            );
+
+        let is_oauth = self.is_oauth;
 
         Box::pin(async_stream::try_stream! {
             use futures_util::StreamExt;
@@ -173,19 +283,15 @@ impl GeminiRequestHelper {
             while let Some(result) = stream.next().await {
                 match result {
                     Ok(value) => {
-                        // Handle wrapped response for OAuth
-                        let response = if self.is_oauth {
+                        if is_oauth {
                             if let Some(inner_response) = value.get("response") {
-                                serde_json::from_value::<GenerateContentResponse>(inner_response.clone())?
-                            } else {
-                                continue; // Skip wrapped responses without "response" field
+                                yield serde_json::from_value::<GenerateContentResponse>(inner_response.clone())?;
                             }
                         } else {
-                            serde_json::from_value::<GenerateContentResponse>(value)?
-                        };
-                        yield response;
+                            yield serde_json::from_value::<GenerateContentResponse>(value)?;
+                        }
                     },
-                    Err(e) => yield Err(GeminiRequestError::from(e))?,
+                    Err(e) => Err(GeminiRequestError::from(e))?,
                 }
             }
         })

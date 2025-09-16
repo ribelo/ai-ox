@@ -3,9 +3,10 @@ use crate::{
     streaming::SseParser,
 };
 use async_stream::try_stream;
-use futures_util::stream::BoxStream;
+use futures_util::stream::{self, BoxStream};
 use reqwest::{Method, RequestBuilder as ReqwestRequestBuilder, Response};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// HTTP method for API endpoints
@@ -116,6 +117,21 @@ pub struct RequestBuilder {
     config: RequestConfig,
 }
 
+/// Options that control how streaming requests are constructed.
+#[derive(Debug, Clone, Copy)]
+pub struct StreamOptions {
+    /// Whether to set `"stream": true` in the JSON body before sending the request.
+    pub set_stream_field: bool,
+}
+
+impl Default for StreamOptions {
+    fn default() -> Self {
+        Self {
+            set_stream_field: true,
+        }
+    }
+}
+
 impl RequestBuilder {
     pub fn new(client: reqwest::Client, config: RequestConfig) -> Self {
         Self { client, config }
@@ -201,9 +217,13 @@ impl RequestBuilder {
 
         if let Some(body) = body {
             // Normalize body to serde_json::Value to avoid any accidental double-encoding
-            let val = serde_json::to_value(body).map_err(|e| CommonRequestError::Json(e.to_string()))?;
+            let val =
+                serde_json::to_value(body).map_err(|e| CommonRequestError::Json(e.to_string()))?;
 
-            if std::env::var("AOX_HTTP_DEBUG").map(|v| v == "1").unwrap_or(false) {
+            if std::env::var("AOX_HTTP_DEBUG")
+                .map(|v| v == "1")
+                .unwrap_or(false)
+            {
                 let kind = match &val {
                     serde_json::Value::Null => "null",
                     serde_json::Value::Bool(_) => "bool",
@@ -214,9 +234,7 @@ impl RequestBuilder {
                 };
                 eprintln!(
                     "[ai-ox-common::request_builder] POST {} body kind: {} payload: {}",
-                    endpoint.path,
-                    kind,
-                    val
+                    endpoint.path, kind, val
                 );
             }
             req = req.json(&val);
@@ -277,29 +295,74 @@ impl RequestBuilder {
         T: for<'de> Deserialize<'de> + Send + 'static,
         B: Serialize,
     {
+        let body_value = match body {
+            Some(b) => match serde_json::to_value(b) {
+                Ok(value) => Some(value),
+                Err(e) => {
+                    return Box::pin(stream::once(async move {
+                        Err(CommonRequestError::Json(e.to_string()))
+                    }));
+                }
+            },
+            None => None,
+        };
+
+        self.stream_with_options(endpoint, body_value, StreamOptions::default())
+    }
+
+    /// Execute a streaming request with fine-grained configuration.
+    pub fn stream_with_options<T>(
+        &self,
+        endpoint: &Endpoint,
+        body: Option<Value>,
+        options: StreamOptions,
+    ) -> BoxStream<'static, Result<T, CommonRequestError>>
+    where
+        T: for<'de> Deserialize<'de> + Send + 'static,
+    {
         let client = self.client.clone();
         let config = self.config.clone();
         let endpoint = endpoint.clone();
-        let body_data = body.map(|b| serde_json::to_value(b).ok()).flatten();
 
         Box::pin(try_stream! {
             let mut req = RequestBuilder::new(client.clone(), config.clone())
                 .build_request(&endpoint)?;
 
-            // Add body if provided and set stream=true
-            if let Some(body_value) = body_data {
-                let mut body_obj = body_value.as_object().unwrap().clone();
-                body_obj.insert("stream".to_string(), serde_json::Value::Bool(true));
+            if let Some(body_value) = body {
+                let mut obj = match body_value {
+                    Value::Object(map) => map,
+                    other => {
+                        Err(CommonRequestError::Json(format!(
+                            "Streaming body must be a JSON object, got {}",
+                            other
+                        )))?
+                    }
+                };
+
+                if options.set_stream_field {
+                    obj.insert("stream".to_string(), Value::Bool(true));
+                }
+
+                let payload = Value::Object(obj.clone());
 
                 if std::env::var("AOX_HTTP_DEBUG").map(|v| v == "1").unwrap_or(false) {
+                    let kind = match &payload {
+                        Value::Null => "null",
+                        Value::Bool(_) => "bool",
+                        Value::Number(_) => "number",
+                        Value::String(_) => "string",
+                        Value::Array(_) => "array",
+                        Value::Object(_) => "object",
+                    };
                     eprintln!(
-                        "[ai-ox-common::request_builder] STREAM {} body kind: object payload: {}",
+                        "[ai-ox-common::request_builder] STREAM {} body kind: {} payload: {}",
                         endpoint.path,
-                        serde_json::Value::Object(body_obj.clone())
+                        kind,
+                        payload
                     );
                 }
 
-                req = req.json(&body_obj);
+                req = req.json(&payload);
             }
 
             let response = req.send().await?;

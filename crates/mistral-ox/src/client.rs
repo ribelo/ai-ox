@@ -69,10 +69,7 @@ impl Mistral {
     }
 
     /// Send a chat completion request
-    pub async fn chat(
-        &self,
-        request: &ChatRequest,
-    ) -> Result<ChatResponse, MistralRequestError> {
+    pub async fn chat(&self, request: &ChatRequest) -> Result<ChatResponse, MistralRequestError> {
         self.helper.send_chat_request(request).await
     }
 
@@ -93,10 +90,7 @@ impl Mistral {
     }
 
     /// Send a chat request (alias for chat method for compatibility)
-    pub async fn send(
-        &self,
-        request: &ChatRequest,
-    ) -> Result<ChatResponse, MistralRequestError> {
+    pub async fn send(&self, request: &ChatRequest) -> Result<ChatResponse, MistralRequestError> {
         self.chat(request).await
     }
 }

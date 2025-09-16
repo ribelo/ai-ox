@@ -625,7 +625,10 @@ pub fn draft07_to_openapi3(schema: serde_json::Value) -> serde_json::Value {
                         let converted = draft07_to_openapi3(prop_value);
                         if has_non_hyphen {
                             let sanitized = sanitize_property_name(&key);
-                            if sanitized != key && !sanitized.is_empty() && !transformed_props.contains_key(&sanitized) {
+                            if sanitized != key
+                                && !sanitized.is_empty()
+                                && !transformed_props.contains_key(&sanitized)
+                            {
                                 rename_map.insert(key.clone(), sanitized.clone());
                                 transformed_props.insert(sanitized, converted);
                                 continue;
@@ -636,7 +639,8 @@ pub fn draft07_to_openapi3(schema: serde_json::Value) -> serde_json::Value {
                     }
 
                     if !rename_map.is_empty() {
-                        if let Some(serde_json::Value::Array(mut required)) = obj.remove("required") {
+                        if let Some(serde_json::Value::Array(mut required)) = obj.remove("required")
+                        {
                             for entry in required.iter_mut() {
                                 if let Some(name) = entry.as_str() {
                                     if let Some(replacement) = rename_map.get(name) {
@@ -648,7 +652,10 @@ pub fn draft07_to_openapi3(schema: serde_json::Value) -> serde_json::Value {
                         }
                     }
 
-                    obj.insert("properties".to_string(), serde_json::Value::Object(transformed_props));
+                    obj.insert(
+                        "properties".to_string(),
+                        serde_json::Value::Object(transformed_props),
+                    );
                 } else {
                     obj.insert(
                         "properties".to_string(),

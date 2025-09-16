@@ -1,15 +1,15 @@
 use bon::Builder;
 use core::fmt;
-use futures_util::stream::BoxStream;
+use futures_util::stream::{self, BoxStream};
+use futures_util::StreamExt;
 #[cfg(feature = "leaky-bucket")]
 use leaky_bucket::RateLimiter;
-use serde::Serialize;
 #[cfg(feature = "leaky-bucket")]
 use std::sync::Arc;
 
 use crate::{
     error::{self, AnthropicRequestError},
-    internal::{Endpoint, HttpMethod, RequestBuilder},
+    internal::{AnthropicRequestHelper, Endpoint, HttpMethod},
     request,
     response::{self, StreamEvent},
 };
@@ -72,10 +72,10 @@ pub struct Anthropic {
 }
 
 impl Anthropic {
-    /// Create a RequestBuilder instance for this client
-    fn request_builder(&self) -> RequestBuilder<'_> {
-        RequestBuilder::new(
-            &self.client,
+    /// Create a request helper instance for this client
+    fn request_helper(&self) -> Result<AnthropicRequestHelper, AnthropicRequestError> {
+        AnthropicRequestHelper::new(
+            self.client.clone(),
             &self.base_url,
             &self.api_key,
             &self.oauth_token,
@@ -89,8 +89,8 @@ impl Anthropic {
         &self,
         endpoint: Endpoint,
     ) -> Result<T, AnthropicRequestError> {
-        let builder = self.request_builder();
-        builder.request(&endpoint).await
+        let helper = self.request_helper()?;
+        helper.request(&endpoint).await
     }
 
     /// Generic method for API requests with JSON body
@@ -99,14 +99,14 @@ impl Anthropic {
         endpoint: Endpoint,
         body: &B,
     ) -> Result<T, AnthropicRequestError> {
-        let builder = self.request_builder();
-        builder.request_json(&endpoint, Some(body)).await
+        let helper = self.request_helper()?;
+        helper.request_json(&endpoint, Some(body)).await
     }
 
     /// Generic method for delete requests
     async fn api_delete(&self, endpoint: Endpoint) -> Result<(), AnthropicRequestError> {
-        let builder = self.request_builder();
-        builder.request_unit(&endpoint).await
+        let helper = self.request_helper()?;
+        helper.request_unit(&endpoint).await
     }
 
     /// Generic method for requests that return raw bytes
@@ -114,8 +114,8 @@ impl Anthropic {
         &self,
         endpoint: Endpoint,
     ) -> Result<bytes::Bytes, AnthropicRequestError> {
-        let builder = self.request_builder();
-        builder.request_bytes(&endpoint).await
+        let helper = self.request_helper()?;
+        helper.request_bytes(&endpoint).await
     }
 
     /// Generic method for streaming requests
@@ -128,8 +128,10 @@ impl Anthropic {
         T: serde::de::DeserializeOwned + Send + 'static,
         B: serde::Serialize,
     {
-        let builder = self.request_builder();
-        builder.stream(&endpoint, body)
+        match self.request_helper() {
+            Ok(helper) => helper.stream(&endpoint, body),
+            Err(err) => stream::once(async move { Err(err) }).boxed(),
+        }
     }
 
     /// Create a new Anthropic client with the provided API key.
@@ -301,7 +303,10 @@ impl Anthropic {
             format!("{}/{}/results", BATCHES_URL, batch_id),
             HttpMethod::Get,
         );
-        self.request_builder().stream_jsonl(&endpoint)
+        match self.request_helper() {
+            Ok(helper) => helper.stream_jsonl(&endpoint),
+            Err(err) => stream::once(async move { Err(err) }).boxed(),
+        }
     }
 
     /// Uploads a file to the server.

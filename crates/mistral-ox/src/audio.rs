@@ -119,5 +119,3 @@ pub struct TranscriptionWord {
     /// End time of the word in seconds
     pub end: f32,
 }
-
-

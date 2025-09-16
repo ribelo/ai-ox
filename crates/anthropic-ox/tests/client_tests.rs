@@ -209,26 +209,24 @@ async fn test_admin_with_missing_auth() {
 
 #[test]
 fn test_request_builder_debug() {
-    use anthropic_ox::internal::{Endpoint, HttpMethod, RequestBuilder};
-    use std::collections::HashMap;
+    use ai_ox_common::request_builder::{
+        AuthMethod, Endpoint as CommonEndpoint, HttpMethod, RequestBuilder, RequestConfig,
+    };
 
     let client = reqwest::Client::new();
-    let headers = HashMap::new();
-    let api_key = Some("test-key".to_string());
-    let oauth_token = None;
+    let api_key = "test-key".to_string();
 
-    let builder = RequestBuilder::new(
-        &client,
-        "https://api.anthropic.com",
-        &api_key,
-        &oauth_token,
-        "2023-06-01",
-        &headers,
-    );
+    let config = RequestConfig::new("https://api.anthropic.com".to_string())
+        .with_auth(AuthMethod::ApiKey {
+            header_name: "x-api-key".to_string(),
+            key: api_key,
+        })
+        .with_header("anthropic-version", "2023-06-01".to_string());
 
-    let endpoint = Endpoint::new("test", HttpMethod::Get);
+    let builder = RequestBuilder::new(client.clone(), config);
+    let endpoint = CommonEndpoint::new("test", HttpMethod::Get);
+
     let req_result = builder.build_request(&endpoint);
 
-    // Should build request successfully with proper auth
     assert!(req_result.is_ok());
 }

@@ -674,7 +674,10 @@ pub fn anthropic_to_openai_responses_response(
                 output_items.push(ResponseOutputItem::Reasoning {
                     id: format!("rs_{}", uuid::Uuid::new_v4()),
                     summary: vec![serde_json::Value::String(thinking.text.clone())],
-                    content: thinking.signature.as_ref().map(|sig| vec![serde_json::Value::String(sig.clone())]),
+                    content: thinking
+                        .signature
+                        .as_ref()
+                        .map(|sig| vec![serde_json::Value::String(sig.clone())]),
                 });
             }
             AnthropicContent::Text(text) => {

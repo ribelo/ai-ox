@@ -1,10 +1,10 @@
 use crate::{
-    BASE_URL, Gemini, GeminiRequestError,
     content::Content,
     generate_content::usage::UsageMetadata,
-    parse_error_response,
-    tool::{Tool, config::ToolConfig},
+    tool::{config::ToolConfig, Tool},
+    Gemini, GeminiRequestError,
 };
+use ai_ox_common::request_builder::{Endpoint, HttpMethod};
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
@@ -39,38 +39,9 @@ impl Caches {
     ///
     /// * `name` - The resource name of the cached content to retrieve, e.g., "cachedContents/my-cache-123".
     pub async fn get(&self, name: &str) -> Result<CachedContent, GeminiRequestError> {
-        let mut url = reqwest::Url::parse(BASE_URL)
-            .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
-
-        url.path_segments_mut()
-            .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
-            .push("v1beta")
-            .push(name); // The name includes "cachedContents/{id}"
-
-        // Handle authentication - OAuth takes precedence over API key
-        let mut request_builder = self.gemini.client.get(url.clone());
-
-        if let Some(oauth_token) = &self.gemini.oauth_token {
-            // OAuth: use Authorization header
-            request_builder =
-                request_builder.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.gemini.api_key {
-            // API key: use query parameter
-            request_builder = request_builder.query(&[("key", api_key)]);
-        } else {
-            return Err(GeminiRequestError::AuthenticationMissing);
-        }
-
-        let res = request_builder.send().await?;
-        let status = res.status();
-        let body_bytes = res.bytes().await?;
-
-        if status.is_success() {
-            serde_json::from_slice::<CachedContent>(&body_bytes)
-                .map_err(GeminiRequestError::JsonDeserializationError)
-        } else {
-            Err(parse_error_response(status, body_bytes))
-        }
+        let helper = self.gemini.request_helper()?;
+        let endpoint = Endpoint::new(format!("v1beta/{}", name), HttpMethod::Get);
+        helper.request(endpoint).await
     }
 
     /// Lists all `CachedContent` resources.
@@ -84,62 +55,21 @@ impl Caches {
         page_size: Option<u32>,
         page_token: Option<String>,
     ) -> Result<ListCachedContentsResponse, GeminiRequestError> {
-        let mut url = reqwest::Url::parse(BASE_URL)
-            .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
+        let helper = self.gemini.request_helper()?;
+        let mut endpoint = Endpoint::new("v1beta/cachedContents", HttpMethod::Get);
 
-        url.path_segments_mut()
-            .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
-            .push("v1beta")
-            .push("cachedContents");
-
-        // Handle authentication - OAuth takes precedence over API key
-        let mut request_builder = self.gemini.client.get(url.clone());
-
-        if let Some(oauth_token) = &self.gemini.oauth_token {
-            // OAuth: use Authorization header
-            request_builder =
-                request_builder.header("authorization", format!("Bearer {}", oauth_token));
-
-            // Add pagination parameters for OAuth mode
-            let mut params = Vec::new();
-            if let Some(size) = page_size {
-                params.push(("pageSize", size.to_string()));
-            }
-            if let Some(ref token) = page_token {
-                params.push(("pageToken", token.clone()));
-            }
-            if !params.is_empty() {
-                request_builder = request_builder.query(&params);
-            }
-        } else if let Some(api_key) = &self.gemini.api_key {
-            // API key: use query parameter
-            let mut query_params = vec![("key", api_key.as_str())];
-
-            // Add pagination parameters
-            let page_size_string;
-            if let Some(size) = page_size {
-                page_size_string = size.to_string();
-                query_params.push(("pageSize", &page_size_string));
-            }
-            if let Some(ref token) = page_token {
-                query_params.push(("pageToken", token));
-            }
-
-            request_builder = request_builder.query(&query_params);
-        } else {
-            return Err(GeminiRequestError::AuthenticationMissing);
+        let mut params = Vec::new();
+        if let Some(size) = page_size {
+            params.push(("pageSize".to_string(), size.to_string()));
+        }
+        if let Some(token) = page_token {
+            params.push(("pageToken".to_string(), token));
+        }
+        if !params.is_empty() {
+            endpoint = endpoint.with_query_params(params);
         }
 
-        let res = request_builder.send().await?;
-        let status = res.status();
-        let body_bytes = res.bytes().await?;
-
-        if status.is_success() {
-            serde_json::from_slice::<ListCachedContentsResponse>(&body_bytes)
-                .map_err(GeminiRequestError::JsonDeserializationError)
-        } else {
-            Err(parse_error_response(status, body_bytes))
-        }
+        helper.request(endpoint).await
     }
 
     /// Updates a `CachedContent` resource.
@@ -169,37 +99,9 @@ impl Caches {
     ///
     /// * `name` - The resource name of the cached content to delete.
     pub async fn delete(&self, name: &str) -> Result<(), GeminiRequestError> {
-        let mut url = reqwest::Url::parse(BASE_URL)
-            .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
-
-        url.path_segments_mut()
-            .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
-            .push("v1beta")
-            .push(name);
-
-        // Handle authentication - OAuth takes precedence over API key
-        let mut request_builder = self.gemini.client.delete(url.clone());
-
-        if let Some(oauth_token) = &self.gemini.oauth_token {
-            // OAuth: use Authorization header
-            request_builder =
-                request_builder.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.gemini.api_key {
-            // API key: use query parameter
-            request_builder = request_builder.query(&[("key", api_key)]);
-        } else {
-            return Err(GeminiRequestError::AuthenticationMissing);
-        }
-
-        let res = request_builder.send().await?;
-        let status = res.status();
-
-        if status.is_success() {
-            Ok(())
-        } else {
-            let body_bytes = res.bytes().await?;
-            Err(parse_error_response(status, body_bytes))
-        }
+        let helper = self.gemini.request_helper()?;
+        let endpoint = Endpoint::new(format!("v1beta/{}", name), HttpMethod::Delete);
+        helper.request_unit(endpoint).await
     }
 }
 
@@ -297,52 +199,25 @@ impl<'a> UpdateCachedContentRequest<'a> {
     /// # Errors
     /// Returns a `GeminiRequestError` if the request fails.
     pub async fn send(&self) -> Result<CachedContent, GeminiRequestError> {
-        let mut url = reqwest::Url::parse(BASE_URL)
-            .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
-
-        url.path_segments_mut()
-            .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
-            .push("v1beta")
-            .push(self.name);
-
         let mut request_body = serde_json::json!({});
-        let mut mask_paths = vec![];
+        let mut mask_paths = Vec::new();
 
         if let Some(ttl) = &self.ttl {
             request_body["ttl"] = ttl.clone().into();
             mask_paths.push("ttl");
         }
+
         if let Some(expire_time) = &self.expire_time {
             request_body["expireTime"] = expire_time.clone().into();
             mask_paths.push("expireTime");
         }
 
-        // Handle authentication - OAuth takes precedence over API key
-        let mut request_builder = self.gemini.client.patch(url.clone());
+        let helper = self.gemini.request_helper()?;
+        let mut endpoint = Endpoint::new(format!("v1beta/{}", self.name), HttpMethod::Patch);
+        endpoint =
+            endpoint.with_query_params(vec![("updateMask".to_string(), mask_paths.join(","))]);
 
-        if let Some(oauth_token) = &self.gemini.oauth_token {
-            // OAuth: use Authorization header
-            request_builder =
-                request_builder.header("authorization", format!("Bearer {}", oauth_token));
-            request_builder = request_builder.query(&[("updateMask", mask_paths.join(","))]);
-        } else if let Some(api_key) = &self.gemini.api_key {
-            // API key: use query parameter
-            request_builder =
-                request_builder.query(&[("key", api_key), ("updateMask", &mask_paths.join(","))]);
-        } else {
-            return Err(GeminiRequestError::AuthenticationMissing);
-        }
-
-        let res = request_builder.json(&request_body).send().await?;
-        let status = res.status();
-        let body_bytes = res.bytes().await?;
-
-        if status.is_success() {
-            serde_json::from_slice::<CachedContent>(&body_bytes)
-                .map_err(GeminiRequestError::JsonDeserializationError)
-        } else {
-            Err(parse_error_response(status, body_bytes))
-        }
+        helper.request_json(endpoint, Some(&request_body)).await
     }
 }
 
@@ -417,37 +292,8 @@ impl CreateCachedContentRequest {
     /// Returns a `GeminiRequestError` if the request fails, for example due to
     /// network issues, invalid API key, or an invalid request payload.
     pub async fn send(&self) -> Result<CachedContent, GeminiRequestError> {
-        let mut url = reqwest::Url::parse(BASE_URL)
-            .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
-
-        url.path_segments_mut()
-            .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
-            .push("v1beta")
-            .push("cachedContents");
-
-        // Handle authentication - OAuth takes precedence over API key
-        let mut request_builder = self.gemini.client.post(url.clone());
-
-        if let Some(oauth_token) = &self.gemini.oauth_token {
-            // OAuth: use Authorization header
-            request_builder =
-                request_builder.header("authorization", format!("Bearer {}", oauth_token));
-        } else if let Some(api_key) = &self.gemini.api_key {
-            // API key: use query parameter
-            request_builder = request_builder.query(&[("key", api_key)]);
-        } else {
-            return Err(GeminiRequestError::AuthenticationMissing);
-        }
-
-        let res = request_builder.json(self).send().await?;
-        let status = res.status();
-        let body_bytes = res.bytes().await?;
-
-        if status.is_success() {
-            serde_json::from_slice::<CachedContent>(&body_bytes)
-                .map_err(GeminiRequestError::JsonDeserializationError)
-        } else {
-            Err(parse_error_response(status, body_bytes))
-        }
+        let helper = self.gemini.request_helper()?;
+        let endpoint = Endpoint::new("v1beta/cachedContents", HttpMethod::Post);
+        helper.request_json(endpoint, Some(self)).await
     }
 }

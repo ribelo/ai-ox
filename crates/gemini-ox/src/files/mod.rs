@@ -4,7 +4,7 @@ use serde_json::json;
 use std::path::PathBuf;
 use tokio::fs::File;
 
-use crate::{BASE_URL, Gemini, GeminiRequestError};
+use crate::{Gemini, GeminiRequestError};
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct FileInfo {
@@ -42,15 +42,23 @@ impl FileUploadRequest {
     pub async fn send(self) -> Result<String, GeminiRequestError> {
         let num_bytes = self.data.len();
 
+        let api_key = self
+            .gemini
+            .api_key
+            .as_ref()
+            .ok_or(GeminiRequestError::AuthenticationMissing)?;
+
         let init_url = format!(
-            "{}/upload/{}/files?key={}",
-            BASE_URL, self.gemini.api_version, self.gemini.api_key
+            "{}/upload/{}/files",
+            self.gemini.base_url(),
+            self.gemini.api_version
         );
 
         let init_response = self
             .gemini
             .client
             .post(&init_url)
+            .query(&[("key", api_key.as_str())])
             .header("X-Goog-Upload-Protocol", "resumable")
             .header("X-Goog-Upload-Command", "start")
             .header("X-Goog-Upload-Header-Content-Length", num_bytes.to_string())
@@ -93,37 +101,49 @@ impl FileUploadRequest {
 
 impl FileStreamUploadRequest {
     pub async fn send(self) -> Result<String, GeminiRequestError> {
-        let file = File::open(&self.file_path).await
-            .map_err(|e| GeminiRequestError::InvalidRequestError {
+        let file = File::open(&self.file_path).await.map_err(|e| {
+            GeminiRequestError::InvalidRequestError {
                 code: None,
                 details: json!({}),
                 message: format!("Failed to open file: {}", e),
                 status: None,
-            })?;
+            }
+        })?;
 
-        let metadata = file.metadata().await
-            .map_err(|e| GeminiRequestError::InvalidRequestError {
-                code: None,
-                details: json!({}),
-                message: format!("Failed to read file metadata: {}", e),
-                status: None,
-            })?;
+        let metadata =
+            file.metadata()
+                .await
+                .map_err(|e| GeminiRequestError::InvalidRequestError {
+                    code: None,
+                    details: json!({}),
+                    message: format!("Failed to read file metadata: {}", e),
+                    status: None,
+                })?;
 
         let num_bytes = metadata.len();
-        let file_name = self.file_path
+        let file_name = self
+            .file_path
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("unnamed_file");
 
+        let api_key = self
+            .gemini
+            .api_key
+            .as_ref()
+            .ok_or(GeminiRequestError::AuthenticationMissing)?;
+
         let init_url = format!(
-            "{}/upload/{}/files?key={}",
-            BASE_URL, self.gemini.api_version, self.gemini.api_key
+            "{}/upload/{}/files",
+            self.gemini.base_url(),
+            self.gemini.api_version
         );
 
         let init_response = self
             .gemini
             .client
             .post(&init_url)
+            .query(&[("key", api_key.as_str())])
             .header("X-Goog-Upload-Protocol", "resumable")
             .header("X-Goog-Upload-Command", "start")
             .header("X-Goog-Upload-Header-Content-Length", num_bytes.to_string())
@@ -169,7 +189,9 @@ impl Gemini {
         FileUploadRequest::builder().gemini(self.clone())
     }
 
-    pub fn upload_file_stream(&self) -> FileStreamUploadRequestBuilder<file_stream_upload_request_builder::SetGemini> {
+    pub fn upload_file_stream(
+        &self,
+    ) -> FileStreamUploadRequestBuilder<file_stream_upload_request_builder::SetGemini> {
         FileStreamUploadRequest::builder().gemini(self.clone())
     }
 }
@@ -247,7 +269,6 @@ mod tests {
             "File URI does not start with 'https://'"
         );
     }
-
 
     #[tokio::test]
     async fn test_file_upload_request_builder_with_data() {
