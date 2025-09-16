@@ -1,14 +1,15 @@
-use crate::{ChatRequest, ChatResponse, MistralRequestError, response::ChatCompletionChunk};
+use crate::{response::ChatCompletionChunk, ChatRequest, ChatResponse, MistralRequestError};
 use ai_ox_common::{
-    BoxStream,
     error::ProviderError,
     request_builder::{AuthMethod, Endpoint, HttpMethod, RequestBuilder, RequestConfig},
+    BoxStream,
 };
 use futures_util::stream::BoxStream as FuturesBoxStream;
 
 /// Mistral client helper methods using the common RequestBuilder
 pub struct MistralRequestHelper {
-    request_builder: RequestBuilder,
+    client: reqwest::Client,
+    config: RequestConfig,
 }
 
 impl std::fmt::Debug for MistralRequestHelper {
@@ -19,23 +20,17 @@ impl std::fmt::Debug for MistralRequestHelper {
     }
 }
 
-impl Clone for MistralRequestHelper {
-    fn clone(&self) -> Self {
-        // We can't actually clone RequestBuilder, so this is a placeholder
-        // In practice, this should not be called since we don't use Clone on MistralRequestHelper
-        unimplemented!("MistralRequestHelper cannot be cloned")
-    }
-}
-
 impl MistralRequestHelper {
     pub fn new(client: reqwest::Client, base_url: &str, api_key: &str) -> Self {
         let config = RequestConfig::new(base_url)
             .with_auth(AuthMethod::Bearer(api_key.to_string()))
             .with_header("accept", "application/json");
 
-        let request_builder = RequestBuilder::new(client, config);
+        Self { client, config }
+    }
 
-        Self { request_builder }
+    fn builder(&self) -> RequestBuilder {
+        RequestBuilder::new(self.client.clone(), self.config.clone())
     }
 
     /// Send a chat completion request
@@ -46,7 +41,7 @@ impl MistralRequestHelper {
         let endpoint = Endpoint::new("v1/chat/completions", HttpMethod::Post);
 
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
     }
@@ -60,7 +55,7 @@ impl MistralRequestHelper {
 
         // Use the common streaming implementation (no conversion needed - same type)
         let stream: BoxStream<'static, Result<ChatCompletionChunk, ProviderError>> =
-            self.request_builder.stream(&endpoint, Some(request));
+            self.builder().stream(&endpoint, Some(request));
 
         // Direct cast since MistralRequestError = ProviderError
         stream
@@ -71,10 +66,7 @@ impl MistralRequestHelper {
         &self,
     ) -> Result<crate::response::ModelsResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/models", HttpMethod::Get);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// Generate embeddings
@@ -84,7 +76,7 @@ impl MistralRequestHelper {
     ) -> Result<crate::response::EmbeddingsResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/embeddings", HttpMethod::Post);
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
     }
@@ -96,7 +88,7 @@ impl MistralRequestHelper {
     ) -> Result<crate::response::ModerationResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/moderations", HttpMethod::Post);
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
     }
@@ -108,7 +100,7 @@ impl MistralRequestHelper {
     ) -> Result<crate::response::ModerationResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/chat/moderations", HttpMethod::Post);
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
     }
@@ -118,10 +110,7 @@ impl MistralRequestHelper {
         &self,
     ) -> Result<crate::response::FineTuningJobsResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/fine_tuning/jobs", HttpMethod::Get);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// Send a transcription request
@@ -131,7 +120,7 @@ impl MistralRequestHelper {
     ) -> Result<crate::audio::TranscriptionResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/audio/transcriptions", HttpMethod::Post);
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
     }
@@ -143,7 +132,7 @@ impl MistralRequestHelper {
     ) -> Result<crate::response::FineTuningJob, MistralRequestError> {
         let endpoint = Endpoint::new("v1/fine_tuning/jobs", HttpMethod::Post);
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
     }
@@ -154,10 +143,7 @@ impl MistralRequestHelper {
         job_id: &str,
     ) -> Result<crate::response::FineTuningJob, MistralRequestError> {
         let endpoint = Endpoint::new(format!("v1/fine_tuning/jobs/{}", job_id), HttpMethod::Get);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// Cancel fine-tuning job
@@ -169,10 +155,7 @@ impl MistralRequestHelper {
             format!("v1/fine_tuning/jobs/{}/cancel", job_id),
             HttpMethod::Post,
         );
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// List batch jobs
@@ -180,10 +163,7 @@ impl MistralRequestHelper {
         &self,
     ) -> Result<crate::response::BatchJobsResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/batch/jobs", HttpMethod::Get);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// Create batch job
@@ -193,7 +173,7 @@ impl MistralRequestHelper {
     ) -> Result<crate::response::BatchJob, MistralRequestError> {
         let endpoint = Endpoint::new("v1/batch/jobs", HttpMethod::Post);
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
     }
@@ -204,10 +184,7 @@ impl MistralRequestHelper {
         job_id: &str,
     ) -> Result<crate::response::BatchJob, MistralRequestError> {
         let endpoint = Endpoint::new(format!("v1/batch/jobs/{}", job_id), HttpMethod::Get);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// Cancel batch job
@@ -216,19 +193,13 @@ impl MistralRequestHelper {
         job_id: &str,
     ) -> Result<crate::response::BatchJob, MistralRequestError> {
         let endpoint = Endpoint::new(format!("v1/batch/jobs/{}/cancel", job_id), HttpMethod::Post);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// List files
     pub async fn list_files(&self) -> Result<crate::response::FilesResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/files", HttpMethod::Get);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// Get file information
@@ -237,10 +208,7 @@ impl MistralRequestHelper {
         file_id: &str,
     ) -> Result<crate::response::FileInfo, MistralRequestError> {
         let endpoint = Endpoint::new(format!("v1/files/{}", file_id), HttpMethod::Get);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// Delete file
@@ -249,10 +217,7 @@ impl MistralRequestHelper {
         file_id: &str,
     ) -> Result<crate::response::FileDeleteResponse, MistralRequestError> {
         let endpoint = Endpoint::new(format!("v1/files/{}", file_id), HttpMethod::Delete);
-        Ok(self
-            .request_builder
-            .request_json(&endpoint, None::<&()>)
-            .await?)
+        Ok(self.builder().request_json(&endpoint, None::<&()>).await?)
     }
 
     /// Fill-in-the-middle completion
@@ -262,7 +227,7 @@ impl MistralRequestHelper {
     ) -> Result<crate::response::ChatResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/fim/completions", HttpMethod::Post);
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
     }
@@ -274,8 +239,17 @@ impl MistralRequestHelper {
     ) -> Result<crate::response::ChatResponse, MistralRequestError> {
         let endpoint = Endpoint::new("v1/agents/completions", HttpMethod::Post);
         Ok(self
-            .request_builder
+            .builder()
             .request_json(&endpoint, Some(request))
             .await?)
+    }
+}
+
+impl Clone for MistralRequestHelper {
+    fn clone(&self) -> Self {
+        Self {
+            client: self.client.clone(),
+            config: self.config.clone(),
+        }
     }
 }

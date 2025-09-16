@@ -1,25 +1,19 @@
 use std::time::Duration;
 
 use crate::{
-    ChatRequest, ChatResponse, MistralRequestError, audio::TranscriptionRequest,
-    audio::TranscriptionResponse, internal::MistralRequestHelper, response::ChatCompletionChunk,
+    audio::{TranscriptionRequest, TranscriptionResponse},
+    internal::MistralRequestHelper,
+    response::ChatCompletionChunk,
+    ChatRequest, ChatResponse, MistralRequestError,
 };
 use futures_util::stream::BoxStream;
 
 /// Mistral AI API client
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Mistral {
-    /// API key for authentication
-    pub api_key: String,
-
-    /// Base URL for the API (allows for custom endpoints)
-    pub base_url: String,
-
-    /// HTTP client for making requests
-    pub client: reqwest::Client,
-
-    /// Request helper
-    pub helper: MistralRequestHelper,
+    api_key: String,
+    base_url: String,
+    helper: MistralRequestHelper,
 }
 
 impl Mistral {
@@ -28,17 +22,17 @@ impl Mistral {
         let api_key = api_key.into();
         let base_url = "https://api.mistral.ai".to_string();
 
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .expect("Failed to create HTTP client");
-
-        let helper = MistralRequestHelper::new(client.clone(), &base_url, &api_key);
+        let helper = {
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(60))
+                .build()
+                .expect("Failed to create HTTP client");
+            MistralRequestHelper::new(client, &base_url, &api_key)
+        };
 
         Self {
             api_key,
             base_url,
-            client,
             helper,
         }
     }
@@ -48,17 +42,17 @@ impl Mistral {
         let api_key = api_key.into();
         let base_url = base_url.into();
 
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .expect("Failed to create HTTP client");
-
-        let helper = MistralRequestHelper::new(client.clone(), &base_url, &api_key);
+        let helper = {
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_secs(60))
+                .build()
+                .expect("Failed to create HTTP client");
+            MistralRequestHelper::new(client, &base_url, &api_key)
+        };
 
         Self {
             api_key,
             base_url,
-            client,
             helper,
         }
     }
@@ -68,9 +62,18 @@ impl Mistral {
         &self.api_key
     }
 
+    /// Base URL for the API
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
+    fn helper(&self) -> &MistralRequestHelper {
+        &self.helper
+    }
+
     /// Send a chat completion request
     pub async fn chat(&self, request: &ChatRequest) -> Result<ChatResponse, MistralRequestError> {
-        self.helper.send_chat_request(request).await
+        self.helper().send_chat_request(request).await
     }
 
     /// Stream a chat completion request
@@ -78,7 +81,7 @@ impl Mistral {
         &self,
         request: &ChatRequest,
     ) -> BoxStream<'static, Result<ChatCompletionChunk, MistralRequestError>> {
-        self.helper.stream_chat_request(request)
+        self.helper().stream_chat_request(request)
     }
 
     /// Send a transcription request
@@ -86,36 +89,12 @@ impl Mistral {
         &self,
         request: &TranscriptionRequest,
     ) -> Result<TranscriptionResponse, MistralRequestError> {
-        self.helper.send_transcription_request(request).await
+        self.helper().send_transcription_request(request).await
     }
 
     /// Send a chat request (alias for chat method for compatibility)
     pub async fn send(&self, request: &ChatRequest) -> Result<ChatResponse, MistralRequestError> {
         self.chat(request).await
-    }
-}
-
-impl Clone for Mistral {
-    fn clone(&self) -> Self {
-        let client = reqwest::Client::builder()
-            .timeout(Duration::from_secs(60))
-            .build()
-            .expect("Failed to create HTTP client");
-
-        let helper = MistralRequestHelper::new(client.clone(), &self.base_url, &self.api_key);
-
-        Self {
-            api_key: self.api_key.clone(),
-            base_url: self.base_url.clone(),
-            client,
-            helper,
-        }
-    }
-}
-
-impl Default for Mistral {
-    fn default() -> Self {
-        Self::new("")
     }
 }
 
