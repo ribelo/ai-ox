@@ -6,6 +6,8 @@ use tokio::fs::File;
 
 use crate::{Gemini, GeminiRequestError};
 
+const STANDARD_BASE_URL: &str = "https://generativelanguage.googleapis.com";
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct FileInfo {
     pub file: FileData,
@@ -50,7 +52,7 @@ impl FileUploadRequest {
 
         let init_url = format!(
             "{}/upload/{}/files",
-            self.gemini.base_url(),
+            STANDARD_BASE_URL,
             self.gemini.api_version
         );
 
@@ -135,7 +137,7 @@ impl FileStreamUploadRequest {
 
         let init_url = format!(
             "{}/upload/{}/files",
-            self.gemini.base_url(),
+            STANDARD_BASE_URL,
             self.gemini.api_version
         );
 
