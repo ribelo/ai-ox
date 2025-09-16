@@ -31,7 +31,7 @@ impl MistralRequestHelper {
     pub fn new(client: reqwest::Client, base_url: &str, api_key: &str) -> Self {
         let config = RequestConfig::new(base_url)
             .with_auth(AuthMethod::Bearer(api_key.to_string()))
-            .with_header("content-type", "application/json");
+            .with_header("accept", "application/json");
 
         let request_builder = RequestBuilder::new(client, config);
 

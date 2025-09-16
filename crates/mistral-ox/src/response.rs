@@ -1,9 +1,19 @@
 use crate::message::AssistantMessage;
-use ai_ox_common::openai_format::{ChatCompletionResponse, TokenUsage};
+use ai_ox_common::openai_format::TokenUsage;
 use serde::{Deserialize, Serialize};
 
-// Use shared response types from ai-ox-common
-pub type ChatResponse = ChatCompletionResponse;
+// Mistral chat response format (uses multimodal AssistantMessage)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ChatResponse {
+    pub id: String,
+    pub object: String,
+    pub created: u64,
+    pub model: String,
+    pub choices: Vec<Choice>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
+}
+
 pub type Usage = TokenUsage;
 
 // Mistral uses custom Choice with AssistantMessage (multimodal content)

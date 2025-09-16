@@ -151,11 +151,18 @@ impl Model for MistralModel {
             let text = response
                 .choices
                 .first()
-                .and_then(|choice| choice.message.content.as_ref())
+                .and_then(|choice| {
+                    choice
+                        .message
+                        .content
+                        .0
+                        .iter()
+                        .find_map(|p| p.as_text().map(|t| t.text.clone()))
+                })
                 .ok_or_else(|| MistralError::ResponseParsing("No response content".to_string()))?;
 
             // Parse the text as JSON
-            let json = serde_json::from_str(text)
+            let json = serde_json::from_str(&text)
                 .map_err(|e| MistralError::ResponseParsing(e.to_string()))?;
 
             let usage = response

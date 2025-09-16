@@ -200,7 +200,26 @@ impl RequestBuilder {
         let mut req = self.build_request(endpoint)?;
 
         if let Some(body) = body {
-            req = req.json(body);
+            // Normalize body to serde_json::Value to avoid any accidental double-encoding
+            let val = serde_json::to_value(body).map_err(|e| CommonRequestError::Json(e.to_string()))?;
+
+            if std::env::var("AOX_HTTP_DEBUG").map(|v| v == "1").unwrap_or(false) {
+                let kind = match &val {
+                    serde_json::Value::Null => "null",
+                    serde_json::Value::Bool(_) => "bool",
+                    serde_json::Value::Number(_) => "number",
+                    serde_json::Value::String(_) => "string",
+                    serde_json::Value::Array(_) => "array",
+                    serde_json::Value::Object(_) => "object",
+                };
+                eprintln!(
+                    "[ai-ox-common::request_builder] POST {} body kind: {} payload: {}",
+                    endpoint.path,
+                    kind,
+                    val
+                );
+            }
+            req = req.json(&val);
         }
 
         let res = req.send().await?;
@@ -271,7 +290,16 @@ impl RequestBuilder {
             if let Some(body_value) = body_data {
                 let mut body_obj = body_value.as_object().unwrap().clone();
                 body_obj.insert("stream".to_string(), serde_json::Value::Bool(true));
-                req = req.json(&serde_json::Value::Object(body_obj));
+
+                if std::env::var("AOX_HTTP_DEBUG").map(|v| v == "1").unwrap_or(false) {
+                    eprintln!(
+                        "[ai-ox-common::request_builder] STREAM {} body kind: object payload: {}",
+                        endpoint.path,
+                        serde_json::Value::Object(body_obj.clone())
+                    );
+                }
+
+                req = req.json(&body_obj);
             }
 
             let response = req.send().await?;
@@ -295,11 +323,23 @@ impl RequestBuilder {
         &self,
         res: Response,
     ) -> Result<T, CommonRequestError> {
-        if res.status().is_success() {
-            Ok(res.json::<T>().await?)
+        let status = res.status();
+        let bytes = res.bytes().await?;
+
+        if status.is_success() {
+            match serde_json::from_slice::<T>(&bytes) {
+                Ok(val) => Ok(val),
+                Err(e) => {
+                    let body_str = String::from_utf8_lossy(&bytes);
+                    Err(CommonRequestError::UnexpectedResponse(format!(
+                        "HTTP {} but failed to decode JSON: {}; body: {}",
+                        status.as_u16(),
+                        e,
+                        body_str
+                    )))
+                }
+            }
         } else {
-            let status = res.status();
-            let bytes = res.bytes().await?;
             Err(error::parse_error_response(status, bytes))
         }
     }

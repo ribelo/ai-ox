@@ -174,7 +174,6 @@ impl From<&str> for Content {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub struct SystemMessage {
     #[serde(serialize_with = "serialize_content", deserialize_with = "deserialize_content")]
     content: Content,
@@ -403,7 +402,17 @@ fn serialize_content<S>(content: &Content, serializer: S) -> Result<S::Ok, S::Er
 where
     S: serde::Serializer,
 {
-    content.0.serialize(serializer)
+    // Mistral chat/completions expects `content` to be a plain string for
+    // simple text messages. Only use array form when we actually have multiple
+    // parts or non-text modalities.
+    match content.0.as_slice() {
+        // Empty content: serialize as empty string (most permissive)
+        [] => serializer.serialize_str(""),
+        // Single text part -> plain string
+        [ContentPart::Text(TextContent { text })] => serializer.serialize_str(text),
+        // Otherwise preserve full array of parts
+        _ => content.0.serialize(serializer),
+    }
 }
 
 /// Custom deserializer for content field that can handle string, null, or array
@@ -462,6 +471,7 @@ where
         }
     }
 
+    // Accept either a string or a structured array/object
     deserializer.deserialize_any(ContentVisitor)
 }
 

@@ -58,7 +58,9 @@ pub fn convert_request_to_mistral(
             .model(model)
             .messages(mistral_messages)
             .tools(common_tools)
-            .tool_choice(ai_ox_common::openai_format::ToolChoice::Auto)
+            // Omit tool_choice entirely: Mistral treats absence as 'auto'.
+            // Setting Some(Auto) with the shared OpenAI type serializes to null due to untagged enum,
+            // which Mistral rejects. Omitting avoids invalid null.
             .build())
     } else {
         Ok(ChatRequest::builder()
@@ -280,11 +282,14 @@ pub fn convert_mistral_response_to_ai_ox(
     let mut parts = Vec::new();
 
     // Convert content
-    if let Some(content) = &choice.message.content {
-        parts.push(Part::Text {
-            text: content.clone(),
-            ext: BTreeMap::new(),
-        });
+    // Convert content (Mistral returns Content parts; flatten text parts)
+    for part in &choice.message.content.0 {
+        if let MistralContentPart::Text(t) = part {
+            parts.push(Part::Text {
+                text: t.text.clone(),
+                ext: BTreeMap::new(),
+            });
+        }
     }
 
     // Convert tool calls
