@@ -29,7 +29,8 @@ pub struct ApprovalRequest {
 #[derive(Default, Clone)]
 pub struct ToolHooks {
     /// Called when tool needs approval for a dangerous operation
-    pub on_approval_needed: Option<Arc<dyn Fn(ApprovalRequest) -> BoxFuture<'static, bool> + Send + Sync>>,
+    pub on_approval_needed:
+        Option<Arc<dyn Fn(ApprovalRequest) -> BoxFuture<'static, bool> + Send + Sync>>,
     /// Called for progress updates during tool execution
     pub on_progress: Option<Arc<dyn Fn(String) -> BoxFuture<'static, ()> + Send + Sync>>,
 }
@@ -39,25 +40,25 @@ impl ToolHooks {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Set the approval callback
-    pub fn with_approval<F>(mut self, callback: F) -> Self 
+    pub fn with_approval<F>(mut self, callback: F) -> Self
     where
         F: Fn(ApprovalRequest) -> BoxFuture<'static, bool> + Send + Sync + 'static,
     {
         self.on_approval_needed = Some(Arc::new(callback));
         self
     }
-    
+
     /// Set the progress callback
-    pub fn with_progress<F>(mut self, callback: F) -> Self 
+    pub fn with_progress<F>(mut self, callback: F) -> Self
     where
         F: Fn(String) -> BoxFuture<'static, ()> + Send + Sync + 'static,
     {
         self.on_progress = Some(Arc::new(callback));
         self
     }
-    
+
     /// Request approval if callback is available
     pub async fn request_approval(&self, request: ApprovalRequest) -> bool {
         match &self.on_approval_needed {
@@ -65,7 +66,7 @@ impl ToolHooks {
             None => false, // Default to deny if no callback
         }
     }
-    
+
     /// Report progress if callback is available
     pub async fn report_progress(&self, message: String) {
         if let Some(callback) = &self.on_progress {
@@ -112,19 +113,19 @@ pub enum Tool {
 ///
 /// This trait allows objects to expose their available tools and handle
 /// tool invocations in a standardized way.
-/// 
+///
 /// # Security Model
-/// 
+///
 /// The ToolBox trait supports two levels of danger detection:
-/// 
+///
 /// 1. **Function-level** (via `dangerous_functions()`): Marks entire functions as always dangerous
 /// 2. **Invocation-level** (via `invoke_with_hooks()`): Allows runtime inspection of arguments
-/// 
+///
 /// ## Session Approval Limitation
-/// 
+///
 /// When using `Agent::approve_dangerous_tools()`, you're approving ALL invocations of that
 /// function. For tools where danger varies by argument (like bash commands), this means:
-/// 
+///
 /// ```rust
 /// // User approves "execute" for session (example - agent would be an Agent instance)
 /// // agent.approve_dangerous_tools(&["execute"]);
@@ -133,11 +134,11 @@ pub enum Tool {
 /// // bash.execute("ls")        // Safe command
 /// // bash.execute("rm -rf /")  // DANGEROUS - but still executes!
 /// ```
-/// 
+///
 /// ## Implementing Argument-Based Detection
-/// 
+///
 /// For fine-grained control, override `invoke_with_hooks()` to inspect arguments:
-/// 
+///
 /// ```rust
 /// # use ai_ox::tool::{ToolUse, ToolHooks, ToolError, ApprovalRequest};
 /// # use ai_ox::content::part::Part;
@@ -162,7 +163,7 @@ pub enum Tool {
 ///     })
 /// }
 /// ```
-/// 
+///
 /// See `DANGEROUS_TOOLS_GUIDE.md` for complete security documentation.
 pub trait ToolBox: Send + Sync + 'static {
     /// Returns the list of tools provided by this toolbox.
@@ -177,13 +178,13 @@ pub trait ToolBox: Send + Sync + 'static {
     /// Invokes a tool function with hooks for dangerous operations.
     ///
     /// Default implementation just calls invoke(), ignoring hooks.
-    /// 
+    ///
     /// Override this method to implement argument-based danger detection.
     /// You can inspect the `call.args` to determine if this specific invocation
     /// is dangerous and should request approval.
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// # use ai_ox::tool::{ToolUse, ToolHooks, ToolError, ApprovalRequest};
     /// # use ai_ox::content::part::Part;
@@ -209,7 +210,11 @@ pub trait ToolBox: Send + Sync + 'static {
     ///     })
     /// }
     /// ```
-    fn invoke_with_hooks(&self, call: ToolUse, _hooks: ToolHooks) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
+    fn invoke_with_hooks(
+        &self,
+        call: ToolUse,
+        _hooks: ToolHooks,
+    ) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
         self.invoke(call)
     }
 
@@ -217,12 +222,12 @@ pub trait ToolBox: Send + Sync + 'static {
     ///
     /// Functions listed here are considered ALWAYS dangerous - every invocation
     /// will require approval (unless pre-approved via `Agent::approve_dangerous_tools()`).
-    /// 
+    ///
     /// For tools where danger depends on arguments (like bash commands), return
     /// an empty slice here and implement argument-based detection in `invoke_with_hooks()`.
-    /// 
+    ///
     /// # Session Approval Warning
-    /// 
+    ///
     /// When a function is in this list and gets approved via `approve_dangerous_tools()`,
     /// ALL invocations are approved for the session. This may not be appropriate for
     /// tools with variable danger levels.
@@ -249,7 +254,11 @@ impl<T: ToolBox + ?Sized> ToolBox for Arc<T> {
         self.as_ref().invoke(call)
     }
 
-    fn invoke_with_hooks(&self, call: ToolUse, hooks: ToolHooks) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
+    fn invoke_with_hooks(
+        &self,
+        call: ToolUse,
+        hooks: ToolHooks,
+    ) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
         self.as_ref().invoke_with_hooks(call, hooks)
     }
 

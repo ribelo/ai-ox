@@ -1,5 +1,5 @@
 use ai_ox::content::part::Part;
-use ai_ox::tool::{encode_tool_result_parts, decode_tool_result_parts};
+use ai_ox::tool::{decode_tool_result_parts, encode_tool_result_parts};
 use serde_json::json;
 
 #[cfg(feature = "anthropic")]
@@ -24,8 +24,14 @@ fn test_tool_name_encoding_decoding_works() {
     let (decoded_name, decoded_parts) = decode_tool_result_parts(&encoded).unwrap();
 
     // Verify that encoding/decoding preserves the name correctly
-    assert_eq!(decoded_name, original_tool_name, "Encoding/decoding should preserve tool name");
-    assert_eq!(decoded_parts, original_parts, "Encoding/decoding should preserve parts");
+    assert_eq!(
+        decoded_name, original_tool_name,
+        "Encoding/decoding should preserve tool name"
+    );
+    assert_eq!(
+        decoded_parts, original_parts,
+        "Encoding/decoding should preserve parts"
+    );
 
     // This proves that the encoding/decoding mechanism works correctly
     // The bug is in the conversion functions that hardcode "unknown" instead of using decoded_name
@@ -50,8 +56,14 @@ fn test_openrouter_tool_name_bug_simulation() {
 
     // Verify the bug exists
     if let Part::ToolResult { name, .. } = buggy_result {
-        assert_eq!(name, "unknown", "This demonstrates the bug - name should be 'calculate_sum'");
-        assert_ne!(name, original_tool_name, "Bug confirmed: name is not preserved");
+        assert_eq!(
+            name, "unknown",
+            "This demonstrates the bug - name should be 'calculate_sum'"
+        );
+        assert_ne!(
+            name, original_tool_name,
+            "Bug confirmed: name is not preserved"
+        );
     }
 }
 
@@ -77,8 +89,14 @@ fn test_bedrock_tool_name_bug_simulation() {
 
     // Verify the bug exists
     if let Part::ToolResult { name, .. } = buggy_result {
-        assert_eq!(name, "unknown", "This demonstrates the bug - name should be 'search_database'");
-        assert_ne!(name, original_tool_name, "Bug confirmed: name is not preserved");
+        assert_eq!(
+            name, "unknown",
+            "This demonstrates the bug - name should be 'search_database'"
+        );
+        assert_ne!(
+            name, original_tool_name,
+            "Bug confirmed: name is not preserved"
+        );
     }
 }
 
@@ -105,13 +123,20 @@ fn test_all_part_constructions_have_ext_field() {
     let nested_tool_result = Part::tool_result(
         "nested_id",
         "nested_name",
-        vec![Part::tool_result("inner_id", "inner_name", vec![Part::text("deep")])]
+        vec![Part::tool_result(
+            "inner_id",
+            "inner_name",
+            vec![Part::text("deep")],
+        )],
     );
 
     // Verify nested structure has ext fields
     if let Part::ToolResult { parts, .. } = nested_tool_result {
         if let Some(Part::ToolResult { ext, .. }) = parts.get(0) {
-            assert!(ext.is_empty(), "Nested tool result should have ext field initialized");
+            assert!(
+                ext.is_empty(),
+                "Nested tool result should have ext field initialized"
+            );
         } else {
             panic!("Expected nested tool result");
         }
@@ -126,13 +151,23 @@ fn test_all_part_constructions_have_ext_field() {
 fn test_encoding_preserves_tool_names_completely() {
     let test_cases = vec![
         ("simple_tool", vec![Part::text("simple result")]),
-        ("complex_tool", vec![
-            Part::text("Complex result with multiple parts"),
-            Part::blob_uri("https://example.com/image.png", "image/png"),
-            Part::tool_result("nested_id", "nested_tool", vec![Part::text("nested result")]),
-        ]),
+        (
+            "complex_tool",
+            vec![
+                Part::text("Complex result with multiple parts"),
+                Part::blob_uri("https://example.com/image.png", "image/png"),
+                Part::tool_result(
+                    "nested_id",
+                    "nested_tool",
+                    vec![Part::text("nested result")],
+                ),
+            ],
+        ),
         ("empty_tool", vec![]),
-        ("unicode_tool_🚀", vec![Part::text("Unicode content: 你好世界 🌍")]),
+        (
+            "unicode_tool_🚀",
+            vec![Part::text("Unicode content: 你好世界 🌍")],
+        ),
     ];
 
     for (expected_name, expected_parts) in test_cases {
@@ -143,8 +178,14 @@ fn test_encoding_preserves_tool_names_completely() {
         let (actual_name, actual_parts) = decode_tool_result_parts(&encoded).unwrap();
 
         // Verify perfect preservation
-        assert_eq!(actual_name, expected_name, "Tool name should be perfectly preserved");
-        assert_eq!(actual_parts, expected_parts, "Parts should be perfectly preserved");
+        assert_eq!(
+            actual_name, expected_name,
+            "Tool name should be perfectly preserved"
+        );
+        assert_eq!(
+            actual_parts, expected_parts,
+            "Parts should be perfectly preserved"
+        );
     }
 }
 
@@ -166,7 +207,10 @@ fn test_bedrock_should_preserve_tool_names() {
 
     // Verify that the tool name is preserved
     if let Part::ToolResult { name, .. } = tool_result_part {
-        assert_eq!(name, original_tool_name, "Bedrock conversion should preserve tool names");
+        assert_eq!(
+            name, original_tool_name,
+            "Bedrock conversion should preserve tool names"
+        );
     } else {
         panic!("Expected ToolResult part");
     }
@@ -190,7 +234,10 @@ fn test_openrouter_should_preserve_tool_names() {
     let (preserved_name, _preserved_parts) = decode_tool_result_parts(&encoded).unwrap();
 
     // This assertion should pass (and will pass) because decode_tool_result_parts works correctly
-    assert_eq!(preserved_name, original_tool_name, "decode_tool_result_parts preserves name correctly");
+    assert_eq!(
+        preserved_name, original_tool_name,
+        "decode_tool_result_parts preserves name correctly"
+    );
 
     // But the actual OpenRouter conversion hardcodes "unknown" instead of using preserved_name
     // When we fix the bug, the OpenRouter conversion should do:
@@ -208,7 +255,10 @@ fn test_openrouter_should_preserve_tool_names() {
 
     // Verify that the tool name is preserved
     if let Part::ToolResult { name, .. } = tool_result_part {
-        assert_eq!(name, original_tool_name, "OpenRouter conversion should preserve tool names");
+        assert_eq!(
+            name, original_tool_name,
+            "OpenRouter conversion should preserve tool names"
+        );
     } else {
         panic!("Expected ToolResult part");
     }
@@ -240,15 +290,30 @@ fn test_mistral_uses_old_part_variants() {
 
     // Check for references to old Part variants that should not exist
     // Note: We need to be careful not to match false positives like "MistralContentPart::Audio"
-    let has_old_audio = content.contains("match Part::Audio") || content.contains("Part::Audio =>") || content.contains("Part::Audio {");
-    let has_old_image = content.contains("match Part::Image") || content.contains("Part::Image =>") || content.contains("Part::Image {");
-    let has_old_resource = content.contains("match Part::Resource") || content.contains("Part::Resource =>") || content.contains("Part::Resource {");
+    let has_old_audio = content.contains("match Part::Audio")
+        || content.contains("Part::Audio =>")
+        || content.contains("Part::Audio {");
+    let has_old_image = content.contains("match Part::Image")
+        || content.contains("Part::Image =>")
+        || content.contains("Part::Image {");
+    let has_old_resource = content.contains("match Part::Resource")
+        || content.contains("Part::Resource =>")
+        || content.contains("Part::Resource {");
 
     // This test should FAIL if any old Part variants are still referenced
     // (meaning the bug still exists)
-    assert!(!has_old_audio, "BUG: Mistral conversion still references Part::Audio which doesn't exist");
-    assert!(!has_old_image, "BUG: Mistral conversion still references Part::Image which doesn't exist");
-    assert!(!has_old_resource, "BUG: Mistral conversion still references Part::Resource which doesn't exist");
+    assert!(
+        !has_old_audio,
+        "BUG: Mistral conversion still references Part::Audio which doesn't exist"
+    );
+    assert!(
+        !has_old_image,
+        "BUG: Mistral conversion still references Part::Image which doesn't exist"
+    );
+    assert!(
+        !has_old_resource,
+        "BUG: Mistral conversion still references Part::Resource which doesn't exist"
+    );
 
     // If this test passes, it means the bug has been fixed
     // If it fails, it means the old Part variants are still being referenced
@@ -265,14 +330,17 @@ fn test_conversion_ox_unknown_fallback() {
     use std::fs;
 
     let conversion_file_path = "../conversion-ox/src/anthropic_openrouter/mod.rs";
-    let content = fs::read_to_string(conversion_file_path)
-        .expect("Failed to read conversion-ox file");
+    let content =
+        fs::read_to_string(conversion_file_path).expect("Failed to read conversion-ox file");
 
     // Check if the file contains the hardcoded "unknown" string
     let has_unknown_hardcode = content.contains(r#""unknown".to_string()"#);
 
     // This test should FAIL if "unknown" is still hardcoded (meaning the bug still exists)
-    assert!(!has_unknown_hardcode, "BUG: conversion-ox still hardcodes 'unknown' instead of using decoded tool name");
+    assert!(
+        !has_unknown_hardcode,
+        "BUG: conversion-ox still hardcodes 'unknown' instead of using decoded tool name"
+    );
 
     // If this test passes, it means the bug has been fixed
     // If it fails, it means "unknown" is still being hardcoded
@@ -298,7 +366,10 @@ fn test_openrouter_drops_opaque_silently() {
         && content.contains("// Skip Opaque parts");
 
     // This test should FAIL if Opaque parts are still silently skipped (meaning the bug still exists)
-    assert!(!has_silent_skip, "BUG: OpenRouter conversion still silently skips Opaque parts instead of erroring");
+    assert!(
+        !has_silent_skip,
+        "BUG: OpenRouter conversion still silently skips Opaque parts instead of erroring"
+    );
 
     // If this test passes, it means the bug has been fixed (Opaque parts now return errors)
     // If it fails, it means Opaque parts are still being silently dropped
@@ -319,10 +390,10 @@ fn test_anthropic_tool_result_content_vec_bug() {
     // Anthropic's ToolResult.content is Vec<ToolResultContent>
     let anthropic_content: Vec<anthropic_ox::tool::ToolResultContent> = vec![
         anthropic_ox::tool::ToolResultContent::Text {
-            text: "Weather is sunny".to_string()
+            text: "Weather is sunny".to_string(),
         },
         anthropic_ox::tool::ToolResultContent::Text {
-            text: "Temperature: 72°F".to_string()
+            text: "Temperature: 72°F".to_string(),
         },
     ];
 
@@ -338,7 +409,10 @@ fn test_anthropic_tool_result_content_vec_bug() {
     let content_type = std::any::type_name::<Vec<anthropic_ox::tool::ToolResultContent>>();
     let expected_type = std::any::type_name::<&str>();
 
-    assert_ne!(content_type, expected_type, "Anthropic content is Vec<ToolResultContent>, not &str");
+    assert_ne!(
+        content_type, expected_type,
+        "Anthropic content is Vec<ToolResultContent>, not &str"
+    );
 
     // The bug is confirmed: Anthropic uses Vec<ToolResultContent> but the code expects String
     // This causes a compilation error in convert_anthropic_response_to_ai_ox
@@ -356,20 +430,30 @@ fn test_openrouter_uses_fallback_name_not_unknown() {
     let original_tool_name = "weather_api";
 
     // Create a tool result with the original name
-    let _tool_result = Part::tool_result("call_123", original_tool_name, vec![Part::text("Sunny, 72°F")]);
+    let _tool_result = Part::tool_result(
+        "call_123",
+        original_tool_name,
+        vec![Part::text("Sunny, 72°F")],
+    );
 
     // Encode it (this is what happens when sending TO OpenRouter)
-    let encoded = encode_tool_result_parts(original_tool_name, &[Part::text("Sunny, 72°F")]).unwrap();
+    let encoded =
+        encode_tool_result_parts(original_tool_name, &[Part::text("Sunny, 72°F")]).unwrap();
 
     // Test that the conversion now correctly uses the decoded name
     let (decoded_name, _) = decode_tool_result_parts(&encoded).unwrap();
 
     // Verify the name is correctly preserved through encoding/decoding
-    assert_eq!(decoded_name, original_tool_name, "decode_tool_result_parts correctly preserves the name");
+    assert_eq!(
+        decoded_name, original_tool_name,
+        "decode_tool_result_parts correctly preserves the name"
+    );
 
     // The fix: conversion should now use decoded_name instead of hardcoding "unknown"
-    assert_eq!(decoded_name, original_tool_name,
-        "OpenRouter conversion should use decoded_name, not hardcode 'unknown'");
+    assert_eq!(
+        decoded_name, original_tool_name,
+        "OpenRouter conversion should use decoded_name, not hardcode 'unknown'"
+    );
 }
 
 /// Test that demonstrates the Bedrock JSON reassembly bug
@@ -381,10 +465,7 @@ fn test_bedrock_json_reassembly_no_newlines() {
     // where it joins multiple text blocks with "\n" instead of ""
 
     // Simulate multiple text blocks that contain JSON (like what Bedrock might return)
-    let text_blocks = vec![
-        r#"{"result": "success","#,
-        r#" "data": [1,2,3]}"#
-    ];
+    let text_blocks = vec![r#"{"result": "success","#, r#" "data": [1,2,3]}"#];
 
     // The bug: current code joins with "\n" which corrupts JSON
     let buggy_joined = text_blocks.join("\n");
@@ -395,17 +476,25 @@ fn test_bedrock_json_reassembly_no_newlines() {
     // Result: "{"result": "success", "data": [1,2,3]}" - VALID JSON
 
     // Verify the bug exists
-    assert_eq!(buggy_joined, "{\"result\": \"success\",\n \"data\": [1,2,3]}", "Buggy version has newlines between parts");
-    assert_eq!(correct_joined, "{\"result\": \"success\", \"data\": [1,2,3]}", "Correct version has no newlines");
+    assert_eq!(
+        buggy_joined, "{\"result\": \"success\",\n \"data\": [1,2,3]}",
+        "Buggy version has newlines between parts"
+    );
+    assert_eq!(
+        correct_joined, "{\"result\": \"success\", \"data\": [1,2,3]}",
+        "Correct version has no newlines"
+    );
 
     // After the fix, the code should produce the correct joined result
     // The fixed code joins with "" instead of "\n"
-    assert_ne!(buggy_joined, correct_joined,
-        "Fixed: Bedrock conversion now joins text blocks with '' not '\\n' to preserve JSON validity");
+    assert_ne!(
+        buggy_joined, correct_joined,
+        "Fixed: Bedrock conversion now joins text blocks with '' not '\\n' to preserve JSON validity"
+    );
 
     // Test that the correct version is valid JSON
-    let _: serde_json::Value = serde_json::from_str(&correct_joined)
-        .expect("Correct joined string should be valid JSON");
+    let _: serde_json::Value =
+        serde_json::from_str(&correct_joined).expect("Correct joined string should be valid JSON");
 
     // Note: The "buggy" version with newlines is actually valid JSON (JSON allows whitespace)
     // The fix ensures exact reassembly by joining with "" instead of "\n"
@@ -457,7 +546,10 @@ fn test_dataref_has_no_file_variant() {
 
     // Verify that DataRef has no File variant by checking all possible variants
     let variants = vec!["Uri", "Base64"];
-    assert!(!variants.contains(&"File"), "DataRef has no 'File' variant, only Uri and Base64");
+    assert!(
+        !variants.contains(&"File"),
+        "DataRef has no 'File' variant, only Uri and Base64"
+    );
 
     // Bug has been fixed: Bedrock conversion now uses DataRef::Uri for file paths
     // File paths are handled as URIs with the "file://" scheme
@@ -559,14 +651,21 @@ fn test_provider_features_compilation_status() {
     assert_eq!(broken_count, 5, "5 provider features are broken");
 
     // Verify the specific broken features
-    let broken_features: Vec<_> = status.iter()
+    let broken_features: Vec<_> = status
+        .iter()
         .filter(|(_, s)| s.contains("BROKEN"))
         .map(|(name, _)| *name)
         .collect();
 
-    assert!(broken_features.contains(&"anthropic"), "Anthropic is broken");
+    assert!(
+        broken_features.contains(&"anthropic"),
+        "Anthropic is broken"
+    );
     assert!(broken_features.contains(&"gemini"), "Gemini is broken");
-    assert!(broken_features.contains(&"openrouter"), "OpenRouter is broken");
+    assert!(
+        broken_features.contains(&"openrouter"),
+        "OpenRouter is broken"
+    );
     assert!(broken_features.contains(&"mistral"), "Mistral is broken");
     assert!(broken_features.contains(&"groq"), "Groq is broken");
 

@@ -1,11 +1,9 @@
 #![cfg(feature = "batches")]
 
 use anthropic_ox::{
-    Anthropic,
-    ChatRequest,
+    Anthropic, ChatRequest, Model,
     batches::{BatchMessageRequest, MessageBatchRequest},
     message::{Content, Message, Role, Text},
-    Model,
 };
 use futures_util::stream::StreamExt;
 

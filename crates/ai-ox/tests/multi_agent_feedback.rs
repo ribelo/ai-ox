@@ -111,7 +111,13 @@ impl Node<WorkflowState, WorkflowDeps, Email> for WriteEmailNode {
             user.interests.join(", ")
         );
 
-        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt, ext: BTreeMap::new() }]);
+        let message = Message::new(
+            MessageRole::User,
+            vec![Part::Text {
+                text: prompt,
+                ext: BTreeMap::new(),
+            }],
+        );
 
         // Access writer agent from dependencies
         match context
@@ -156,7 +162,13 @@ impl Node<WorkflowState, WorkflowDeps, Email> for FeedbackNode {
             email.body
         );
 
-        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt, ext: BTreeMap::new() }]);
+        let message = Message::new(
+            MessageRole::User,
+            vec![Part::Text {
+                text: prompt,
+                ext: BTreeMap::new(),
+            }],
+        );
 
         // Access feedback agent from dependencies
         match context
@@ -169,7 +181,8 @@ impl Node<WorkflowState, WorkflowDeps, Email> for FeedbackNode {
                 ReviewStatus::Approved => Ok(Next::End(email)),
                 ReviewStatus::NeedsRewrite => {
                     let feedback = response.data.feedback.unwrap_or_else(|| {
-                        "Please improve the email to better incorporate the user's interests".to_string()
+                        "Please improve the email to better incorporate the user's interests"
+                            .to_string()
                     });
                     // Continue to rewrite node with feedback
                     Ok(RewriteEmailNode { feedback }.into())
@@ -205,7 +218,13 @@ impl Node<WorkflowState, WorkflowDeps, Email> for RewriteEmailNode {
             self.feedback
         );
 
-        let message = Message::new(MessageRole::User, vec![Part::Text { text: prompt, ext: BTreeMap::new() }]);
+        let message = Message::new(
+            MessageRole::User,
+            vec![Part::Text {
+                text: prompt,
+                ext: BTreeMap::new(),
+            }],
+        );
 
         // Access writer agent from dependencies
         match context

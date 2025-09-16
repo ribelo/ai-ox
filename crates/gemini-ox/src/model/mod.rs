@@ -26,7 +26,7 @@ impl Gemini {
     pub async fn get_model(&self, name: &str) -> Result<Model, GeminiRequestError> {
         let url = format!("{}/{}/models/{}", BASE_URL, self.api_version, name);
         let mut req = self.client.get(url);
-        
+
         if let Some(oauth_token) = &self.oauth_token {
             // OAuth: use Authorization header
             req = req.header("authorization", format!("Bearer {}", oauth_token));
@@ -36,7 +36,7 @@ impl Gemini {
         } else {
             return Err(GeminiRequestError::AuthenticationMissing);
         }
-        
+
         let res = req.send().await?;
 
         let status = res.status();
@@ -81,11 +81,12 @@ impl Gemini {
 
         // Handle authentication - OAuth takes precedence over API key
         let mut request_builder = self.client.get(url);
-        
+
         if let Some(oauth_token) = &self.oauth_token {
             // OAuth: use Authorization header
-            request_builder = request_builder.header("authorization", format!("Bearer {}", oauth_token));
-            
+            request_builder =
+                request_builder.header("authorization", format!("Bearer {}", oauth_token));
+
             // Add pagination parameters for OAuth mode
             let mut query_params = Vec::new();
             if let Some(size) = page_size {
@@ -100,7 +101,7 @@ impl Gemini {
         } else if let Some(api_key) = &self.api_key {
             // API key: use query parameter
             let mut query_params = vec![("key", api_key.as_str())];
-            
+
             let page_size_string;
             if let Some(size) = page_size {
                 page_size_string = size.to_string();
@@ -110,7 +111,7 @@ impl Gemini {
             if let Some(token) = page_token {
                 query_params.push(("pageToken", token));
             }
-            
+
             request_builder = request_builder.query(&query_params);
         } else {
             return Err(GeminiRequestError::AuthenticationMissing);

@@ -1,0 +1,12 @@
+{
+  "type": "tool_use",
+  "id": "toolu_01T6x4J8DqKVfPqz3UVL5Z",
+  "name": "Task",
+  "input": {
+    "command": "ls -la",
+    "timeout": 30
+  },
+  "cache_control": {
+    "type": "ephemeral"
+  }
+}

@@ -1,9 +1,12 @@
+use crate::{
+    Gemini, GeminiRequestError,
+    generate_content::{request::GenerateContentRequest, response::GenerateContentResponse},
+};
 use ai_ox_common::{
-    request_builder::{RequestBuilder, RequestConfig, Endpoint, HttpMethod, AuthMethod},
-    CommonRequestError, BoxStream
+    BoxStream, CommonRequestError,
+    request_builder::{AuthMethod, Endpoint, HttpMethod, RequestBuilder, RequestConfig},
 };
 use futures_util::stream::BoxStream as FuturesBoxStream;
-use crate::{GeminiRequestError, Gemini, generate_content::{request::GenerateContentRequest, response::GenerateContentResponse}};
 
 /// Convert CommonRequestError to GeminiRequestError
 impl From<CommonRequestError> for GeminiRequestError {
@@ -12,8 +15,12 @@ impl From<CommonRequestError> for GeminiRequestError {
             CommonRequestError::Http(e) => GeminiRequestError::InvalidEventData(e),
             CommonRequestError::Json(e) => GeminiRequestError::InvalidEventData(e),
             CommonRequestError::Io(e) => GeminiRequestError::InvalidEventData(e),
-            CommonRequestError::InvalidRequest { message, .. } => GeminiRequestError::InvalidEventData(message),
-            CommonRequestError::RateLimit => GeminiRequestError::InvalidEventData("Rate limit exceeded".to_string()),
+            CommonRequestError::InvalidRequest { message, .. } => {
+                GeminiRequestError::InvalidEventData(message)
+            }
+            CommonRequestError::RateLimit => {
+                GeminiRequestError::InvalidEventData("Rate limit exceeded".to_string())
+            }
             CommonRequestError::AuthenticationMissing => GeminiRequestError::AuthenticationMissing,
             CommonRequestError::InvalidMimeType(msg) => GeminiRequestError::InvalidEventData(msg),
             CommonRequestError::InvalidEventData(msg) => GeminiRequestError::InvalidEventData(msg),
@@ -35,7 +42,10 @@ impl GeminiRequestHelper {
         let (auth_method, is_oauth) = if let Some(oauth_token) = &gemini.oauth_token {
             (AuthMethod::Bearer(oauth_token.clone()), true)
         } else if let Some(api_key) = &gemini.api_key {
-            (AuthMethod::QueryParam("key".to_string(), api_key.clone()), false)
+            (
+                AuthMethod::QueryParam("key".to_string(), api_key.clone()),
+                false,
+            )
         } else {
             return Err(GeminiRequestError::AuthenticationMissing);
         };
@@ -46,24 +56,30 @@ impl GeminiRequestHelper {
 
         let request_builder = RequestBuilder::new(gemini.client.clone(), config);
 
-        Ok(Self { request_builder, is_oauth })
+        Ok(Self {
+            request_builder,
+            is_oauth,
+        })
     }
 
     /// Send a generate content request
     pub async fn send_generate_content_request(
-        &self, 
+        &self,
         request: &GenerateContentRequest,
-        gemini: &Gemini
+        gemini: &Gemini,
     ) -> Result<GenerateContentResponse, GeminiRequestError> {
         // Build endpoint based on authentication method
         let endpoint_path = if self.is_oauth {
             "v1internal:generateContent".to_string()
         } else {
-            format!("{}/models/{}:generateContent", gemini.api_version, request.model)
+            format!(
+                "{}/models/{}:generateContent",
+                gemini.api_version, request.model
+            )
         };
 
         let endpoint = Endpoint::new(endpoint_path, HttpMethod::Post);
-        
+
         // Prepare request body based on API type
         let request_body = if self.is_oauth {
             // Cloud Code Assist API: wrapped format
@@ -79,11 +95,11 @@ impl GeminiRequestHelper {
             })
         } else {
             // Standard API: direct format
-            serde_json::to_value(request)
-                .map_err(GeminiRequestError::SerdeError)?
+            serde_json::to_value(request).map_err(GeminiRequestError::SerdeError)?
         };
 
-        let response: serde_json::Value = self.request_builder
+        let response: serde_json::Value = self
+            .request_builder
             .request_json(&endpoint, Some(&request_body))
             .await?;
 
@@ -93,7 +109,7 @@ impl GeminiRequestHelper {
                 Ok(serde_json::from_value(inner_response.clone())?)
             } else {
                 Err(GeminiRequestError::UnexpectedResponse(
-                    "Missing 'response' field in Cloud Code Assist API response".to_string()
+                    "Missing 'response' field in Cloud Code Assist API response".to_string(),
                 ))
             }
         } else {
@@ -103,19 +119,22 @@ impl GeminiRequestHelper {
 
     /// Stream a generate content request
     pub fn stream_generate_content_request(
-        self, 
+        self,
         request: GenerateContentRequest,
-        gemini: Gemini
+        gemini: Gemini,
     ) -> FuturesBoxStream<'static, Result<GenerateContentResponse, GeminiRequestError>> {
         // Build endpoint based on authentication method
         let endpoint_path = if self.is_oauth {
             format!("v1internal:streamGenerateContent?alt=sse")
         } else {
-            format!("{}/models/{}:streamGenerateContent?alt=sse", gemini.api_version, request.model)
+            format!(
+                "{}/models/{}:streamGenerateContent?alt=sse",
+                gemini.api_version, request.model
+            )
         };
 
         let endpoint = Endpoint::new(endpoint_path, HttpMethod::Post);
-        
+
         // Prepare request body based on API type
         let request_body = if self.is_oauth {
             // Cloud Code Assist API: wrapped format
@@ -135,19 +154,21 @@ impl GeminiRequestHelper {
                 Ok(value) => value,
                 Err(e) => {
                     return Box::pin(futures_util::stream::once(async move {
-                        Err(GeminiRequestError::from(CommonRequestError::Json(e.to_string())))
+                        Err(GeminiRequestError::from(CommonRequestError::Json(
+                            e.to_string(),
+                        )))
                     }));
                 }
             }
         };
-        
+
         // Use the common streaming implementation and convert errors
-        let common_stream: BoxStream<'static, Result<serde_json::Value, CommonRequestError>> = 
+        let common_stream: BoxStream<'static, Result<serde_json::Value, CommonRequestError>> =
             self.request_builder.stream(&endpoint, Some(&request_body));
-        
+
         Box::pin(async_stream::try_stream! {
             use futures_util::StreamExt;
-            
+
             let mut stream = common_stream;
             while let Some(result) = stream.next().await {
                 match result {

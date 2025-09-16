@@ -1,6 +1,6 @@
 use crate::tool::{Tool as AiOxTool, ToolUse};
-pub use gemini_ox::tool::{FunctionMetadata as GeminiFunctionMetadata, Tool as GeminiTool};
 use gemini_ox::content::part::FunctionCall as GeminiFunctionCall;
+pub use gemini_ox::tool::{FunctionMetadata as GeminiFunctionMetadata, Tool as GeminiTool};
 
 /// Converts an `ai-ox` `Tool` to a `gemini-ox` `Tool`.
 impl From<AiOxTool> for GeminiTool {
@@ -89,7 +89,6 @@ mod tests {
         use crate::content::message::{Message, MessageRole};
         use crate::content::part::Part;
         use crate::model::{Model, gemini::GeminiModel};
-        
 
         let api_key =
             match std::env::var("GEMINI_API_KEY").or_else(|_| std::env::var("GOOGLE_AI_API_KEY")) {

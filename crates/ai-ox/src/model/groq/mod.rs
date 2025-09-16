@@ -7,14 +7,14 @@ use crate::{
     ModelResponse,
     content::delta::StreamEvent,
     errors::GenerateContentError,
-    model::{Model, ModelRequest, ModelInfo, Provider, response::RawStructuredResponse},
+    model::{Model, ModelInfo, ModelRequest, Provider, response::RawStructuredResponse},
     usage::Usage,
 };
+use ai_ox_common::openai_format::ToolChoice;
 use async_stream::try_stream;
 use bon::Builder;
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
 use groq_ox::{Groq, request::ResponseFormat};
-use ai_ox_common::openai_format::ToolChoice;
 
 /// Returns the default tool choice for Groq models.
 /// Defaults to Auto, allowing the model to decide when to use tools.
@@ -51,8 +51,7 @@ impl GroqModel {
     ///
     /// This function reads the GROQ_API_KEY from the environment and returns an error if missing.
     pub async fn new(model: impl Into<String>) -> Result<Self, GroqError> {
-        let api_key = std::env::var("GROQ_API_KEY")
-            .map_err(|_| GroqError::MissingApiKey)?;
+        let api_key = std::env::var("GROQ_API_KEY").map_err(|_| GroqError::MissingApiKey)?;
 
         let client = Groq::new(&api_key);
 
@@ -86,7 +85,8 @@ impl Model for GroqModel {
                 self.system_instruction.clone(),
                 Some(self.tool_choice.clone()),
             )?;
-            let response = self.client
+            let response = self
+                .client
                 .send(&groq_request)
                 .await
                 .map_err(GroqError::Api)?;
@@ -136,20 +136,21 @@ impl Model for GroqModel {
                 self.system_instruction.clone(),
                 Some(self.tool_choice.clone()),
             )?;
-            
+
             // Set response format to JSON schema
             let schema_value: serde_json::Value = serde_json::from_str(&schema)
                 .map_err(|e| GroqError::ResponseParsing(format!("Invalid schema: {}", e)))?;
-            
+
             groq_request.response_format = Some(ResponseFormat::JsonSchema {
                 r#type: "json_schema".to_string(),
                 json_schema: serde_json::json!({
                     "name": "response",
                     "schema": schema_value
-                })
+                }),
             });
 
-            let response = self.client
+            let response = self
+                .client
                 .send(&groq_request)
                 .await
                 .map_err(GroqError::Api)?;
@@ -170,8 +171,12 @@ impl Model for GroqModel {
                 .map(|u| {
                     let mut usage = Usage::new();
                     usage.requests = 1;
-                    usage.input_tokens_by_modality.insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
-                    usage.output_tokens_by_modality.insert(crate::usage::Modality::Text, u.completion_tokens as u64);
+                    usage
+                        .input_tokens_by_modality
+                        .insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
+                    usage
+                        .output_tokens_by_modality
+                        .insert(crate::usage::Modality::Text, u.completion_tokens as u64);
                     usage
                 })
                 .unwrap_or_else(Usage::new);

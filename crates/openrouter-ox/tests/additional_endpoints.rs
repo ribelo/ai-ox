@@ -4,14 +4,14 @@ use openrouter_ox::OpenRouter;
 #[ignore] // Requires actual API key to test
 async fn test_list_models() {
     let client = OpenRouter::load_from_env().expect("OPENROUTER_API_KEY must be set");
-    
+
     let models = client.list_models().await;
-    
+
     match models {
         Ok(models_response) => {
             assert_eq!(models_response.object, "list");
             assert!(!models_response.data.is_empty());
-            
+
             // Check first model has required fields
             let first_model = &models_response.data[0];
             assert!(!first_model.id.is_empty());
@@ -22,13 +22,13 @@ async fn test_list_models() {
     }
 }
 
-#[tokio::test]  
+#[tokio::test]
 #[ignore] // Requires actual API key to test
 async fn test_get_key_status() {
     let client = OpenRouter::load_from_env().expect("OPENROUTER_API_KEY must be set");
-    
+
     let key_status = client.get_key_status().await;
-    
+
     match key_status {
         Ok(status) => {
             // Should have basic key status info

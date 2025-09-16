@@ -1,10 +1,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json;
 
-use crate::{
-    content::Part,
-    errors::GenerateContentError,
-};
+use crate::{content::Part, errors::GenerateContentError};
 
 /// Structured format for encoding/decoding tool result parts
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,7 +41,10 @@ struct ToolResultContent {
 ///   }
 /// }
 /// ```
-pub fn encode_tool_result_parts(name: &str, parts: &[Part]) -> Result<String, GenerateContentError> {
+pub fn encode_tool_result_parts(
+    name: &str,
+    parts: &[Part],
+) -> Result<String, GenerateContentError> {
     let encoding = ToolResultEncoding {
         ai_ox_tool_result: ToolResultContent {
             name: name.to_string(),
@@ -52,10 +52,12 @@ pub fn encode_tool_result_parts(name: &str, parts: &[Part]) -> Result<String, Ge
         },
     };
 
-    serde_json::to_string(&encoding)
-        .map_err(|e| GenerateContentError::message_conversion(
-            &format!("Failed to encode tool result parts: {}", e)
+    serde_json::to_string(&encoding).map_err(|e| {
+        GenerateContentError::message_conversion(&format!(
+            "Failed to encode tool result parts: {}",
+            e
         ))
+    })
 }
 
 /// Decode a standardized JSON string back into tool name and Vec<Part>
@@ -69,12 +71,17 @@ pub fn encode_tool_result_parts(name: &str, parts: &[Part]) -> Result<String, Ge
 /// * `Ok((String, Vec<Part>))` - The decoded tool name and parts
 /// * `Err(GenerateContentError)` - If decoding fails or the format is invalid
 pub fn decode_tool_result_parts(s: &str) -> Result<(String, Vec<Part>), GenerateContentError> {
-    let encoding: ToolResultEncoding = serde_json::from_str(s)
-        .map_err(|e| GenerateContentError::message_conversion(
-            &format!("Failed to decode tool result parts: {}", e)
-        ))?;
+    let encoding: ToolResultEncoding = serde_json::from_str(s).map_err(|e| {
+        GenerateContentError::message_conversion(&format!(
+            "Failed to decode tool result parts: {}",
+            e
+        ))
+    })?;
 
-    Ok((encoding.ai_ox_tool_result.name, encoding.ai_ox_tool_result.content))
+    Ok((
+        encoding.ai_ox_tool_result.name,
+        encoding.ai_ox_tool_result.content,
+    ))
 }
 
 #[cfg(test)]
@@ -87,8 +94,14 @@ mod tests {
     fn test_encode_decode_text_parts() {
         let name = "test_tool";
         let parts = vec![
-            Part::Text { text: "Hello world".to_string(), ext: BTreeMap::new() },
-            Part::Text { text: "Second message".to_string(), ext: BTreeMap::new() },
+            Part::Text {
+                text: "Hello world".to_string(),
+                ext: BTreeMap::new(),
+            },
+            Part::Text {
+                text: "Second message".to_string(),
+                ext: BTreeMap::new(),
+            },
         ];
 
         let encoded = encode_tool_result_parts(name, &parts).unwrap();

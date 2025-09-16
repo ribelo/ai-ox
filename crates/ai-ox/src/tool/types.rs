@@ -20,7 +20,11 @@ pub struct ToolResult {
 
 impl ToolResult {
     /// Creates a new ToolResult.
-    pub fn new(id: impl Into<String>, name: impl Into<String>, content: Vec<crate::content::Part>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        content: Vec<crate::content::Part>,
+    ) -> Self {
         Self {
             id: id.into(),
             name: name.into(),
@@ -29,7 +33,6 @@ impl ToolResult {
         }
     }
 }
-
 
 /// Represents a request to call a tool function.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

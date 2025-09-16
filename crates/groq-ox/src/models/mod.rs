@@ -28,7 +28,7 @@ impl Groq {
     /// ```
     pub async fn get_model(&self, model_id: &str) -> Result<ModelInfo, GroqRequestError> {
         let url = format!("{}/{}/{}", self.base_url, MODELS_URL, model_id);
-        
+
         let res = self
             .client
             .get(&url)
@@ -65,7 +65,7 @@ impl Groq {
     /// ```
     pub async fn list_models(&self) -> Result<ListModelsResponse, GroqRequestError> {
         let url = format!("{}/{}", self.base_url, MODELS_URL);
-        
+
         let res = self
             .client
             .get(&url)

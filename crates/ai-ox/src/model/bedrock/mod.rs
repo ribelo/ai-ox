@@ -1,22 +1,19 @@
-mod error;
 mod conversion;
+mod error;
 
 pub use error::BedrockError;
 
 use crate::{
     content::{delta::StreamEvent, part::Part},
     errors::GenerateContentError,
-    model::{request::ModelRequest, response::ModelResponse, Model, ModelInfo, Provider},
+    model::{Model, ModelInfo, Provider, request::ModelRequest, response::ModelResponse},
     tool::ToolUse,
 };
 use async_stream::try_stream;
-use aws_config::{meta::region::RegionProviderChain, BehaviorVersion};
-use aws_sdk_bedrockruntime::{
-    Client as BedrockRuntimeClient,
-    types::ConverseStreamOutput,
-};
+use aws_config::{BehaviorVersion, meta::region::RegionProviderChain};
+use aws_sdk_bedrockruntime::{Client as BedrockRuntimeClient, types::ConverseStreamOutput};
 use bon::Builder;
-use futures_util::{future::BoxFuture, FutureExt, StreamExt};
+use futures_util::{FutureExt, StreamExt, future::BoxFuture};
 use serde_json;
 
 #[derive(Debug, Clone, Builder)]
@@ -59,7 +56,9 @@ trait BedrockRequestBuilder {
     fn tool_config(self, config: aws_sdk_bedrockruntime::types::ToolConfiguration) -> Self;
 }
 
-impl BedrockRequestBuilder for aws_sdk_bedrockruntime::operation::converse::builders::ConverseFluentBuilder {
+impl BedrockRequestBuilder
+    for aws_sdk_bedrockruntime::operation::converse::builders::ConverseFluentBuilder
+{
     fn set_messages(self, messages: Option<Vec<aws_sdk_bedrockruntime::types::Message>>) -> Self {
         self.set_messages(messages)
     }
@@ -73,7 +72,9 @@ impl BedrockRequestBuilder for aws_sdk_bedrockruntime::operation::converse::buil
     }
 }
 
-impl BedrockRequestBuilder for aws_sdk_bedrockruntime::operation::converse_stream::builders::ConverseStreamFluentBuilder {
+impl BedrockRequestBuilder
+    for aws_sdk_bedrockruntime::operation::converse_stream::builders::ConverseStreamFluentBuilder
+{
     fn set_messages(self, messages: Option<Vec<aws_sdk_bedrockruntime::types::Message>>) -> Self {
         self.set_messages(messages)
     }
@@ -99,7 +100,8 @@ impl BedrockModel {
         // Add system message if present
         if let Some(system_message) = request.system_message {
             if !system_message.content.is_empty() {
-                let system_text = system_message.content
+                let system_text = system_message
+                    .content
                     .into_iter()
                     .filter_map(|part| match part {
                         Part::Text { text, .. } => Some(text),
@@ -110,7 +112,7 @@ impl BedrockModel {
 
                 if !system_text.is_empty() {
                     builder = builder.system(
-                        aws_sdk_bedrockruntime::types::SystemContentBlock::Text(system_text)
+                        aws_sdk_bedrockruntime::types::SystemContentBlock::Text(system_text),
                     );
                 }
             }
@@ -124,9 +126,12 @@ impl BedrockModel {
                 let tool_config = aws_sdk_bedrockruntime::types::ToolConfiguration::builder()
                     .set_tools(Some(tool_specs))
                     .build()
-                    .map_err(|e| BedrockError::RequestBuilder(
-                        format!("Failed to build tool configuration: {}", e)
-                    ))?;
+                    .map_err(|e| {
+                        BedrockError::RequestBuilder(format!(
+                            "Failed to build tool configuration: {}",
+                            e
+                        ))
+                    })?;
 
                 builder = builder.tool_config(tool_config);
             }
@@ -134,7 +139,6 @@ impl BedrockModel {
 
         Ok(builder)
     }
-
 }
 
 impl Model for BedrockModel {
@@ -146,12 +150,13 @@ impl Model for BedrockModel {
         &self.model_id
     }
 
-    fn request(&self, request: ModelRequest) -> BoxFuture<'_, Result<ModelResponse, GenerateContentError>> {
+    fn request(
+        &self,
+        request: ModelRequest,
+    ) -> BoxFuture<'_, Result<ModelResponse, GenerateContentError>> {
         async move {
             // Build the ConverseRequest from the ModelRequest
-            let converse_request = self.client
-                .converse()
-                .model_id(&self.model_id);
+            let converse_request = self.client.converse().model_id(&self.model_id);
 
             // Build the complete request using helper function
             let converse_request = Self::build_request(converse_request, request)?;
@@ -163,15 +168,23 @@ impl Model for BedrockModel {
             })?;
 
             // Extract and convert the response
-            let output = response.output.ok_or_else(|| GenerateContentError::response_parsing("Bedrock response missing output"))?;
-            let usage = response.usage.ok_or_else(|| GenerateContentError::response_parsing("Bedrock response missing usage info"))?;
+            let output = response.output.ok_or_else(|| {
+                GenerateContentError::response_parsing("Bedrock response missing output")
+            })?;
+            let usage = response.usage.ok_or_else(|| {
+                GenerateContentError::response_parsing("Bedrock response missing usage info")
+            })?;
 
             conversion::convert_bedrock_response_to_ai_ox(output, self.model_id.clone(), usage)
                 .map_err(GenerateContentError::from)
-        }.boxed()
+        }
+        .boxed()
     }
 
-    fn request_stream(&self, request: ModelRequest) -> futures_util::stream::BoxStream<'_, Result<StreamEvent, GenerateContentError>> {
+    fn request_stream(
+        &self,
+        request: ModelRequest,
+    ) -> futures_util::stream::BoxStream<'_, Result<StreamEvent, GenerateContentError>> {
         let client = self.client.clone();
         let model_id = self.model_id.clone();
 
@@ -302,11 +315,13 @@ impl Model for BedrockModel {
         &self,
         _request: ModelRequest,
         _schema: String,
-    ) -> BoxFuture<'_, Result<crate::model::response::RawStructuredResponse, GenerateContentError>> {
+    ) -> BoxFuture<'_, Result<crate::model::response::RawStructuredResponse, GenerateContentError>>
+    {
         async move {
             Err(GenerateContentError::UnsupportedFeature(
                 "BedrockModel does not currently support structured generation.".to_string(),
             ))
-        }.boxed()
+        }
+        .boxed()
     }
 }

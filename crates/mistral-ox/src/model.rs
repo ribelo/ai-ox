@@ -23,7 +23,7 @@ pub enum Model {
     OpenMixtral8x7b,
     #[strum(to_string = "open-mixtral-8x22b")]
     OpenMixtral8x22b,
-    
+
     // Commercial models
     #[strum(to_string = "mistral-tiny")]
     MistralTiny,
@@ -49,7 +49,7 @@ pub enum Model {
     MistralLarge2411,
     #[strum(to_string = "mistral-large-latest")]
     MistralLargeLatest,
-    
+
     // Codestral models
     #[strum(to_string = "codestral-latest")]
     CodestralLatest,
@@ -59,7 +59,7 @@ pub enum Model {
     Codestral2501,
     #[strum(to_string = "codestral-mamba-latest")]
     CodestralMambaLatest,
-    
+
     // Pixtral models
     #[strum(to_string = "pixtral-12b")]
     Pixtral12b,
@@ -67,15 +67,15 @@ pub enum Model {
     Pixtral12b2409,
     #[strum(to_string = "pixtral-large-latest")]
     PixtralLargeLatest,
-    
+
     // Magistral models
     #[strum(to_string = "magistral-medium-2506")]
     MagistralMedium2506,
-    
+
     // Special models
     #[strum(to_string = "mistral-ocr-2505")]
     MistralOcr2505,
-    
+
     // Voxtral models
     #[strum(to_string = "voxtral-small")]
     VoxtralSmall,

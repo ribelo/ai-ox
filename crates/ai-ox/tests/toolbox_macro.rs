@@ -1,7 +1,7 @@
 mod common;
 
 use ai_ox::content::part::Part;
-use ai_ox::tool::{Tool, ToolBox, ToolUse, ToolError};
+use ai_ox::tool::{Tool, ToolBox, ToolError, ToolUse};
 use ai_ox::toolbox;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -236,7 +236,10 @@ async fn test_toolbox_sync_tool_success() {
     assert!(result.is_ok(), "Tool invocation should succeed");
 
     let tool_result = result.unwrap();
-    if let Part::ToolResult { id, name, parts, .. } = tool_result {
+    if let Part::ToolResult {
+        id, name, parts, ..
+    } = tool_result
+    {
         assert_eq!(id, "test_call_1");
         assert_eq!(name, "simple_sync_tool");
         // Content should be in the first part as text
@@ -245,7 +248,10 @@ async fn test_toolbox_sync_tool_success() {
             let content: serde_json::Value = serde_json::from_str(text).unwrap();
             assert!(content.is_object(), "Content should be a JSON object");
             assert!(content.get("result").is_some(), "Should have result field");
-            assert!(content.get("timestamp").is_some(), "Should have timestamp field");
+            assert!(
+                content.get("timestamp").is_some(),
+                "Should have timestamp field"
+            );
         } else {
             panic!("Expected text part");
         }
@@ -575,11 +581,13 @@ async fn test_toolbox_schema_generation() {
             .unwrap();
         let no_input_schema = &no_input_tool.parameters;
 
-
         // For a function with no parameters, the schema should be a null schema
         assert!(no_input_schema.get("enum").is_some());
         assert!(no_input_schema.get("nullable").is_some());
-        assert_eq!(no_input_schema.get("nullable").unwrap(), &serde_json::Value::Bool(true));
+        assert_eq!(
+            no_input_schema.get("nullable").unwrap(),
+            &serde_json::Value::Bool(true)
+        );
 
         // Test complex input schema
         let complex_tool = functions.iter().find(|f| f.name == "complex_tool").unwrap();
@@ -707,7 +715,10 @@ async fn test_toolbox_infallible_tool() {
     assert!(result.is_ok(), "Infallible tool invocation should succeed");
 
     let tool_result = result.unwrap();
-    if let Part::ToolResult { id, name, parts, .. } = tool_result {
+    if let Part::ToolResult {
+        id, name, parts, ..
+    } = tool_result
+    {
         assert_eq!(id, "infallible_call");
         assert_eq!(name, "infailable_tool");
         assert_eq!(parts.len(), 1);
@@ -731,7 +742,10 @@ async fn test_toolbox_side_effect_tool() {
     assert!(result.is_ok(), "Side effect tool invocation should succeed");
 
     let tool_result = result.unwrap();
-    if let Part::ToolResult { id, name, parts, .. } = tool_result {
+    if let Part::ToolResult {
+        id, name, parts, ..
+    } = tool_result
+    {
         assert_eq!(id, "side_effect_call");
         assert_eq!(name, "side_effect_tool");
         assert_eq!(parts.len(), 1);

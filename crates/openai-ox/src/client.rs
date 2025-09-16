@@ -2,7 +2,10 @@ use bon::Builder;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::{OpenAIRequestError, ChatRequest, ChatResponse, ResponsesRequest, ResponsesResponse, ResponsesStreamChunk, internal::OpenAIRequestHelper};
+use crate::{
+    ChatRequest, ChatResponse, OpenAIRequestError, ResponsesRequest, ResponsesResponse,
+    ResponsesStreamChunk, internal::OpenAIRequestHelper,
+};
 
 /// OpenAI AI API client
 #[derive(Debug, Clone, Builder)]
@@ -45,7 +48,7 @@ impl OpenAI {
     pub fn api_key(&self) -> &str {
         &self.api_key
     }
-    
+
     /// Get base URL
     pub fn base_url(&self) -> &str {
         &self.base_url
@@ -84,7 +87,10 @@ impl OpenAI {
     }
 
     /// Send a Responses API request and get a response
-    pub async fn send_responses(&self, request: &ResponsesRequest) -> Result<ResponsesResponse, OpenAIRequestError> {
+    pub async fn send_responses(
+        &self,
+        request: &ResponsesRequest,
+    ) -> Result<ResponsesResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -99,7 +105,7 @@ impl OpenAI {
         request: &ChatRequest,
     ) -> futures_util::stream::BoxStream<'static, Result<ChatResponse, OpenAIRequestError>> {
         use async_stream::try_stream;
-        
+
         let helper = self.request_helper();
         let mut request_data = request.clone();
         request_data.stream = Some(true);
@@ -115,7 +121,7 @@ impl OpenAI {
 
             let mut stream = helper.stream_chat_request(&request_data);
             use futures_util::StreamExt;
-            
+
             while let Some(result) = stream.next().await {
                 yield result?;
             }
@@ -126,9 +132,10 @@ impl OpenAI {
     pub fn stream_responses(
         &self,
         request: &ResponsesRequest,
-    ) -> futures_util::stream::BoxStream<'static, Result<ResponsesStreamChunk, OpenAIRequestError>> {
+    ) -> futures_util::stream::BoxStream<'static, Result<ResponsesStreamChunk, OpenAIRequestError>>
+    {
         use async_stream::try_stream;
-        
+
         let helper = self.request_helper();
         let mut request_data = request.clone();
         request_data.stream = Some(true);
@@ -144,7 +151,7 @@ impl OpenAI {
 
             let mut stream = helper.stream_responses_request(&request_data);
             use futures_util::StreamExt;
-            
+
             while let Some(result) = stream.next().await {
                 yield result?;
             }
@@ -162,7 +169,10 @@ impl OpenAI {
     }
 
     /// Create embeddings
-    pub async fn create_embeddings(&self, request: &crate::request::EmbeddingsRequest) -> Result<crate::response::EmbeddingsResponse, OpenAIRequestError> {
+    pub async fn create_embeddings(
+        &self,
+        request: &crate::request::EmbeddingsRequest,
+    ) -> Result<crate::response::EmbeddingsResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -172,7 +182,10 @@ impl OpenAI {
     }
 
     /// Moderate content
-    pub async fn create_moderation(&self, request: &crate::request::ModerationRequest) -> Result<crate::response::ModerationResponse, OpenAIRequestError> {
+    pub async fn create_moderation(
+        &self,
+        request: &crate::request::ModerationRequest,
+    ) -> Result<crate::response::ModerationResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -182,7 +195,10 @@ impl OpenAI {
     }
 
     /// Generate images
-    pub async fn create_image(&self, request: &crate::request::ImageRequest) -> Result<crate::response::ImageResponse, OpenAIRequestError> {
+    pub async fn create_image(
+        &self,
+        request: &crate::request::ImageRequest,
+    ) -> Result<crate::response::ImageResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -202,7 +218,10 @@ impl OpenAI {
     }
 
     /// Get file information
-    pub async fn retrieve_file(&self, file_id: &str) -> Result<crate::response::FileInfo, OpenAIRequestError> {
+    pub async fn retrieve_file(
+        &self,
+        file_id: &str,
+    ) -> Result<crate::response::FileInfo, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -212,7 +231,10 @@ impl OpenAI {
     }
 
     /// Delete file
-    pub async fn delete_file(&self, file_id: &str) -> Result<crate::response::FileInfo, OpenAIRequestError> {
+    pub async fn delete_file(
+        &self,
+        file_id: &str,
+    ) -> Result<crate::response::FileInfo, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -222,7 +244,9 @@ impl OpenAI {
     }
 
     /// List fine-tuning jobs
-    pub async fn list_fine_tuning_jobs(&self) -> Result<crate::response::FineTuningJobsResponse, OpenAIRequestError> {
+    pub async fn list_fine_tuning_jobs(
+        &self,
+    ) -> Result<crate::response::FineTuningJobsResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -232,7 +256,10 @@ impl OpenAI {
     }
 
     /// Create fine-tuning job
-    pub async fn create_fine_tuning_job(&self, request: &crate::request::FineTuningRequest) -> Result<crate::response::FineTuningJob, OpenAIRequestError> {
+    pub async fn create_fine_tuning_job(
+        &self,
+        request: &crate::request::FineTuningRequest,
+    ) -> Result<crate::response::FineTuningJob, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -242,7 +269,10 @@ impl OpenAI {
     }
 
     /// Get fine-tuning job
-    pub async fn retrieve_fine_tuning_job(&self, job_id: &str) -> Result<crate::response::FineTuningJob, OpenAIRequestError> {
+    pub async fn retrieve_fine_tuning_job(
+        &self,
+        job_id: &str,
+    ) -> Result<crate::response::FineTuningJob, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -252,7 +282,10 @@ impl OpenAI {
     }
 
     /// Cancel fine-tuning job
-    pub async fn cancel_fine_tuning_job(&self, job_id: &str) -> Result<crate::response::FineTuningJob, OpenAIRequestError> {
+    pub async fn cancel_fine_tuning_job(
+        &self,
+        job_id: &str,
+    ) -> Result<crate::response::FineTuningJob, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -262,7 +295,9 @@ impl OpenAI {
     }
 
     /// List assistants
-    pub async fn list_assistants(&self) -> Result<crate::response::AssistantsResponse, OpenAIRequestError> {
+    pub async fn list_assistants(
+        &self,
+    ) -> Result<crate::response::AssistantsResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -272,7 +307,10 @@ impl OpenAI {
     }
 
     /// Create assistant
-    pub async fn create_assistant(&self, request: &crate::request::AssistantRequest) -> Result<crate::response::AssistantInfo, OpenAIRequestError> {
+    pub async fn create_assistant(
+        &self,
+        request: &crate::request::AssistantRequest,
+    ) -> Result<crate::response::AssistantInfo, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -282,7 +320,10 @@ impl OpenAI {
     }
 
     /// Get assistant
-    pub async fn retrieve_assistant(&self, assistant_id: &str) -> Result<crate::response::AssistantInfo, OpenAIRequestError> {
+    pub async fn retrieve_assistant(
+        &self,
+        assistant_id: &str,
+    ) -> Result<crate::response::AssistantInfo, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -292,17 +333,26 @@ impl OpenAI {
     }
 
     /// Update assistant
-    pub async fn modify_assistant(&self, assistant_id: &str, request: &crate::request::AssistantRequest) -> Result<crate::response::AssistantInfo, OpenAIRequestError> {
+    pub async fn modify_assistant(
+        &self,
+        assistant_id: &str,
+        request: &crate::request::AssistantRequest,
+    ) -> Result<crate::response::AssistantInfo, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
         }
 
-        self.request_helper().modify_assistant(assistant_id, request).await
+        self.request_helper()
+            .modify_assistant(assistant_id, request)
+            .await
     }
 
     /// Delete assistant
-    pub async fn delete_assistant(&self, assistant_id: &str) -> Result<serde_json::Value, OpenAIRequestError> {
+    pub async fn delete_assistant(
+        &self,
+        assistant_id: &str,
+    ) -> Result<serde_json::Value, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -312,7 +362,10 @@ impl OpenAI {
     }
 
     /// Upload file
-    pub async fn upload_file(&self, request: &crate::request::AudioRequest) -> Result<crate::response::FileUploadResponse, OpenAIRequestError> {
+    pub async fn upload_file(
+        &self,
+        request: &crate::request::AudioRequest,
+    ) -> Result<crate::response::FileUploadResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -322,7 +375,10 @@ impl OpenAI {
     }
 
     /// Transcribe audio
-    pub async fn create_transcription(&self, request: &crate::request::AudioRequest) -> Result<crate::response::AudioResponse, OpenAIRequestError> {
+    pub async fn create_transcription(
+        &self,
+        request: &crate::request::AudioRequest,
+    ) -> Result<crate::response::AudioResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;
@@ -332,7 +388,10 @@ impl OpenAI {
     }
 
     /// Translate audio
-    pub async fn create_translation(&self, request: &crate::request::AudioRequest) -> Result<crate::response::AudioResponse, OpenAIRequestError> {
+    pub async fn create_translation(
+        &self,
+        request: &crate::request::AudioRequest,
+    ) -> Result<crate::response::AudioResponse, OpenAIRequestError> {
         #[cfg(feature = "leaky-bucket")]
         if let Some(ref limiter) = self.rate_limiter {
             limiter.acquire_one().await;

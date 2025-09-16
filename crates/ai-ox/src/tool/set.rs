@@ -1,4 +1,4 @@
-use super::{Tool, ToolBox, ToolUse, ToolError, ToolHooks};
+use super::{Tool, ToolBox, ToolError, ToolHooks, ToolUse};
 use futures_util::future::BoxFuture;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -76,7 +76,11 @@ impl ToolSet {
     }
 
     /// Invokes a tool function with hooks for dangerous operations.
-    pub async fn invoke_with_hooks(&self, call: ToolUse, hooks: ToolHooks) -> Result<crate::content::Part, ToolError> {
+    pub async fn invoke_with_hooks(
+        &self,
+        call: ToolUse,
+        hooks: ToolHooks,
+    ) -> Result<crate::content::Part, ToolError> {
         let toolbox = self
             .find_toolbox_for_function(&call.name)
             .ok_or_else(|| ToolError::not_found(&call.name))?;
@@ -90,9 +94,9 @@ impl ToolSet {
             .iter()
             .any(|toolbox| toolbox.dangerous_functions().contains(&name))
     }
-    
+
     /// Returns all dangerous function names from all toolboxes.
-    /// 
+    ///
     /// This aggregates dangerous functions across all toolboxes in this set,
     /// which can be useful for UI, logging, or batch approval scenarios.
     pub fn get_all_dangerous_functions(&self) -> Vec<&str> {
@@ -112,12 +116,16 @@ impl ToolBox for ToolSet {
         Box::pin(async move { ToolSet::invoke(self, call).await })
     }
 
-    fn invoke_with_hooks(&self, call: ToolUse, hooks: ToolHooks) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
+    fn invoke_with_hooks(
+        &self,
+        call: ToolUse,
+        hooks: ToolHooks,
+    ) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
         Box::pin(async move { ToolSet::invoke_with_hooks(self, call, hooks).await })
     }
 
     fn dangerous_functions(&self) -> &[&str] {
-        // ToolSet doesn't have its own dangerous functions - 
+        // ToolSet doesn't have its own dangerous functions -
         // it delegates to individual toolboxes
         &[]
     }
@@ -158,7 +166,7 @@ mod tests {
             }])]
         }
 
-    fn invoke(&self, call: ToolUse) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
+        fn invoke(&self, call: ToolUse) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
             let function_name = self.function_name.clone();
             async move {
                 if call.name == function_name {

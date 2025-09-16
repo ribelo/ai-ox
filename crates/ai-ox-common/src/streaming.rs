@@ -1,10 +1,12 @@
-use serde::Deserialize;
-use futures_util::StreamExt;
 use crate::error::CommonRequestError;
+use futures_util::StreamExt;
+use serde::Deserialize;
 
 /// Server-Sent Events parser for streaming responses
 pub struct SseParser {
-    byte_stream: std::pin::Pin<Box<dyn futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>>,
+    byte_stream: std::pin::Pin<
+        Box<dyn futures_util::Stream<Item = Result<bytes::Bytes, reqwest::Error>> + Send>,
+    >,
     buffer: Vec<u8>,
 }
 
@@ -17,7 +19,9 @@ impl SseParser {
     }
 
     /// Get the next parsed event from the stream
-    pub async fn next_event<T: for<'de> Deserialize<'de>>(&mut self) -> Result<Option<T>, CommonRequestError> {
+    pub async fn next_event<T: for<'de> Deserialize<'de>>(
+        &mut self,
+    ) -> Result<Option<T>, CommonRequestError> {
         loop {
             // Try to process events from current buffer
             if let Some(event) = self.try_parse_event_from_buffer::<T>()? {
@@ -41,22 +45,26 @@ impl SseParser {
     }
 
     /// Try to parse an event from the current buffer
-    fn try_parse_event_from_buffer<T: for<'de> Deserialize<'de>>(&mut self) -> Result<Option<T>, CommonRequestError> {
+    fn try_parse_event_from_buffer<T: for<'de> Deserialize<'de>>(
+        &mut self,
+    ) -> Result<Option<T>, CommonRequestError> {
         // Look for complete lines ending with \n
         while let Some(pos) = self.buffer.iter().position(|&b| b == b'\n') {
             let line_bytes = self.buffer.drain(..=pos).collect::<Vec<u8>>();
             let line = String::from_utf8(line_bytes)?;
-            
+
             if let Some(event) = Self::parse_sse_line::<T>(&line)? {
                 return Ok(Some(event));
             }
         }
-        
+
         Ok(None)
     }
 
     /// Try to parse any remaining data as final event
-    fn try_parse_final_event<T: for<'de> Deserialize<'de>>(&mut self) -> Result<Option<T>, CommonRequestError> {
+    fn try_parse_final_event<T: for<'de> Deserialize<'de>>(
+        &mut self,
+    ) -> Result<Option<T>, CommonRequestError> {
         if self.buffer.is_empty() {
             return Ok(None);
         }
@@ -66,9 +74,11 @@ impl SseParser {
     }
 
     /// Parse a single SSE line into an event
-    fn parse_sse_line<T: for<'de> Deserialize<'de>>(line: &str) -> Result<Option<T>, CommonRequestError> {
+    fn parse_sse_line<T: for<'de> Deserialize<'de>>(
+        line: &str,
+    ) -> Result<Option<T>, CommonRequestError> {
         let line = line.trim();
-        
+
         // Skip empty lines and comments
         if line.is_empty() || line.starts_with(':') {
             return Ok(None);
@@ -77,16 +87,17 @@ impl SseParser {
         // Parse SSE format: "data: <json>"
         if line.starts_with("data: ") {
             let json_data = line.trim_start_matches("data: ").trim();
-            
+
             // Skip [DONE] markers and empty data
             if json_data.is_empty() || json_data == "[DONE]" {
                 return Ok(None);
             }
 
             // Parse JSON
-            let event: T = serde_json::from_str(json_data)
-                .map_err(|e| CommonRequestError::InvalidEventData(format!("JSON parse error: {}", e)))?;
-            
+            let event: T = serde_json::from_str(json_data).map_err(|e| {
+                CommonRequestError::InvalidEventData(format!("JSON parse error: {}", e))
+            })?;
+
             return Ok(Some(event));
         }
 
@@ -100,13 +111,13 @@ pub fn parse_sse_events<T: for<'de> Deserialize<'de>>(
     chunk: &str,
 ) -> Result<Vec<T>, CommonRequestError> {
     let mut events = Vec::new();
-    
+
     for line in chunk.lines() {
         if let Some(event) = SseParser::parse_sse_line::<T>(line)? {
             events.push(event);
         }
     }
-    
+
     Ok(events)
 }
 

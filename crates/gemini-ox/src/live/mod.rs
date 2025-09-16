@@ -344,8 +344,7 @@ mod tests {
                                     received_text = true;
                                 }
                                 if let Some(inline_data) = part.inline_data {
-                                    if inline_data.mime_type == "audio/pcm;rate=24000"
-                                    {
+                                    if inline_data.mime_type == "audio/pcm;rate=24000" {
                                         received_audio = true;
                                     }
                                 }

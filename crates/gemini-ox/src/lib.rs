@@ -23,14 +23,16 @@ pub use crate::model::response::{ListModelsResponse, Model as ApiModel};
 
 // Re-export generate content types
 pub use crate::generate_content::request::GenerateContentRequest;
-pub use crate::generate_content::{GenerationConfig, SafetySetting, HarmCategory, HarmBlockThreshold};
 pub use crate::generate_content::response::GenerateContentResponse;
+pub use crate::generate_content::{
+    GenerationConfig, HarmBlockThreshold, HarmCategory, SafetySetting,
+};
 
 // Re-export content and message types
-pub use crate::content::{Content, Part, Text, Role};
+pub use crate::content::{Content, Part, Role, Text};
 
 // Re-export tool types
-pub use crate::tool::{Tool, FunctionMetadata};
+pub use crate::tool::{FunctionMetadata, Tool};
 
 // Re-export embedding types
 pub use crate::embedding::EmbedContentRequest;
@@ -156,7 +158,7 @@ pub enum Model {
     Gemini25FlashPreviewTts, // TTS Preview
     #[strum(to_string = "gemini-2.5-flash-preview-native-audio-dialog")]
     Gemini25FlashPreviewNativeAudioDialog,
-    
+
     // Gemini 2.5 Pro (Stable and Preview)
     #[strum(to_string = "gemini-2.5-pro")]
     Gemini25Pro, // Stable
@@ -289,7 +291,6 @@ impl Gemini {
         Ok(Self::builder().api_key(api_key).build())
     }
 
-
     /// Create a Live API session builder
     ///
     /// Returns a `LiveOperationBuilder` that can be configured and then used to
@@ -339,12 +340,14 @@ impl Gemini {
     }
 }
 
-
 impl fmt::Debug for Gemini {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Gemini")
             .field("api_key", &"[REDACTED]")
-            .field("oauth_token", &self.oauth_token.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "oauth_token",
+                &self.oauth_token.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("project_id", &self.project_id)
             .field("client", &self.client)
             .field("api_version", &self.api_version)
@@ -561,7 +564,7 @@ mod oauth_tests {
             .api_key("test-api-key")
             .oauth_token("test-oauth-token")
             .build();
-        
+
         // Both should be present, but OAuth takes precedence in actual requests
         assert_eq!(gemini.oauth_token, Some("test-oauth-token".to_string()));
         assert_eq!(gemini.api_key, Some("test-api-key".to_string()));
@@ -569,10 +572,8 @@ mod oauth_tests {
 
     #[test]
     fn test_api_key_fallback_when_no_oauth() {
-        let gemini = Gemini::builder()
-            .api_key("test-api-key")
-            .build();
-        
+        let gemini = Gemini::builder().api_key("test-api-key").build();
+
         assert_eq!(gemini.oauth_token, None);
         assert_eq!(gemini.api_key, Some("test-api-key".to_string()));
     }
@@ -580,7 +581,7 @@ mod oauth_tests {
     #[test]
     fn test_no_auth_methods() {
         let gemini = Gemini::builder().build();
-        
+
         assert_eq!(gemini.oauth_token, None);
         assert_eq!(gemini.api_key, None);
     }
@@ -590,11 +591,11 @@ mod oauth_tests {
     fn test_oauth_integration_with_real_token() {
         let oauth_token = std::env::var("GOOGLE_OAUTH_TOKEN")
             .expect("GOOGLE_OAUTH_TOKEN environment variable not set");
-        
+
         let gemini = Gemini::with_oauth_token(oauth_token);
         assert!(gemini.oauth_token.is_some());
         assert!(gemini.api_key.is_none());
-        
+
         // This would test actual API call with OAuth, but we'll keep it simple for now
         // In the future we could add a real API call test here
     }

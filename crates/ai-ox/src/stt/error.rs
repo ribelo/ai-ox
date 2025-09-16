@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+use ai_ox_common::error::ProviderError;
+
 /// Errors that can occur during speech-to-text operations
 #[derive(Debug, Error)]
 pub enum SttError {
@@ -63,26 +65,25 @@ pub enum SttError {
     #[error("Service unavailable")]
     ServiceUnavailable,
 
-
     /// Invalid audio data
     #[error("Invalid audio data: {0}")]
     InvalidAudioData(String),
+
+    /// Provider error
+    #[error("Provider error: {0}")]
+    ProviderError(ProviderError),
 }
+
+
 
 // Conversion implementations for provider-specific errors
 
 #[cfg(feature = "groq")]
 impl From<groq_ox::GroqRequestError> for SttError {
     fn from(error: groq_ox::GroqRequestError) -> Self {
-        match error {
-            groq_ox::GroqRequestError::RateLimit => SttError::RateLimitExceeded,
-            groq_ox::GroqRequestError::InvalidModel(model) => SttError::ModelNotFound(model),
-            other => SttError::Provider(Box::new(other)),
-        }
+        SttError::ProviderError(error)
     }
 }
-
-
 
 #[cfg(feature = "gemini")]
 impl From<crate::errors::GenerateContentError> for SttError {

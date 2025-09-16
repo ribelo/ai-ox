@@ -49,10 +49,11 @@ impl Caches {
 
         // Handle authentication - OAuth takes precedence over API key
         let mut request_builder = self.gemini.client.get(url.clone());
-        
+
         if let Some(oauth_token) = &self.gemini.oauth_token {
             // OAuth: use Authorization header
-            request_builder = request_builder.header("authorization", format!("Bearer {}", oauth_token));
+            request_builder =
+                request_builder.header("authorization", format!("Bearer {}", oauth_token));
         } else if let Some(api_key) = &self.gemini.api_key {
             // API key: use query parameter
             request_builder = request_builder.query(&[("key", api_key)]);
@@ -93,11 +94,12 @@ impl Caches {
 
         // Handle authentication - OAuth takes precedence over API key
         let mut request_builder = self.gemini.client.get(url.clone());
-        
+
         if let Some(oauth_token) = &self.gemini.oauth_token {
             // OAuth: use Authorization header
-            request_builder = request_builder.header("authorization", format!("Bearer {}", oauth_token));
-            
+            request_builder =
+                request_builder.header("authorization", format!("Bearer {}", oauth_token));
+
             // Add pagination parameters for OAuth mode
             let mut params = Vec::new();
             if let Some(size) = page_size {
@@ -112,7 +114,7 @@ impl Caches {
         } else if let Some(api_key) = &self.gemini.api_key {
             // API key: use query parameter
             let mut query_params = vec![("key", api_key.as_str())];
-            
+
             // Add pagination parameters
             let page_size_string;
             if let Some(size) = page_size {
@@ -122,7 +124,7 @@ impl Caches {
             if let Some(ref token) = page_token {
                 query_params.push(("pageToken", token));
             }
-            
+
             request_builder = request_builder.query(&query_params);
         } else {
             return Err(GeminiRequestError::AuthenticationMissing);
@@ -177,10 +179,11 @@ impl Caches {
 
         // Handle authentication - OAuth takes precedence over API key
         let mut request_builder = self.gemini.client.delete(url.clone());
-        
+
         if let Some(oauth_token) = &self.gemini.oauth_token {
             // OAuth: use Authorization header
-            request_builder = request_builder.header("authorization", format!("Bearer {}", oauth_token));
+            request_builder =
+                request_builder.header("authorization", format!("Bearer {}", oauth_token));
         } else if let Some(api_key) = &self.gemini.api_key {
             // API key: use query parameter
             request_builder = request_builder.query(&[("key", api_key)]);
@@ -316,25 +319,21 @@ impl<'a> UpdateCachedContentRequest<'a> {
 
         // Handle authentication - OAuth takes precedence over API key
         let mut request_builder = self.gemini.client.patch(url.clone());
-        
+
         if let Some(oauth_token) = &self.gemini.oauth_token {
             // OAuth: use Authorization header
-            request_builder = request_builder.header("authorization", format!("Bearer {}", oauth_token));
+            request_builder =
+                request_builder.header("authorization", format!("Bearer {}", oauth_token));
             request_builder = request_builder.query(&[("updateMask", mask_paths.join(","))]);
         } else if let Some(api_key) = &self.gemini.api_key {
             // API key: use query parameter
-            request_builder = request_builder.query(&[
-                ("key", api_key),
-                ("updateMask", &mask_paths.join(","))
-            ]);
+            request_builder =
+                request_builder.query(&[("key", api_key), ("updateMask", &mask_paths.join(","))]);
         } else {
             return Err(GeminiRequestError::AuthenticationMissing);
         }
 
-        let res = request_builder
-            .json(&request_body)
-            .send()
-            .await?;
+        let res = request_builder.json(&request_body).send().await?;
         let status = res.status();
         let body_bytes = res.bytes().await?;
 
@@ -428,10 +427,11 @@ impl CreateCachedContentRequest {
 
         // Handle authentication - OAuth takes precedence over API key
         let mut request_builder = self.gemini.client.post(url.clone());
-        
+
         if let Some(oauth_token) = &self.gemini.oauth_token {
             // OAuth: use Authorization header
-            request_builder = request_builder.header("authorization", format!("Bearer {}", oauth_token));
+            request_builder =
+                request_builder.header("authorization", format!("Bearer {}", oauth_token));
         } else if let Some(api_key) = &self.gemini.api_key {
             // API key: use query parameter
             request_builder = request_builder.query(&[("key", api_key)]);

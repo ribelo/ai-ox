@@ -150,7 +150,7 @@ impl EmbedContentRequest {
 
         // Handle authentication
         let mut req = self.gemini.client.post(url);
-        
+
         if let Some(oauth_token) = &self.gemini.oauth_token {
             // OAuth: use Authorization header
             req = req.header("authorization", format!("Bearer {}", oauth_token));
@@ -160,7 +160,7 @@ impl EmbedContentRequest {
         } else {
             return Err(GeminiRequestError::AuthenticationMissing);
         }
-        
+
         // Send the HTTP request
         let res = req.json(self).send().await?;
         let status = res.status();

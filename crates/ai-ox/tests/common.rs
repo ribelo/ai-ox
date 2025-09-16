@@ -35,7 +35,7 @@ const ANTHROPIC_MODEL: &str = "claude-3-haiku-20240307";
 /// Helper function to initialize a provider model with graceful error handling
 async fn try_init_provider<T, E, F, Fut>(
     env_var: &str,
-    provider_name: &str, 
+    provider_name: &str,
     init_fn: F,
 ) -> Option<Box<dyn Model>>
 where
@@ -51,13 +51,22 @@ where
                 Some(Box::new(model))
             }
             Err(e) => {
-                println!("⚠️  {} initialization failed (API key may be invalid): {}", provider_name, e);
-                println!("   Skipping {} tests. Set {} to enable.", provider_name, env_var);
+                println!(
+                    "⚠️  {} initialization failed (API key may be invalid): {}",
+                    provider_name, e
+                );
+                println!(
+                    "   Skipping {} tests. Set {} to enable.",
+                    provider_name, env_var
+                );
                 None
             }
         }
     } else {
-        println!("⚠️  {} tests skipped: {} not found in environment.", provider_name, env_var);
+        println!(
+            "⚠️  {} tests skipped: {} not found in environment.",
+            provider_name, env_var
+        );
         println!("   Set {} to enable {} tests.", env_var, provider_name);
         None
     }
@@ -78,13 +87,14 @@ pub async fn get_available_models() -> Vec<Box<dyn Model>> {
     #[cfg(feature = "bedrock")]
     {
         // Bedrock requires both AWS credentials
-        if std::env::var("AWS_ACCESS_KEY_ID").is_ok() && 
-           std::env::var("AWS_SECRET_ACCESS_KEY").is_ok() {
-            if let Some(model) = try_init_provider(
-                "AWS_ACCESS_KEY_ID", 
-                "Bedrock",
-                || BedrockModel::new(BEDROCK_MODEL.to_string())
-            ).await {
+        if std::env::var("AWS_ACCESS_KEY_ID").is_ok()
+            && std::env::var("AWS_SECRET_ACCESS_KEY").is_ok()
+        {
+            if let Some(model) = try_init_provider("AWS_ACCESS_KEY_ID", "Bedrock", || {
+                BedrockModel::new(BEDROCK_MODEL.to_string())
+            })
+            .await
+            {
                 models.push(model);
             }
         } else {
@@ -95,11 +105,11 @@ pub async fn get_available_models() -> Vec<Box<dyn Model>> {
 
     #[cfg(feature = "gemini")]
     {
-        if let Some(model) = try_init_provider(
-            "GOOGLE_AI_API_KEY",
-            "Gemini", 
-            || GeminiModel::new(GEMINI_MODEL.to_string())
-        ).await {
+        if let Some(model) = try_init_provider("GOOGLE_AI_API_KEY", "Gemini", || {
+            GeminiModel::new(GEMINI_MODEL.to_string())
+        })
+        .await
+        {
             models.push(model);
         }
     }
@@ -108,46 +118,60 @@ pub async fn get_available_models() -> Vec<Box<dyn Model>> {
     {
         // Use a model that supports tool calling through OpenRouter
         // Note: google/gemini models don't support tools through OpenRouter
-        if let Some(model) = try_init_provider(
-            "OPENROUTER_API_KEY",
-            "OpenRouter",
-            || OpenRouterModel::new(OPENROUTER_MODEL.to_string())
-        ).await {
+        if let Some(model) = try_init_provider("OPENROUTER_API_KEY", "OpenRouter", || {
+            OpenRouterModel::new(OPENROUTER_MODEL.to_string())
+        })
+        .await
+        {
             models.push(model);
         }
     }
 
     #[cfg(feature = "mistral")]
     {
-        if let Some(model) = try_init_provider(
-            "MISTRAL_API_KEY",
-            "Mistral",
-            || MistralModel::new(MISTRAL_MODEL.to_string())
-        ).await {
+        if let Some(model) = try_init_provider("MISTRAL_API_KEY", "Mistral", || {
+            MistralModel::new(MISTRAL_MODEL.to_string())
+        })
+        .await
+        {
             models.push(model);
         }
     }
 
     #[cfg(feature = "anthropic")]
     {
-        if let Some(model) = try_init_provider(
-            "ANTHROPIC_API_KEY",
-            "Anthropic",
-            || AnthropicModel::new(ANTHROPIC_MODEL.to_string())
-        ).await {
+        if let Some(model) = try_init_provider("ANTHROPIC_API_KEY", "Anthropic", || {
+            AnthropicModel::new(ANTHROPIC_MODEL.to_string())
+        })
+        .await
+        {
             models.push(model);
         }
     }
 
     // This is to satisfy the compiler in case no features are enabled.
-    #[cfg(not(any(feature = "bedrock", feature = "gemini", feature = "openrouter", feature = "mistral", feature = "anthropic")))]
+    #[cfg(not(any(
+        feature = "bedrock",
+        feature = "gemini",
+        feature = "openrouter",
+        feature = "mistral",
+        feature = "anthropic"
+    )))]
     {
         println!("⚠️ No provider features enabled. All compliance tests will be skipped.");
     }
 
-    if models.is_empty() && cfg!(any(feature = "bedrock", feature = "gemini", feature = "openrouter", feature = "mistral", feature = "anthropic")) {
-         // This case can happen when features are enabled but API keys are not set
-         // All providers now gracefully handle missing API keys
+    if models.is_empty()
+        && cfg!(any(
+            feature = "bedrock",
+            feature = "gemini",
+            feature = "openrouter",
+            feature = "mistral",
+            feature = "anthropic"
+        ))
+    {
+        // This case can happen when features are enabled but API keys are not set
+        // All providers now gracefully handle missing API keys
         println!("⚠️  No models were initialized. Make sure to set the appropriate API keys:");
         #[cfg(feature = "bedrock")]
         println!("   - AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY for Bedrock");

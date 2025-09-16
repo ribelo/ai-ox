@@ -86,7 +86,7 @@ impl OpenRouter {
         request: &request::ChatRequest,
     ) -> BoxStream<'static, Result<response::ChatCompletionChunk, OpenRouterRequestError>> {
         use async_stream::try_stream;
-        
+
         let helper = self.request_helper();
         let mut request_data = request.clone();
         request_data.stream = Some(true);
@@ -102,7 +102,7 @@ impl OpenRouter {
 
             let mut stream = helper.stream_chat_request(&request_data);
             use futures_util::StreamExt;
-            
+
             while let Some(result) = stream.next().await {
                 yield result?;
             }
@@ -115,7 +115,10 @@ impl OpenRouter {
     }
 
     /// Get detailed information about a specific generation by its ID
-    pub async fn get_generation(&self, generation_id: &str) -> Result<response::GenerationInfo, OpenRouterRequestError> {
+    pub async fn get_generation(
+        &self,
+        generation_id: &str,
+    ) -> Result<response::GenerationInfo, OpenRouterRequestError> {
         self.request_helper().get_generation(generation_id).await
     }
 
@@ -138,6 +141,6 @@ pub use conversion::ConversionError;
 pub use error::OpenRouterRequestError;
 pub use request::{ChatRequest, ReasoningConfig};
 pub use response::{
-    ChatCompletionResponse, ChatCompletionChunk, GenerationInfo, KeyStatus, KeyStatusData, 
-    KeyRateLimit, ModelInfo, ModelsResponse, ModelPricing, ModelArchitecture, ModelProvider
+    ChatCompletionChunk, ChatCompletionResponse, GenerationInfo, KeyRateLimit, KeyStatus,
+    KeyStatusData, ModelArchitecture, ModelInfo, ModelPricing, ModelProvider, ModelsResponse,
 };

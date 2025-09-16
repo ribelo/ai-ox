@@ -1,8 +1,10 @@
 #[cfg(test)]
 mod tests {
     use ai_ox_common::{
-        request_builder::{RequestBuilder, RequestConfig, Endpoint, HttpMethod, AuthMethod, MultipartForm},
         CommonRequestError,
+        request_builder::{
+            AuthMethod, Endpoint, HttpMethod, MultipartForm, RequestBuilder, RequestConfig,
+        },
     };
 
     #[test]
@@ -20,7 +22,10 @@ mod tests {
         endpoint.query_params = Some(vec![("limit".to_string(), "10".to_string())]);
 
         assert_eq!(endpoint.query_params.as_ref().unwrap().len(), 1);
-        assert_eq!(endpoint.query_params.as_ref().unwrap()[0], ("limit".to_string(), "10".to_string()));
+        assert_eq!(
+            endpoint.query_params.as_ref().unwrap()[0],
+            ("limit".to_string(), "10".to_string())
+        );
     }
 
     #[test]
@@ -42,18 +47,24 @@ mod tests {
         }
 
         match api_key_auth {
-            AuthMethod::ApiKey { ref header_name, ref key } => {
+            AuthMethod::ApiKey {
+                ref header_name,
+                ref key,
+            } => {
                 assert_eq!(header_name, "x-api-key");
                 assert_eq!(key, "key123");
-            },
+            }
             _ => panic!("Expected ApiKey auth"),
         }
 
         match oauth_auth {
-            AuthMethod::OAuth { ref header_name, ref token } => {
+            AuthMethod::OAuth {
+                ref header_name,
+                ref token,
+            } => {
                 assert_eq!(header_name, "authorization");
                 assert_eq!(token, "oauth123");
-            },
+            }
             _ => panic!("Expected OAuth auth"),
         }
 
@@ -61,7 +72,7 @@ mod tests {
             AuthMethod::QueryParam(ref param, ref value) => {
                 assert_eq!(param, "key");
                 assert_eq!(value, "value123");
-            },
+            }
             _ => panic!("Expected QueryParam auth"),
         }
     }
@@ -108,7 +119,7 @@ mod tests {
     #[test]
     fn test_http_method_conversion() {
         use reqwest::Method;
-        
+
         assert_eq!(Method::from(HttpMethod::Get), Method::GET);
         assert_eq!(Method::from(HttpMethod::Post), Method::POST);
         assert_eq!(Method::from(HttpMethod::Put), Method::PUT);
@@ -129,10 +140,10 @@ mod tests {
         let client = reqwest::Client::new();
         let config = RequestConfig::new("https://api.example.com/v1")
             .with_auth(AuthMethod::Bearer("test".to_string()));
-        
+
         let request_builder = RequestBuilder::new(client, config);
         let endpoint = Endpoint::new("chat/completions", HttpMethod::Post);
-        
+
         // This will build the request but not send it
         let req_result = request_builder.build_request(&endpoint);
         assert!(req_result.is_ok());

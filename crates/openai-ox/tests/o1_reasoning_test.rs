@@ -43,19 +43,27 @@ fn test_o1_reasoning_response_deserialization() {
     });
 
     // Deserialize the response
-    let response: ChatResponse = serde_json::from_value(response_json).expect("Failed to deserialize response");
+    let response: ChatResponse =
+        serde_json::from_value(response_json).expect("Failed to deserialize response");
 
     // Basic response validation
     assert_eq!(response.id, "chatcmpl-CAFfu0W7hpbf08cMQod4EdHHPDccU");
     assert_eq!(response.model, "o1-mini-2024-09-12");
     assert_eq!(response.choices.len(), 1);
-    
+
     // Validate message content
     let choice = &response.choices[0];
     assert_eq!(choice.index, 0);
     assert_eq!(choice.finish_reason, Some("stop".to_string()));
     assert!(choice.message.content.is_some());
-    assert!(choice.message.content.as_ref().unwrap().contains("9 sheep left"));
+    assert!(
+        choice
+            .message
+            .content
+            .as_ref()
+            .unwrap()
+            .contains("9 sheep left")
+    );
 
     // Validate usage statistics
     let usage = response.usage.expect("Usage should be present");
@@ -64,12 +72,16 @@ fn test_o1_reasoning_response_deserialization() {
     assert_eq!(usage.total_tokens, 421);
 
     // Validate reasoning token details - this is the key test
-    let completion_details = usage.completion_tokens_details.expect("Completion tokens details should be present");
+    let completion_details = usage
+        .completion_tokens_details
+        .expect("Completion tokens details should be present");
     assert_eq!(completion_details.reasoning_tokens, Some(256));
     assert_eq!(completion_details.audio_tokens, Some(0));
 
     // Validate prompt token details
-    let prompt_details = usage.prompt_tokens_details.expect("Prompt tokens details should be present");
+    let prompt_details = usage
+        .prompt_tokens_details
+        .expect("Prompt tokens details should be present");
     assert_eq!(prompt_details.cached_tokens, Some(0));
     assert_eq!(prompt_details.audio_tokens, Some(0));
 }
@@ -79,7 +91,7 @@ fn test_o1_response_without_reasoning() {
     // Regular GPT response without reasoning tokens
     let response_json = json!({
         "id": "chatcmpl-regular",
-        "object": "chat.completion", 
+        "object": "chat.completion",
         "created": 1756559570,
         "model": "gpt-3.5-turbo",
         "choices": [
@@ -99,8 +111,9 @@ fn test_o1_response_without_reasoning() {
         }
     });
 
-    let response: ChatResponse = serde_json::from_value(response_json).expect("Failed to deserialize response");
-    
+    let response: ChatResponse =
+        serde_json::from_value(response_json).expect("Failed to deserialize response");
+
     let usage = response.usage.expect("Usage should be present");
     assert_eq!(usage.prompt_tokens, 10);
     assert_eq!(usage.completion_tokens, 9);
@@ -140,22 +153,23 @@ fn test_usage_helper_methods() {
 #[test]
 fn test_reasoning_token_access() {
     let mut usage = Usage::new(100, 200);
-    
+
     // Initially no reasoning tokens
     assert!(usage.completion_tokens_details.is_none());
-    
+
     // Add reasoning token details
     usage.completion_tokens_details = Some(openai_ox::usage::CompletionTokensDetails {
         reasoning_tokens: Some(50),
         audio_tokens: None,
     });
-    
+
     // Verify reasoning tokens can be accessed
-    let reasoning_tokens = usage.completion_tokens_details
+    let reasoning_tokens = usage
+        .completion_tokens_details
         .as_ref()
         .and_then(|details| details.reasoning_tokens)
         .unwrap_or(0);
-    
+
     assert_eq!(reasoning_tokens, 50);
 }
 
@@ -174,7 +188,7 @@ fn test_usage_arithmetic() {
             audio_tokens: None,
         }),
     };
-    
+
     let usage2 = Usage {
         prompt_tokens: 5,
         completion_tokens: 10,
@@ -182,12 +196,12 @@ fn test_usage_arithmetic() {
         prompt_tokens_details: None,
         completion_tokens_details: None,
     };
-    
+
     let combined = usage1 + usage2;
     assert_eq!(combined.prompt_tokens, 15);
     assert_eq!(combined.completion_tokens, 30);
     assert_eq!(combined.total_tokens, 45);
-    
+
     // Details are lost in arithmetic operations (as documented)
     assert!(combined.prompt_tokens_details.is_none());
     assert!(combined.completion_tokens_details.is_none());

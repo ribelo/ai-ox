@@ -8,19 +8,17 @@ use crate::{
     },
     errors::GenerateContentError,
     model::{ModelRequest, response::ModelResponse},
-    tool::{Tool, encode_tool_result_parts, decode_tool_result_parts},
+    tool::{Tool, decode_tool_result_parts, encode_tool_result_parts},
 };
 use gemini_ox::{
     content::{Content as GeminiContent, Part as GeminiPart, Role as GeminiRole},
     generate_content::{
-        request::GenerateContentRequest as GeminiGenerateContentRequest, GenerationConfig,
+        GenerationConfig, SafetySettings,
+        request::GenerateContentRequest as GeminiGenerateContentRequest,
         response::GenerateContentResponse,
-        SafetySettings,
     },
-    tool::{config::ToolConfig},
+    tool::config::ToolConfig,
 };
-
-
 
 impl From<MessageRole> for GeminiRole {
     fn from(role: MessageRole) -> Self {
@@ -55,7 +53,9 @@ impl TryFrom<Part> for GeminiPart {
 
     fn try_from(part: Part) -> Result<Self, Self::Error> {
         match part {
-            Part::Text { text, .. } => Ok(Self::new(gemini_ox::content::PartData::Text(text.into()))),
+            Part::Text { text, .. } => {
+                Ok(Self::new(gemini_ox::content::PartData::Text(text.into())))
+            }
             Part::ToolUse { id, name, args, .. } => Ok(Self::new(
                 gemini_ox::content::PartData::FunctionCall(gemini_ox::content::FunctionCall {
                     id: Some(id),
@@ -63,19 +63,26 @@ impl TryFrom<Part> for GeminiPart {
                     args: Some(args),
                 }),
             )),
-            Part::ToolResult { id, name, parts, .. } => {
+            Part::ToolResult {
+                id, name, parts, ..
+            } => {
                 let encoded_content = encode_tool_result_parts(&name, &parts)?;
-                Ok(Self::new(
-                    gemini_ox::content::PartData::FunctionResponse(gemini_ox::content::FunctionResponse {
+                Ok(Self::new(gemini_ox::content::PartData::FunctionResponse(
+                    gemini_ox::content::FunctionResponse {
                         id: Some(id),
                         name,
-                        response: serde_json::from_str(&encoded_content).unwrap_or(serde_json::Value::Null),
+                        response: serde_json::from_str(&encoded_content)
+                            .unwrap_or(serde_json::Value::Null),
                         will_continue: None,
                         scheduling: None,
-                    }),
-                ))
+                    },
+                )))
             }
-            Part::Blob { data_ref, mime_type, .. } => match data_ref {
+            Part::Blob {
+                data_ref,
+                mime_type,
+                ..
+            } => match data_ref {
                 crate::content::part::DataRef::Uri { uri } => Ok(Self::new(
                     gemini_ox::content::PartData::FileData(gemini_ox::content::FileData {
                         mime_type,
@@ -91,9 +98,12 @@ impl TryFrom<Part> for GeminiPart {
                     }),
                 )),
             },
-            Part::Opaque { provider, .. } => Err(GenerateContentError::unsupported_feature(
-                &format!("Opaque parts not supported by Gemini provider. Provider: {}", provider),
-            )),
+            Part::Opaque { provider, .. } => {
+                Err(GenerateContentError::unsupported_feature(&format!(
+                    "Opaque parts not supported by Gemini provider. Provider: {}",
+                    provider
+                )))
+            }
             _ => Err(GenerateContentError::unsupported_feature(
                 "Unsupported part type for Gemini models.",
             )),
@@ -128,9 +138,14 @@ impl TryFrom<GeminiPart> for Part {
 
     fn try_from(part: GeminiPart) -> Result<Self, Self::Error> {
         match part.data {
-            gemini_ox::content::PartData::Text(text) => Ok(Part::Text { text: text.to_string(), ext: std::collections::BTreeMap::new() }),
+            gemini_ox::content::PartData::Text(text) => Ok(Part::Text {
+                text: text.to_string(),
+                ext: std::collections::BTreeMap::new(),
+            }),
             gemini_ox::content::PartData::FunctionCall(function_call) => Ok(Part::ToolUse {
-                id: function_call.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                id: function_call
+                    .id
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                 name: function_call.name,
                 args: function_call.args.unwrap_or_default(),
                 ext: std::collections::BTreeMap::new(),
@@ -140,12 +155,15 @@ impl TryFrom<GeminiPart> for Part {
                 let (decoded_name, parts) = decode_tool_result_parts(&encoded_response)?;
                 // Verify the decoded name matches the expected function name
                 if decoded_name != function_response.name {
-                    return Err(GenerateContentError::message_conversion(
-                        &format!("Function name mismatch: expected '{}', got '{}'", function_response.name, decoded_name)
-                    ));
+                    return Err(GenerateContentError::message_conversion(&format!(
+                        "Function name mismatch: expected '{}', got '{}'",
+                        function_response.name, decoded_name
+                    )));
                 }
                 Ok(Part::ToolResult {
-                    id: function_response.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                    id: function_response
+                        .id
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                     name: function_response.name,
                     parts,
                     ext: std::collections::BTreeMap::new(),
@@ -159,7 +177,9 @@ impl TryFrom<GeminiPart> for Part {
                 ext: std::collections::BTreeMap::new(),
             }),
             gemini_ox::content::PartData::FileData(file_data) => Ok(Part::Blob {
-                data_ref: crate::content::part::DataRef::Uri { uri: file_data.file_uri },
+                data_ref: crate::content::part::DataRef::Uri {
+                    uri: file_data.file_uri,
+                },
                 mime_type: file_data.mime_type,
                 name: file_data.display_name,
                 description: None,
@@ -171,8 +191,6 @@ impl TryFrom<GeminiPart> for Part {
         }
     }
 }
-
-
 
 impl From<Tool> for serde_json::Value {
     fn from(tool: Tool) -> Self {
@@ -227,7 +245,9 @@ impl TryFrom<GeminiPart> for StreamEvent {
 
     fn try_from(part: GeminiPart) -> Result<Self, Self::Error> {
         match part.data {
-            gemini_ox::content::PartData::Text(text) => Ok(StreamEvent::TextDelta(text.to_string())),
+            gemini_ox::content::PartData::Text(text) => {
+                Ok(StreamEvent::TextDelta(text.to_string()))
+            }
             gemini_ox::content::PartData::FunctionCall(function_call) => {
                 Ok(StreamEvent::ToolCall(function_call.into()))
             }
@@ -236,12 +256,15 @@ impl TryFrom<GeminiPart> for StreamEvent {
                 let (decoded_name, parts) = decode_tool_result_parts(&encoded_response)?;
                 // Verify the decoded name matches the expected function name
                 if decoded_name != function_response.name {
-                    return Err(GenerateContentError::message_conversion(
-                        &format!("Function name mismatch: expected '{}', got '{}'", function_response.name, decoded_name)
-                    ));
+                    return Err(GenerateContentError::message_conversion(&format!(
+                        "Function name mismatch: expected '{}', got '{}'",
+                        function_response.name, decoded_name
+                    )));
                 }
                 Ok(StreamEvent::ToolResult(Part::ToolResult {
-                    id: function_response.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                    id: function_response
+                        .id
+                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                     name: function_response.name,
                     parts,
                     ext: std::collections::BTreeMap::new(),
@@ -258,7 +281,9 @@ impl TryFrom<GeminiPart> for StreamEvent {
             }
             gemini_ox::content::PartData::FileData(file_data) => {
                 Ok(StreamEvent::ToolResult(Part::Blob {
-                    data_ref: crate::content::part::DataRef::Uri { uri: file_data.file_uri },
+                    data_ref: crate::content::part::DataRef::Uri {
+                        uri: file_data.file_uri,
+                    },
                     mime_type: file_data.mime_type,
                     name: file_data.display_name,
                     description: None,
@@ -323,7 +348,8 @@ pub(super) fn convert_gemini_response_to_ai_ox(
         .candidates
         .first()
         .map(|candidate| candidate.content.clone().try_into())
-        .transpose()?        .unwrap_or(Message::new(MessageRole::Assistant, vec![]));
+        .transpose()?
+        .unwrap_or(Message::new(MessageRole::Assistant, vec![]));
 
     let usage = response
         .usage_metadata

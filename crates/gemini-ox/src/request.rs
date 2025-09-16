@@ -8,9 +8,11 @@
 //! ```
 
 // Re-export all request types from their respective modules
-pub use crate::generate_content::request::GenerateContentRequest;
-pub use crate::embedding::request::{EmbedContentRequest, TaskType};
 pub use crate::cache::CreateCachedContentRequest;
+pub use crate::embedding::request::{EmbedContentRequest, TaskType};
+pub use crate::generate_content::request::GenerateContentRequest;
 
 // Re-export related configuration types that are commonly used with requests
-pub use crate::generate_content::{GenerationConfig, SafetySettings, SafetySetting, HarmCategory, HarmBlockThreshold};
+pub use crate::generate_content::{
+    GenerationConfig, HarmBlockThreshold, HarmCategory, SafetySetting, SafetySettings,
+};

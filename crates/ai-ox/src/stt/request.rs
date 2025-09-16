@@ -8,27 +8,27 @@ use std::path::PathBuf;
 pub struct TranscriptionRequest {
     /// Audio source - flexible input
     pub audio: AudioSource,
-    
+
     /// Target language (ISO-639-1) - None for auto-detect
     #[builder(into)]
     pub language: Option<String>,
-    
+
     /// Prompt to guide transcription style
     #[builder(into)]
     pub prompt: Option<String>,
-    
+
     /// Desired output detail level
     #[builder(default = OutputFormat::Simple)]
     pub output_format: OutputFormat,
-    
+
     /// Temperature for transcription creativity (0.0 - 1.0)
     #[builder(default = 0.0)]
     pub temperature: f32,
-    
+
     /// Whether to include timestamps
     #[builder(default = TimestampGranularity::None)]
     pub timestamps: TimestampGranularity,
-    
+
     /// Provider-specific options
     #[builder(default)]
     pub vendor_options: HashMap<String, serde_json::Value>,
@@ -51,10 +51,7 @@ pub enum AudioSource {
     /// For providers that support recording references
     RecordingId(String),
     /// Base64 encoded audio data
-    Base64 {
-        data: String,
-        format: AudioFormat,
-    },
+    Base64 { data: String, format: AudioFormat },
 }
 
 impl Default for AudioSource {
@@ -70,15 +67,19 @@ impl Default for AudioSource {
 impl AudioSource {
     /// Create from raw bytes
     pub fn from_bytes(data: Vec<u8>, format: AudioFormat) -> Self {
-        Self::Bytes { data, format, filename: None }
+        Self::Bytes {
+            data,
+            format,
+            filename: None,
+        }
     }
 
     /// Create from bytes with filename
     pub fn from_bytes_with_name(data: Vec<u8>, format: AudioFormat, filename: String) -> Self {
-        Self::Bytes { 
-            data, 
-            format, 
-            filename: Some(filename) 
+        Self::Bytes {
+            data,
+            format,
+            filename: Some(filename),
         }
     }
 
@@ -94,9 +95,9 @@ impl AudioSource {
 
     /// Create from base64 encoded data
     pub fn from_base64(data: impl Into<String>, format: AudioFormat) -> Self {
-        Self::Base64 { 
-            data: data.into(), 
-            format 
+        Self::Base64 {
+            data: data.into(),
+            format,
         }
     }
 
@@ -145,7 +146,7 @@ impl AudioFormat {
         match self {
             AudioFormat::Mp3 => "audio/mpeg",
             AudioFormat::Wav => "audio/wav",
-            AudioFormat::Flac => "audio/flac", 
+            AudioFormat::Flac => "audio/flac",
             AudioFormat::Ogg => "audio/ogg",
             AudioFormat::WebM => "audio/webm",
             AudioFormat::M4a => "audio/mp4",

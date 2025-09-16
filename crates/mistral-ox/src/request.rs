@@ -1,10 +1,10 @@
 use bon::Builder;
 #[cfg(feature = "schema")]
-use schemars::{generate::SchemaSettings, JsonSchema};
+use schemars::{JsonSchema, generate::SchemaSettings};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-use crate::message::{Messages, Message};
+use crate::message::{Message, Messages};
 
 // Import base OpenAI format types for tools
 use ai_ox_common::openai_format::{Tool, ToolChoice};
@@ -54,22 +54,22 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
         self.messages = messages.into_iter().collect();
         self
     }
-    
+
     pub fn message(mut self, message: Message) -> Self {
         self.messages.push(message);
         self
     }
-    
+
     pub fn user_message(mut self, content: impl Into<String>) -> Self {
         self.messages.push(Message::user(content));
         self
     }
-    
+
     pub fn system_message(mut self, content: impl Into<String>) -> Self {
         self.messages.push(Message::system(content));
         self
     }
-    
+
     #[cfg(feature = "schema")]
     pub fn response_format<T: JsonSchema + DeserializeOwned>(mut self) -> Self {
         let _type_name = std::any::type_name::<T>().split("::").last().unwrap();
@@ -97,11 +97,11 @@ pub struct EmbeddingsRequest {
     /// Model to use for embeddings
     #[builder(into)]
     pub model: String,
-    
+
     /// Text or array of texts to embed
     #[serde(rename = "input")]
     pub input: EmbeddingInput,
-    
+
     /// Encoding format for embeddings
     #[serde(skip_serializing_if = "Option::is_none")]
     pub encoding_format: Option<String>,
@@ -121,7 +121,7 @@ pub struct ModerationRequest {
     /// Text or array of texts to moderate
     #[serde(rename = "input")]
     pub input: ModerationInput,
-    
+
     /// Model to use for moderation
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
@@ -141,7 +141,7 @@ pub struct ChatModerationRequest {
     /// Model to use for chat moderation
     #[builder(into)]
     pub model: String,
-    
+
     /// Messages to moderate
     pub messages: Messages,
 }
@@ -152,26 +152,26 @@ pub struct FineTuningRequest {
     /// Model to fine-tune
     #[builder(into)]
     pub model: String,
-    
+
     /// Training data files
     pub training_files: Vec<TrainingFile>,
-    
+
     /// Validation files
     #[serde(skip_serializing_if = "Option::is_none")]
     pub validation_files: Option<Vec<String>>,
-    
+
     /// Hyperparameters for fine-tuning
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hyperparameters: Option<FineTuningHyperparameters>,
-    
+
     /// Suffix for fine-tuned model name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suffix: Option<String>,
-    
+
     /// Integrations
     #[serde(skip_serializing_if = "Option::is_none")]
     pub integrations: Option<Vec<serde_json::Value>>,
-    
+
     /// Whether to auto-start the job
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_start: Option<bool>,
@@ -204,15 +204,15 @@ pub struct FineTuningHyperparameters {
 pub struct BatchJobRequest {
     /// Input file ID containing requests
     pub input_file_id: String,
-    
+
     /// API endpoint to use for batch processing
     #[builder(into)]
     pub endpoint: String,
-    
+
     /// Completion window (24h)
     #[builder(into)]
     pub completion_window: String,
-    
+
     /// Optional metadata
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
@@ -224,30 +224,30 @@ pub struct FimRequest {
     /// Model to use for completion
     #[builder(into)]
     pub model: String,
-    
+
     /// Text before the completion
     pub prompt: String,
-    
+
     /// Text after the completion
     #[serde(skip_serializing_if = "Option::is_none")]
     pub suffix: Option<String>,
-    
+
     /// Maximum tokens to generate
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-    
+
     /// Sampling temperature
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
-    
+
     /// Top-p sampling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
-    
+
     /// Stop sequences
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop: Option<Vec<String>>,
-    
+
     /// Random seed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub random_seed: Option<u32>,
@@ -258,23 +258,23 @@ pub struct FimRequest {
 pub struct AgentsRequest {
     /// Messages for the agent
     pub messages: Messages,
-    
+
     /// Agent ID to use
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_id: Option<String>,
-    
+
     /// Maximum tokens to generate
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-    
+
     /// Sampling temperature
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
-    
+
     /// Top-p sampling
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
-    
+
     /// Random seed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub random_seed: Option<u32>,

@@ -5,7 +5,10 @@ use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use image::{DynamicImage, ImageFormat};
 use nokhwa::pixel_format::RgbFormat;
-use nokhwa::utils::{ApiBackend, CameraFormat, CameraIndex, CameraInfo, FrameFormat, RequestedFormat, RequestedFormatType, Resolution};
+use nokhwa::utils::{
+    ApiBackend, CameraFormat, CameraIndex, CameraInfo, FrameFormat, RequestedFormat,
+    RequestedFormatType, Resolution,
+};
 use nokhwa::{Camera, query};
 use std::io::Cursor;
 use tokio::sync::mpsc;
@@ -51,9 +54,12 @@ impl VideoCapturer {
         // Spawn blocking task for camera operations
         let blocking_handle = tokio::task::spawn_blocking(move || {
             // Initialize camera in blocking context
-            let requested_format = RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(
-                CameraFormat::new(Resolution::new(width, height), FrameFormat::MJPEG, TARGET_FPS),
-            ));
+            let requested_format =
+                RequestedFormat::new::<RgbFormat>(RequestedFormatType::Closest(CameraFormat::new(
+                    Resolution::new(width, height),
+                    FrameFormat::MJPEG,
+                    TARGET_FPS,
+                )));
 
             let mut camera = Camera::new(index, requested_format)?;
             camera.open_stream()?;
@@ -65,7 +71,10 @@ impl VideoCapturer {
                         if let Ok(rgb_image) = frame_buffer.decode_image::<RgbFormat>() {
                             let dynamic_image = DynamicImage::ImageRgb8(rgb_image);
                             let mut buffer = Cursor::new(Vec::new());
-                            if dynamic_image.write_to(&mut buffer, ImageFormat::Jpeg).is_ok() {
+                            if dynamic_image
+                                .write_to(&mut buffer, ImageFormat::Jpeg)
+                                .is_ok()
+                            {
                                 let image_bytes = buffer.into_inner();
                                 // Send to async context
                                 if blocking_tx.blocking_send(image_bytes).is_err() {

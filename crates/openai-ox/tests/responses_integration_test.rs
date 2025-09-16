@@ -1,10 +1,9 @@
 use openai_ox::{
-    OpenAI, ResponsesRequest, ResponsesResponse, ResponsesInput,
-    ResponseOutputItem, ResponseOutputContent,
-    responses::response::add_output_text,
+    OpenAI, ResponseOutputContent, ResponseOutputItem, ResponsesInput, ResponsesRequest,
+    ResponsesResponse, responses::response::add_output_text,
 };
-use std::env;
 use serde_json::json;
+use std::env;
 
 #[tokio::test]
 async fn test_responses_api_direct_call() {
@@ -29,7 +28,7 @@ async fn test_responses_api_direct_call() {
                 name: None,
                 tool_calls: None,
                 tool_call_id: None,
-            }
+            },
         ]))
         .max_output_tokens(50)
         .store(false)
@@ -42,45 +41,52 @@ async fn test_responses_api_direct_call() {
 
     // Send the request
     let response = client.send_responses(&request).await;
-    
+
     match response {
         Ok(resp) => {
             println!("Response ID: {}", resp.id);
             println!("Model: {}", resp.model);
             println!("Status: {:?}", resp.status);
             println!("Output text: {}", resp.output_text);
-            
+
             // Verify the response structure
             assert!(!resp.id.is_empty(), "Response ID should not be empty");
             assert_eq!(resp.object, "response", "Object type should be 'response'");
             assert!(resp.created_at > 0, "Created timestamp should be positive");
-            
+
             // Verify output_text was generated from output items
             if !resp.output.is_empty() {
-                assert!(!resp.output_text.is_empty() || 
-                       resp.output.iter().all(|item| {
-                           !matches!(item, ResponseOutputItem::Message { .. })
-                       }), 
-                       "output_text should be generated from message content");
+                assert!(
+                    !resp.output_text.is_empty()
+                        || resp
+                            .output
+                            .iter()
+                            .all(|item| { !matches!(item, ResponseOutputItem::Message { .. }) }),
+                    "output_text should be generated from message content"
+                );
             }
-            
+
             // Check for message output
-            let has_message = resp.output.iter().any(|item| {
-                matches!(item, ResponseOutputItem::Message { .. })
-            });
-            
-            let has_reasoning = resp.output.iter().any(|item| {
-                matches!(item, ResponseOutputItem::Reasoning { .. })
-            });
-            
+            let has_message = resp
+                .output
+                .iter()
+                .any(|item| matches!(item, ResponseOutputItem::Message { .. }));
+
+            let has_reasoning = resp
+                .output
+                .iter()
+                .any(|item| matches!(item, ResponseOutputItem::Reasoning { .. }));
+
             println!("Has message output: {}", has_message);
             println!("Has reasoning output: {}", has_reasoning);
-            
+
             // Verify usage stats if present
             if let Some(usage) = &resp.usage {
                 assert!(usage.input_tokens > 0, "Input tokens should be positive");
-                assert!(usage.total_tokens >= usage.input_tokens, 
-                       "Total tokens should be at least input tokens");
+                assert!(
+                    usage.total_tokens >= usage.input_tokens,
+                    "Total tokens should be at least input tokens"
+                );
             }
         }
         Err(e) => {
@@ -89,7 +95,7 @@ async fn test_responses_api_direct_call() {
     }
 }
 
-#[tokio::test] 
+#[tokio::test]
 async fn test_response_deserialization() {
     // Test with actual API response structure
     let json_response = json!({
@@ -162,21 +168,21 @@ async fn test_response_deserialization() {
     });
 
     // Deserialize the response
-    let mut response: ResponsesResponse = serde_json::from_value(json_response)
-        .expect("Failed to deserialize response");
-    
+    let mut response: ResponsesResponse =
+        serde_json::from_value(json_response).expect("Failed to deserialize response");
+
     // Add output_text like the SDK does
     add_output_text(&mut response);
-    
+
     // Verify the response
     assert_eq!(response.id, "resp_test123");
     assert_eq!(response.object, "response");
     assert_eq!(response.model, "gpt-5-2025-08-07");
     assert_eq!(response.output_text, "Hello!");
-    
+
     // Check output items
     assert_eq!(response.output.len(), 2);
-    
+
     // Verify reasoning item
     if let ResponseOutputItem::Reasoning { id, summary, .. } = &response.output[0] {
         assert_eq!(id, "rs_test");
@@ -184,14 +190,20 @@ async fn test_response_deserialization() {
     } else {
         panic!("First output item should be reasoning");
     }
-    
+
     // Verify message item
-    if let ResponseOutputItem::Message { id, content, role, status } = &response.output[1] {
+    if let ResponseOutputItem::Message {
+        id,
+        content,
+        role,
+        status,
+    } = &response.output[1]
+    {
         assert_eq!(id, "msg_test");
         assert_eq!(role, "assistant");
         assert_eq!(status, "completed");
         assert_eq!(content.len(), 1);
-        
+
         if let ResponseOutputContent::Text { text, .. } = &content[0] {
             assert_eq!(text, "Hello!");
         } else {
@@ -200,7 +212,7 @@ async fn test_response_deserialization() {
     } else {
         panic!("Second output item should be message");
     }
-    
+
     // Verify usage
     assert!(response.usage.is_some());
     let usage = response.usage.unwrap();

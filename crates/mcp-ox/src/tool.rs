@@ -1,5 +1,5 @@
-use ai_ox::tool::ToolUse;
 use ai_ox::content::Part;
+use ai_ox::tool::ToolUse;
 use mcp_sdk::types::{CallToolRequest, CallToolResponse};
 use serde_json::{Value, json};
 
@@ -23,7 +23,9 @@ impl ToMcp<CallToolRequest> for ToolUse {
 
 impl FromMcp<CallToolRequest> for ToolUse {
     fn from_mcp(value: CallToolRequest) -> Result<Self, McpConversionError> {
-        let mut arguments = value.arguments.unwrap_or_else(|| Value::Object(Default::default()));
+        let mut arguments = value
+            .arguments
+            .unwrap_or_else(|| Value::Object(Default::default()));
         let id = if let Some(obj) = arguments.as_object_mut() {
             obj.remove("x_ai_ox_tool_call_id")
                 .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -44,9 +46,16 @@ impl FromMcp<CallToolRequest> for ToolUse {
 // ToolResult conversions
 impl ToMcp<CallToolResponse> for Part {
     fn to_mcp(&self) -> Result<CallToolResponse, McpConversionError> {
-        if let Part::ToolResult { id, name, parts, ext } = self {
+        if let Part::ToolResult {
+            id,
+            name,
+            parts,
+            ext,
+        } = self
+        {
             // Create a message with the parts
-            let message = ai_ox::content::Message::new(ai_ox::content::MessageRole::Assistant, parts.clone());
+            let message =
+                ai_ox::content::Message::new(ai_ox::content::MessageRole::Assistant, parts.clone());
             let response = vec![message];
 
             // Convert Vec<Message> to Vec<ToolResponseContent>
@@ -61,8 +70,7 @@ impl ToMcp<CallToolResponse> for Part {
             }));
 
             // Propagate is_error flag from ext
-            let is_error = ext.get("mcp.is_error")
-                .and_then(|v| v.as_bool());
+            let is_error = ext.get("mcp.is_error").and_then(|v| v.as_bool());
 
             Ok(CallToolResponse {
                 content: mcp_content,
@@ -70,7 +78,9 @@ impl ToMcp<CallToolResponse> for Part {
                 is_error,
             })
         } else {
-            Err(McpConversionError::InvalidFormat("Expected ToolResult part".to_string()))
+            Err(McpConversionError::InvalidFormat(
+                "Expected ToolResult part".to_string(),
+            ))
         }
     }
 }
@@ -80,7 +90,10 @@ impl FromMcp<CallToolResponse> for Part {
         Self::from_mcp_with_config(value, &ConversionConfig::default())
     }
 
-    fn from_mcp_with_config(value: CallToolResponse, config: &ConversionConfig) -> Result<Self, McpConversionError> {
+    fn from_mcp_with_config(
+        value: CallToolResponse,
+        config: &ConversionConfig,
+    ) -> Result<Self, McpConversionError> {
         // Extract metadata from meta field
         let (id, name) = if let Some(meta) = &value.meta {
             if let Some(ai_ox) = meta.get("ai_ox") {
@@ -88,8 +101,12 @@ impl FromMcp<CallToolResponse> for Part {
                     let id_opt = obj.get("call_id").and_then(|v| v.as_str());
                     let name_opt = obj.get("name").and_then(|v| v.as_str());
                     if config.strict {
-                        let id = id_opt.ok_or_else(|| McpConversionError::InvalidFormat("Missing call_id in meta".to_string()))?;
-                        let name = name_opt.ok_or_else(|| McpConversionError::InvalidFormat("Missing name in meta".to_string()))?;
+                        let id = id_opt.ok_or_else(|| {
+                            McpConversionError::InvalidFormat("Missing call_id in meta".to_string())
+                        })?;
+                        let name = name_opt.ok_or_else(|| {
+                            McpConversionError::InvalidFormat("Missing name in meta".to_string())
+                        })?;
                         (id.to_string(), name.to_string())
                     } else {
                         let id = id_opt.unwrap_or("").to_string();
@@ -104,7 +121,9 @@ impl FromMcp<CallToolResponse> for Part {
                     }
                 } else {
                     if config.strict {
-                        return Err(McpConversionError::InvalidFormat("Invalid ai_ox meta structure".to_string()));
+                        return Err(McpConversionError::InvalidFormat(
+                            "Invalid ai_ox meta structure".to_string(),
+                        ));
                     } else {
                         eprintln!("Warning: Invalid ai_ox meta structure, using empty strings");
                         (String::new(), String::new())
@@ -112,7 +131,9 @@ impl FromMcp<CallToolResponse> for Part {
                 }
             } else {
                 if config.strict {
-                    return Err(McpConversionError::InvalidFormat("Missing ai_ox in meta".to_string()));
+                    return Err(McpConversionError::InvalidFormat(
+                        "Missing ai_ox in meta".to_string(),
+                    ));
                 } else {
                     eprintln!("Warning: Missing ai_ox in meta, using empty strings");
                     (String::new(), String::new())
@@ -120,7 +141,9 @@ impl FromMcp<CallToolResponse> for Part {
             }
         } else {
             if config.strict {
-                return Err(McpConversionError::InvalidFormat("Missing meta field".to_string()));
+                return Err(McpConversionError::InvalidFormat(
+                    "Missing meta field".to_string(),
+                ));
             } else {
                 eprintln!("Warning: Missing meta field, using empty strings");
                 (String::new(), String::new())

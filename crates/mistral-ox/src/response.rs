@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use ai_ox_common::openai_format::{ChatCompletionResponse, TokenUsage};
 use crate::message::AssistantMessage;
+use ai_ox_common::openai_format::{ChatCompletionResponse, TokenUsage};
+use serde::{Deserialize, Serialize};
 
 // Use shared response types from ai-ox-common
 pub type ChatResponse = ChatCompletionResponse;
@@ -68,32 +68,34 @@ impl ChatCompletionChunk {
     /// Parse streaming data and extract ChatCompletionChunk objects
     pub fn from_streaming_data(data: &str) -> Vec<Result<Self, crate::error::MistralRequestError>> {
         let mut chunks = Vec::new();
-        
+
         for line in data.lines() {
             let line = line.trim();
-            
+
             // Skip empty lines
             if line.is_empty() {
                 continue;
             }
-            
+
             // Handle SSE format (data: prefix)
             if let Some(json_str) = line.strip_prefix("data: ") {
                 let json_str = json_str.trim();
-                
+
                 // Skip [DONE] marker
                 if json_str == "[DONE]" {
                     continue;
                 }
-                
+
                 // Try to parse the JSON
                 match serde_json::from_str::<ChatCompletionChunk>(json_str) {
                     Ok(chunk) => chunks.push(Ok(chunk)),
-                    Err(e) => chunks.push(Err(crate::error::MistralRequestError::JsonDeserializationError(e.to_string()))),
+                    Err(e) => chunks.push(Err(
+                        crate::error::MistralRequestError::JsonDeserializationError(e.to_string()),
+                    )),
                 }
             }
         }
-        
+
         chunks
     }
 }

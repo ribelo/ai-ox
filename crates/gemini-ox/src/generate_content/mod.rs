@@ -40,7 +40,7 @@ impl GenerateContentRequest {
     ) -> Result<GenerateContentResponse, GeminiRequestError> {
         // Determine authentication method and API endpoints
         let is_oauth = gemini.oauth_token.is_some();
-        
+
         // Build URL based on authentication method
         let mut url = reqwest::Url::parse(gemini.base_url())
             .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
@@ -48,12 +48,16 @@ impl GenerateContentRequest {
         if is_oauth {
             // OAuth uses Cloud Code Assist API
             url.path_segments_mut()
-                .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
+                .map_err(|_| {
+                    GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string())
+                })?
                 .push("v1internal:generateContent");
         } else {
             // API key uses standard Gemini API
             url.path_segments_mut()
-                .map_err(|_| GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string()))?
+                .map_err(|_| {
+                    GeminiRequestError::UrlBuildError("URL cannot be a base URL".to_string())
+                })?
                 .push(&gemini.api_version)
                 .push("models")
                 .push(&format!("{}:generateContent", self.model));
@@ -61,17 +65,17 @@ impl GenerateContentRequest {
 
         // Handle authentication
         let mut req = gemini.client.post(url);
-        
+
         if let Some(oauth_token) = &gemini.oauth_token {
             // OAuth: use Authorization header
             req = req.header("authorization", format!("Bearer {}", oauth_token));
         } else if let Some(api_key) = &gemini.api_key {
-            // API key: use query parameter  
+            // API key: use query parameter
             req = req.query(&[("key", api_key)]);
         } else {
             return Err(GeminiRequestError::AuthenticationMissing);
         }
-        
+
         // Prepare request body based on API
         let request_body = if is_oauth {
             // Cloud Code Assist API: wrapped format
@@ -87,10 +91,9 @@ impl GenerateContentRequest {
             })
         } else {
             // Standard API: direct format
-            serde_json::to_value(self)
-                .map_err(GeminiRequestError::SerdeError)?
+            serde_json::to_value(self).map_err(GeminiRequestError::SerdeError)?
         };
-        
+
         // Send the HTTP request
         let res = req.json(&request_body).send().await?;
         let status = res.status();
@@ -103,21 +106,54 @@ impl GenerateContentRequest {
             200 | 201 => {
                 if is_oauth {
                     // Cloud Code Assist response format: {"response": {...}}
-                    let wrapped_response: serde_json::Value = serde_json::from_slice(&body_bytes)
-                        .map_err(GeminiRequestError::JsonDeserializationError)?;
-                    
+                    let wrapped_response: serde_json::Value =
+                        serde_json::from_slice(&body_bytes)
+                            .map_err(GeminiRequestError::JsonDeserializationError)?;
+
                     if let Some(response) = wrapped_response.get("response") {
-                        serde_json::from_value(response.clone())
-                            .map_err(GeminiRequestError::JsonDeserializationError)
+                        // Check if the inner response looks like GenerateContentResponse
+                        if response.get("candidates").is_some() || response.get("prompt_feedback").is_some() || response.get("usageMetadata").is_some() {
+                            serde_json::from_value(response.clone())
+                                .map_err(GeminiRequestError::JsonDeserializationError)
+                        } else {
+                            // Check for error in the wrapped response
+                            if let Some(_error_obj) = response.get("error") {
+                                return Err(parse_error_response(status, body_bytes));
+                            } else {
+                                Err(GeminiRequestError::UnexpectedResponse(
+                                    format!("Cloud Code Assist response does not match expected format: {}", response)
+                                ))
+                            }
+                        }
                     } else {
                         Err(GeminiRequestError::UnexpectedResponse(
-                            "Missing 'response' field in Cloud Code Assist API response".to_string()
+                            "Missing 'response' field in Cloud Code Assist API response"
+                                .to_string(),
                         ))
                     }
                 } else {
                     // Standard API response format
-                    serde_json::from_slice::<GenerateContentResponse>(&body_bytes)
-                        .map_err(GeminiRequestError::JsonDeserializationError)
+                    // First, try to parse as JSON Value to check structure
+                    let json_value: serde_json::Value = serde_json::from_slice(&body_bytes)
+                        .map_err(GeminiRequestError::JsonDeserializationError)?;
+
+                     // Check if this looks like a GenerateContentResponse (has candidates, prompt_feedback, or usageMetadata)
+                     if json_value.get("candidates").is_some() || json_value.get("prompt_feedback").is_some() || json_value.get("usageMetadata").is_some() {
+                         // Looks like a valid response, deserialize as GenerateContentResponse
+                         serde_json::from_value(json_value)
+                             .map_err(GeminiRequestError::JsonDeserializationError)
+                     } else {
+                        // Doesn't look like expected response, might be an error with 200 status
+                        // Try to parse as error response
+                        if let Some(_error_obj) = json_value.get("error") {
+                            return Err(parse_error_response(status, body_bytes));
+                        } else {
+                             // Unknown format, return as unexpected response
+                             Err(GeminiRequestError::UnexpectedResponse(
+                                 format!("Response does not match expected GenerateContentResponse format: {}", json_value)
+                             ))
+                         }
+                     }
                 }
             }
             // Rate limit response
@@ -150,8 +186,7 @@ impl GenerateContentRequest {
     pub fn stream(
         &self,
         gemini: &Gemini,
-    ) -> BoxStream<'static, Result<GenerateContentResponse, GeminiRequestError>>
-    {
+    ) -> BoxStream<'static, Result<GenerateContentResponse, GeminiRequestError>> {
         // Clone all required data to make the stream 'static
         let client = gemini.client.clone();
         let oauth_token = gemini.oauth_token.clone();
@@ -162,9 +197,9 @@ impl GenerateContentRequest {
         let request_data = self.clone();
 
         Box::pin(try_stream! {
-            // Determine authentication method  
+            // Determine authentication method
             let is_oauth = oauth_token.is_some();
-            
+
             // Build URL based on authentication method
             let mut url = reqwest::Url::parse(&base_url)
                 .map_err(|e| GeminiRequestError::UrlBuildError(e.to_string()))?;
@@ -183,7 +218,7 @@ impl GenerateContentRequest {
                     .push("models")
                     .push(&format!("{}:streamGenerateContent", request_data.model));
                 url.query_pairs_mut().append_pair("alt", "sse");
-                
+
                 // Add API key to query params
                 if let Some(ref api_key) = api_key {
                     url.query_pairs_mut().append_pair("key", api_key);
@@ -194,12 +229,12 @@ impl GenerateContentRequest {
 
             // Build the HTTP request
             let mut req = client.post(url);
-            
+
             // Add OAuth header if using OAuth
             if let Some(ref oauth_token) = oauth_token {
                 req = req.header("authorization", format!("Bearer {}", oauth_token));
             }
-            
+
             // Prepare request body based on API type
             let request_body = if is_oauth {
                 // Cloud Code Assist API: wrapped format
@@ -218,7 +253,7 @@ impl GenerateContentRequest {
                 serde_json::to_value(&request_data)
                     .map_err(GeminiRequestError::SerdeError)?
             };
-            
+
             // Send the HTTP request
             let res = req.json(&request_body).send()
                 .await?; // Propagate reqwest send errors
@@ -258,40 +293,76 @@ impl GenerateContentRequest {
                              // Process standard SSE lines
                              if let Some(json_data) = line.strip_prefix("data:") {
                                  let trimmed_json_data = json_data.trim_start(); // Trim leading space after "data:"
-                                 if !trimmed_json_data.is_empty() {
-                                     if is_oauth {
-                                         // Cloud Code Assist response format: {"response": {...}}
-                                         match serde_json::from_str::<serde_json::Value>(trimmed_json_data) {
-                                             Ok(wrapped_response) => {
-                                                 if let Some(response) = wrapped_response.get("response") {
-                                                     match serde_json::from_value::<GenerateContentResponse>(response.clone()) {
-                                                         Ok(response) => yield response,
-                                                         Err(e) => {
-                                                             // Log the problematic JSON for debugging
-                                                             eprintln!("DEBUG: Failed to deserialize Gemini OAuth response: {}", serde_json::to_string_pretty(&response).unwrap_or_else(|_| "<failed to pretty print>".to_string()));
-                                                             Err(GeminiRequestError::JsonDeserializationError(e))?;
-                                                         }
-                                                     }
-                                                 }
-                                                 // Ignore wrapped responses without "response" field
-                                             }
-                                             Err(e) => {
-                                                 // Log the raw JSON for debugging
-                                                 eprintln!("DEBUG: Failed to parse Gemini OAuth JSON: {}", trimmed_json_data);
-                                                 Err(GeminiRequestError::JsonDeserializationError(e))?;
-                                             }
-                                         }
-                                     } else {
-                                         // Standard API format
-                                         match serde_json::from_str::<GenerateContentResponse>(trimmed_json_data) {
-                                             Ok(response) => yield response,
-                                             Err(e) => {
-                                                 // Log the raw JSON for debugging
-                                                 eprintln!("DEBUG: Failed to deserialize Gemini API response: {}", trimmed_json_data);
-                                                 Err(GeminiRequestError::JsonDeserializationError(e))?;
-                                             }
-                                         }
-                                     }
+                                  if !trimmed_json_data.is_empty() {
+                                      if is_oauth {
+                                          // Cloud Code Assist response format: {"response": {...}}
+                                          match serde_json::from_str::<serde_json::Value>(trimmed_json_data) {
+                                              Ok(wrapped_response) => {
+                                                   if let Some(response) = wrapped_response.get("response") {
+                                                       // Check if the inner response looks like GenerateContentResponse
+                                                       if response.get("candidates").is_some() || response.get("prompt_feedback").is_some() || response.get("usageMetadata").is_some() {
+                                                           match serde_json::from_value::<GenerateContentResponse>(response.clone()) {
+                                                               Ok(response) => yield response,
+                                                               Err(e) => {
+                                                                   // Log the problematic JSON for debugging
+                                                                   eprintln!("DEBUG: Failed to deserialize Gemini OAuth response: {}", serde_json::to_string_pretty(&response).unwrap_or_else(|_| "<failed to pretty print>".to_string()));
+                                                                   Err(GeminiRequestError::JsonDeserializationError(e))?;
+                                                               }
+                                                           }
+                                                       } else {
+                                                           // Check for error in the wrapped response
+                                                           if let Some(_error_obj) = response.get("error") {
+                                                               Err(GeminiRequestError::UnexpectedResponse(
+                                                                   format!("Error in Cloud Code Assist stream response: {}", response)
+                                                               ))?;
+                                                           } else {
+                                                               // Ignore invalid responses without error
+                                                               continue;
+                                                           }
+                                                       }
+                                                   }
+                                                  // Ignore wrapped responses without "response" field
+                                              }
+                                              Err(e) => {
+                                                  // Log the raw JSON for debugging
+                                                  eprintln!("DEBUG: Failed to parse Gemini OAuth JSON: {}", trimmed_json_data);
+                                                  Err(GeminiRequestError::JsonDeserializationError(e))?;
+                                              }
+                                          }
+                                      } else {
+                                          // Standard API format
+                                          // First, try to parse as JSON Value to check structure
+                                           match serde_json::from_str::<serde_json::Value>(trimmed_json_data) {
+                                               Ok(json_value) => {
+                                                   // Check if this looks like a GenerateContentResponse
+                                                   if json_value.get("candidates").is_some() || json_value.get("prompt_feedback").is_some() || json_value.get("usageMetadata").is_some() {
+                                                       match serde_json::from_value::<GenerateContentResponse>(json_value) {
+                                                           Ok(response) => yield response,
+                                                           Err(e) => {
+                                                               // Log the raw JSON for debugging
+                                                               eprintln!("DEBUG: Failed to deserialize Gemini API response: {}", trimmed_json_data);
+                                                               Err(GeminiRequestError::JsonDeserializationError(e))?;
+                                                           }
+                                                       }
+                                                    } else {
+                                                        // Check for error fields
+                                                        if let Some(_error_obj) = json_value.get("error") {
+                                                            Err(GeminiRequestError::UnexpectedResponse(
+                                                                format!("Error in stream response: {}", json_value)
+                                                            ))?;
+                                                        } else {
+                                                            // Ignore invalid responses without error
+                                                            continue;
+                                                        }
+                                                    }
+                                               }
+                                              Err(e) => {
+                                                  // Log the raw JSON for debugging
+                                                  eprintln!("DEBUG: Failed to parse Gemini API JSON: {}", trimmed_json_data);
+                                                  Err(GeminiRequestError::JsonDeserializationError(e))?;
+                                              }
+                                          }
+                                      }
                                  }
                                  // else: Ignore empty data field ("data: \n")
                              } else if line.starts_with(':') {
@@ -310,41 +381,75 @@ impl GenerateContentRequest {
                         if !line.is_empty()
                             && let Some(json_data) = line.strip_prefix("data:") {
                                 let trimmed_json_data = json_data.trim_start();
-                                if !trimmed_json_data.is_empty() {
-                                     if is_oauth {
-                                         // Cloud Code Assist response format: {"response": {...}}
-                                         match serde_json::from_str::<serde_json::Value>(trimmed_json_data) {
-                                             Ok(wrapped_response) => {
-                                                 if let Some(response) = wrapped_response.get("response") {
-                                                     match serde_json::from_value::<GenerateContentResponse>(response.clone()) {
-                                                         Ok(response) => yield response,
-                                                         Err(e) => {
-                                                             // Log the problematic JSON for debugging
-                                                             eprintln!("DEBUG: Failed to deserialize Gemini OAuth response: {}", serde_json::to_string_pretty(&response).unwrap_or_else(|_| "<failed to pretty print>".to_string()));
-                                                             Err(GeminiRequestError::JsonDeserializationError(e))?;
-                                                         }
-                                                     }
-                                                 }
-                                                 // Ignore wrapped responses without "response" field
-                                             }
-                                             Err(e) => {
-                                                 // Log the raw JSON for debugging
-                                                 eprintln!("DEBUG: Failed to parse Gemini OAuth JSON: {}", trimmed_json_data);
-                                                 Err(GeminiRequestError::JsonDeserializationError(e))?;
-                                             }
-                                         }
-                                     } else {
-                                         // Standard API format
-                                         match serde_json::from_str::<GenerateContentResponse>(trimmed_json_data) {
-                                             Ok(response) => yield response,
-                                             Err(e) => {
-                                                 // Log the raw JSON for debugging
-                                                 eprintln!("DEBUG: Failed to deserialize Gemini API response: {}", trimmed_json_data);
-                                                 Err(GeminiRequestError::JsonDeserializationError(e))?;
-                                             }
-                                         }
-                                     }
-                                }
+                                 if !trimmed_json_data.is_empty() {
+                                      if is_oauth {
+                                          // Cloud Code Assist response format: {"response": {...}}
+                                          match serde_json::from_str::<serde_json::Value>(trimmed_json_data) {
+                                              Ok(wrapped_response) => {
+                                                   if let Some(response) = wrapped_response.get("response") {
+                                                       // Check if the inner response looks like GenerateContentResponse
+                                                       if response.get("candidates").is_some() || response.get("prompt_feedback").is_some() || response.get("usageMetadata").is_some() {
+                                                           match serde_json::from_value::<GenerateContentResponse>(response.clone()) {
+                                                               Ok(response) => yield response,
+                                                               Err(e) => {
+                                                                   // Log the problematic JSON for debugging
+                                                                   eprintln!("DEBUG: Failed to deserialize Gemini OAuth response: {}", serde_json::to_string_pretty(&response).unwrap_or_else(|_| "<failed to pretty print>".to_string()));
+                                                                   Err(GeminiRequestError::JsonDeserializationError(e))?;
+                                                               }
+                                                           }
+                                                       } else {
+                                                           // Check for error in the wrapped response
+                                                           if let Some(_error_obj) = response.get("error") {
+                                                               Err(GeminiRequestError::UnexpectedResponse(
+                                                                   format!("Error in Cloud Code Assist stream response: {}", response)
+                                                               ))?;
+                                                           } else {
+                                                               // Ignore invalid responses without error
+                                                           }
+                                                       }
+                                                   }
+                                                  // Ignore wrapped responses without "response" field
+                                              }
+                                              Err(e) => {
+                                                  // Log the raw JSON for debugging
+                                                  eprintln!("DEBUG: Failed to parse Gemini OAuth JSON: {}", trimmed_json_data);
+                                                  Err(GeminiRequestError::JsonDeserializationError(e))?;
+                                              }
+                                          }
+                                      } else {
+                                          // Standard API format
+                                          // First, try to parse as JSON Value to check structure
+                                           match serde_json::from_str::<serde_json::Value>(trimmed_json_data) {
+                                               Ok(json_value) => {
+                                                   // Check if this looks like a GenerateContentResponse
+                                                   if json_value.get("candidates").is_some() || json_value.get("prompt_feedback").is_some() || json_value.get("usageMetadata").is_some() {
+                                                       match serde_json::from_value::<GenerateContentResponse>(json_value) {
+                                                           Ok(response) => yield response,
+                                                           Err(e) => {
+                                                               // Log the raw JSON for debugging
+                                                               eprintln!("DEBUG: Failed to deserialize Gemini API response: {}", trimmed_json_data);
+                                                               Err(GeminiRequestError::JsonDeserializationError(e))?;
+                                                           }
+                                                       }
+                                                    } else {
+                                                        // Check for error fields
+                                                        if let Some(_error_obj) = json_value.get("error") {
+                                                            Err(GeminiRequestError::UnexpectedResponse(
+                                                                format!("Error in stream response: {}", json_value)
+                                                            ))?;
+                                                        } else {
+                                                            // Ignore invalid responses without error
+                                                        }
+                                                    }
+                                               }
+                                              Err(e) => {
+                                                  // Log the raw JSON for debugging
+                                                  eprintln!("DEBUG: Failed to parse Gemini API JSON: {}", trimmed_json_data);
+                                                  Err(GeminiRequestError::JsonDeserializationError(e))?;
+                                              }
+                                          }
+                                      }
+                                 }
                             }
                             // Ignore other line types in the final fragment
                      }

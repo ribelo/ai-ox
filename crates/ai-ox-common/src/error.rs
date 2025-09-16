@@ -106,28 +106,33 @@ pub fn parse_api_error_response(status: reqwest::StatusCode, body: &[u8]) -> Pro
             return parsed_error;
         }
     }
-    
+
     // Fall back to plain text error
     let body_str = String::from_utf8_lossy(body);
-    ProviderError::UnexpectedResponse(format!(
-        "HTTP {}: {}",
-        status.as_u16(),
-        body_str
-    ))
+    ProviderError::UnexpectedResponse(format!("HTTP {}: {}", status.as_u16(), body_str))
 }
 
 /// Extract structured error from various provider JSON error formats
-fn extract_structured_error(json: &serde_json::Value, status: reqwest::StatusCode) -> Option<ProviderError> {
+fn extract_structured_error(
+    json: &serde_json::Value,
+    status: reqwest::StatusCode,
+) -> Option<ProviderError> {
     // OpenAI/Groq format: {"error": {"message": "...", "type": "...", "code": "..."}}
     if let Some(error_obj) = json.get("error") {
         if let Some(message) = error_obj.get("message").and_then(|m| m.as_str()) {
-            let code = error_obj.get("code").and_then(|c| c.as_str()).map(|s| s.to_string());
+            let code = error_obj
+                .get("code")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string());
             let error_type = error_obj.get("type").and_then(|t| t.as_str());
-            
+
             // Create details object with any extra fields
             let mut details = serde_json::Map::new();
             if let Some(et) = error_type {
-                details.insert("type".to_string(), serde_json::Value::String(et.to_string()));
+                details.insert(
+                    "type".to_string(),
+                    serde_json::Value::String(et.to_string()),
+                );
             }
             // Mistral-specific fields
             if let Some(param) = error_obj.get("param") {
@@ -136,25 +141,32 @@ fn extract_structured_error(json: &serde_json::Value, status: reqwest::StatusCod
             if let Some(detail) = error_obj.get("detail") {
                 details.insert("detail".to_string(), detail.clone());
             }
-            
+
             return Some(ProviderError::InvalidRequest {
                 code,
                 message: message.to_string(),
-                details: if details.is_empty() { None } else { Some(serde_json::Value::Object(details)) },
+                details: if details.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::Value::Object(details))
+                },
             });
         }
     }
-    
+
     // OpenRouter format: {"error": {"code": 123, "message": "..."}, "user_id": "..."}
     if let Some(error_obj) = json.get("error") {
         if let Some(code_num) = error_obj.get("code").and_then(|c| c.as_i64()) {
             if let Some(message) = error_obj.get("message").and_then(|m| m.as_str()) {
                 let mut details = serde_json::Map::new();
-                details.insert("status".to_string(), serde_json::Value::String(status.as_u16().to_string()));
+                details.insert(
+                    "status".to_string(),
+                    serde_json::Value::String(status.as_u16().to_string()),
+                );
                 if let Some(user_id) = json.get("user_id") {
                     details.insert("user_id".to_string(), user_id.clone());
                 }
-                
+
                 return Some(ProviderError::InvalidRequest {
                     code: Some(code_num.to_string()),
                     message: message.to_string(),
@@ -163,12 +175,15 @@ fn extract_structured_error(json: &serde_json::Value, status: reqwest::StatusCod
             }
         }
     }
-    
+
     // Mistral direct format: {"detail": "...", "message": "...", "type": "...", "param": "...", "code": "..."}
     if let Some(message) = json.get("message").and_then(|m| m.as_str()) {
-        let code = json.get("code").and_then(|c| c.as_str()).map(|s| s.to_string());
+        let code = json
+            .get("code")
+            .and_then(|c| c.as_str())
+            .map(|s| s.to_string());
         let mut details = serde_json::Map::new();
-        
+
         if let Some(detail) = json.get("detail") {
             details.insert("detail".to_string(), detail.clone());
         }
@@ -178,35 +193,46 @@ fn extract_structured_error(json: &serde_json::Value, status: reqwest::StatusCod
         if let Some(error_type) = json.get("type") {
             details.insert("type".to_string(), error_type.clone());
         }
-        
+
         return Some(ProviderError::InvalidRequest {
             code,
             message: message.to_string(),
-            details: if details.is_empty() { None } else { Some(serde_json::Value::Object(details)) },
+            details: if details.is_empty() {
+                None
+            } else {
+                Some(serde_json::Value::Object(details))
+            },
         });
     }
-    
+
     // Anthropic format: {"error": {"type": "...", "message": "...", "param": "...", "code": "..."}}
     if let Some(error_obj) = json.get("error") {
         if let Some(message) = error_obj.get("message").and_then(|m| m.as_str()) {
-            let code = error_obj.get("code").and_then(|c| c.as_str()).map(|s| s.to_string());
+            let code = error_obj
+                .get("code")
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string());
             let mut details = serde_json::Map::new();
-            
+
             if let Some(param) = error_obj.get("param") {
                 details.insert("param".to_string(), param.clone());
             }
             if let Some(error_type) = error_obj.get("type") {
                 details.insert("type".to_string(), error_type.clone());
             }
-            
+
             return Some(ProviderError::InvalidRequest {
                 code,
                 message: message.to_string(),
-                details: if details.is_empty() { None } else { Some(serde_json::Value::Object(details)) },
+                details: if details.is_empty() {
+                    None
+                } else {
+                    Some(serde_json::Value::Object(details))
+                },
             });
         }
     }
-    
+
     // Generic top-level message
     if let Some(message) = json.get("message").and_then(|m| m.as_str()) {
         return Some(ProviderError::InvalidRequest {
@@ -215,7 +241,7 @@ fn extract_structured_error(json: &serde_json::Value, status: reqwest::StatusCod
             details: None,
         });
     }
-    
+
     None
 }
 

@@ -1,0 +1,13 @@
+{
+  "type": "tool_result",
+  "tool_use_id": "toolu_01T6x4J8DqKVfPqz3UVL5Z",
+  "content": [
+    {
+      "type": "text",
+      "text": "total 0\ndrwxr-xr-x  2 user  staff  64 Jan  1 00:00 ."
+    }
+  ],
+  "cache_control": {
+    "type": "ephemeral"
+  }
+}

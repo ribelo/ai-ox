@@ -116,9 +116,12 @@ pub struct ThinkingContent {
 
 impl Text {
     pub fn new(text: String) -> Self {
-        Self { text, cache_control: None }
+        Self {
+            text,
+            cache_control: None,
+        }
     }
-    
+
     pub fn as_str(&self) -> &str {
         &self.text
     }
@@ -126,13 +129,19 @@ impl Text {
 
 impl ThinkingContent {
     pub fn new(text: String) -> Self {
-        Self { text, signature: None }
+        Self {
+            text,
+            signature: None,
+        }
     }
-    
+
     pub fn with_signature(text: String, signature: String) -> Self {
-        Self { text, signature: Some(signature) }
+        Self {
+            text,
+            signature: Some(signature),
+        }
     }
-    
+
     pub fn as_str(&self) -> &str {
         &self.text
     }
@@ -147,13 +156,15 @@ impl fmt::Display for Text {
 #[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ContentBlock {
-    Text { text: String },
-    ToolUse { 
-        id: String, 
-        name: String, 
-        input: serde_json::Value 
+    Text {
+        text: String,
     },
-    Thinking { 
+    ToolUse {
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    Thinking {
         text: String,
         #[serde(skip_serializing_if = "Option::is_none")]
         signature: Option<String>,
@@ -162,7 +173,10 @@ pub enum ContentBlock {
 
 impl From<String> for Content {
     fn from(text: String) -> Self {
-        Content::Text(Text { text, cache_control: None })
+        Content::Text(Text {
+            text,
+            cache_control: None,
+        })
     }
 }
 
@@ -193,12 +207,16 @@ impl fmt::Display for Content {
             Content::Text(text) => write!(f, "{}", text.text),
             Content::Image { source } => write!(f, "[Image: {}]", source),
             Content::ToolUse(tool_use) => write!(f, "[Tool Use: {}]", tool_use.name),
-            Content::ToolResult(tool_result) => write!(f, "[Tool Result: {}]", tool_result.tool_use_id),
-            Content::Thinking(thinking) => write!(f, "[Thinking: {}]", 
-                if thinking.text.len() > 50 { 
-                    format!("{}...", &thinking.text[..47]) 
-                } else { 
-                    thinking.text.clone() 
+            Content::ToolResult(tool_result) => {
+                write!(f, "[Tool Result: {}]", tool_result.tool_use_id)
+            }
+            Content::Thinking(thinking) => write!(
+                f,
+                "[Thinking: {}]",
+                if thinking.text.len() > 50 {
+                    format!("{}...", &thinking.text[..47])
+                } else {
+                    thinking.text.clone()
                 }
             ),
             Content::SearchResult(result) => write!(f, "[Search Result: {}]", result.title),
@@ -213,7 +231,6 @@ pub enum StringOrContents {
     String(String),
     Contents(Vec<Content>),
 }
-
 
 impl StringOrContents {
     pub fn as_vec(&self) -> Vec<Content> {
@@ -233,30 +250,28 @@ impl StringOrContents {
     pub fn as_string(&self) -> String {
         match self {
             StringOrContents::String(text) => text.clone(),
-            StringOrContents::Contents(contents) => {
-                contents.iter()
-                    .filter_map(|content| match content {
-                        Content::Text(text) => Some(text.text.clone()),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("")
-            }
+            StringOrContents::Contents(contents) => contents
+                .iter()
+                .filter_map(|content| match content {
+                    Content::Text(text) => Some(text.text.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(""),
         }
     }
 
     pub fn into_string(self) -> String {
         match self {
             StringOrContents::String(text) => text,
-            StringOrContents::Contents(contents) => {
-                contents.into_iter()
-                    .filter_map(|content| match content {
-                        Content::Text(text) => Some(text.text),
-                        _ => None,
-                    })
-                    .collect::<Vec<_>>()
-                    .join("")
-            }
+            StringOrContents::Contents(contents) => contents
+                .into_iter()
+                .filter_map(|content| match content {
+                    Content::Text(text) => Some(text.text),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(""),
         }
     }
 }
@@ -293,9 +308,9 @@ pub struct Message {
 
 impl Message {
     pub fn new(role: Role, content: Vec<Content>) -> Self {
-        Self { 
-            role, 
-            content: StringOrContents::Contents(content) 
+        Self {
+            role,
+            content: StringOrContents::Contents(content),
         }
     }
 
@@ -452,10 +467,10 @@ mod tests {
         // Test deserializing a simple string
         let json = r#""Hello world""#;
         let result: Result<StringOrContents, _> = serde_json::from_str(json);
-        
+
         assert!(result.is_ok());
         let content = result.unwrap();
-        
+
         match content {
             StringOrContents::String(s) => assert_eq!(s, "Hello world"),
             StringOrContents::Contents(_) => panic!("Expected String variant"),
@@ -467,10 +482,10 @@ mod tests {
         // Test deserializing a content array
         let json = r#"[{"type": "text", "text": "Hello world"}]"#;
         let result: Result<StringOrContents, _> = serde_json::from_str(json);
-        
+
         assert!(result.is_ok());
         let content = result.unwrap();
-        
+
         match content {
             StringOrContents::String(_) => panic!("Expected Contents variant"),
             StringOrContents::Contents(contents) => {
@@ -489,13 +504,13 @@ mod tests {
             "role": "user",
             "content": "Hello world"
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         assert_eq!(message.role, Role::User);
-        
+
         match message.content {
             StringOrContents::String(s) => assert_eq!(s, "Hello world"),
             StringOrContents::Contents(_) => panic!("Expected String variant"),
@@ -508,13 +523,13 @@ mod tests {
             "role": "user", 
             "content": [{"type": "text", "text": "Hello world"}]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         assert_eq!(message.role, Role::User);
-        
+
         match message.content {
             StringOrContents::String(_) => panic!("Expected Contents variant"),
             StringOrContents::Contents(contents) => {
@@ -527,7 +542,7 @@ mod tests {
         }
     }
 
-    #[test] 
+    #[test]
     fn test_serialization_roundtrip_string() {
         let original = StringOrContents::String("Hello world".to_string());
         let json = serde_json::to_string(&original).unwrap();
@@ -537,9 +552,8 @@ mod tests {
 
     #[test]
     fn test_serialization_roundtrip_contents() {
-        let original = StringOrContents::Contents(vec![
-            Content::Text(Text::new("Hello world".to_string()))
-        ]);
+        let original =
+            StringOrContents::Contents(vec![Content::Text(Text::new("Hello world".to_string()))]);
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: StringOrContents = serde_json::from_str(&json).unwrap();
         assert_eq!(original, deserialized);
@@ -555,10 +569,10 @@ mod tests {
                 {"type": "text", "text": "fn main() { println!(\"Hello\"); }"}
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::Contents(contents) => {
@@ -568,10 +582,12 @@ mod tests {
                     _ => panic!("Expected Text content"),
                 }
                 match &contents[1] {
-                    Content::Text(text) => assert_eq!(text.text, "fn main() { println!(\"Hello\"); }"),
+                    Content::Text(text) => {
+                        assert_eq!(text.text, "fn main() { println!(\"Hello\"); }")
+                    }
                     _ => panic!("Expected Text content"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant"),
         }
     }
@@ -586,18 +602,25 @@ mod tests {
             "text": "Summarize this coding conversation in under 50 characters.\nCapture the main task, key files, problems addressed, and current status.",
             "cache_control": {"type": "ephemeral"}
         }"#;
-        
+
         let result: Result<Content, _> = serde_json::from_str(json);
-        assert!(result.is_ok(), "Failed to deserialize text with cache_control: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize text with cache_control: {:?}",
+            result.err()
+        );
+
         let content = result.unwrap();
         match content {
             Content::Text(text) => {
-                assert_eq!(text.text, "Summarize this coding conversation in under 50 characters.\nCapture the main task, key files, problems addressed, and current status.");
+                assert_eq!(
+                    text.text,
+                    "Summarize this coding conversation in under 50 characters.\nCapture the main task, key files, problems addressed, and current status."
+                );
                 assert!(text.cache_control.is_some());
                 let cache_control = text.cache_control.unwrap();
                 assert_eq!(cache_control.cache_type, "ephemeral");
-            },
+            }
             _ => panic!("Expected Text content"),
         }
     }
@@ -609,16 +632,16 @@ mod tests {
             "type": "text",
             "text": "Hello world"
         }"#;
-        
+
         let result: Result<Content, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let content = result.unwrap();
         match content {
             Content::Text(text) => {
                 assert_eq!(text.text, "Hello world");
                 assert!(text.cache_control.is_none());
-            },
+            }
             _ => panic!("Expected Text content"),
         }
     }
@@ -631,24 +654,31 @@ mod tests {
             "text": "Summarize this coding conversation in under 50 characters.\nCapture the main task, key files, problems addressed, and current status.",
             "cache_control": {"type": "ephemeral"}
         }]"#;
-        
+
         let result: Result<StringOrContents, _> = serde_json::from_str(json);
-        assert!(result.is_ok(), "Failed to deserialize system content with cache_control: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "Failed to deserialize system content with cache_control: {:?}",
+            result.err()
+        );
+
         let content = result.unwrap();
         match content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 1);
                 match &contents[0] {
                     Content::Text(text) => {
-                        assert_eq!(text.text, "Summarize this coding conversation in under 50 characters.\nCapture the main task, key files, problems addressed, and current status.");
+                        assert_eq!(
+                            text.text,
+                            "Summarize this coding conversation in under 50 characters.\nCapture the main task, key files, problems addressed, and current status."
+                        );
                         assert!(text.cache_control.is_some());
                         let cache_control = text.cache_control.as_ref().unwrap();
                         assert_eq!(cache_control.cache_type, "ephemeral");
-                    },
+                    }
                     _ => panic!("Expected Text content"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant"),
         }
     }
@@ -662,10 +692,10 @@ mod tests {
                 cache_type: "ephemeral".to_string(),
             }),
         });
-        
+
         let json = serde_json::to_string(&original).unwrap();
         let deserialized: Content = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(original, deserialized);
     }
 
@@ -682,16 +712,21 @@ mod tests {
                 {"type": "text", "text": "tools.0.custom.input_schema: Field required"}
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
-        assert!(result.is_ok(), "Failed to parse multi-text content message: {:?}", result.err());
-        
+        assert!(
+            result.is_ok(),
+            "Failed to parse multi-text content message: {:?}",
+            result.err()
+        );
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 4);
                 // Verify all text blocks are preserved
-                let texts: Vec<String> = contents.iter()
+                let texts: Vec<String> = contents
+                    .iter()
                     .filter_map(|c| match c {
                         Content::Text(t) => Some(t.text.clone()),
                         _ => None,
@@ -699,7 +734,7 @@ mod tests {
                     .collect();
                 assert_eq!(texts.len(), 4);
                 assert!(texts[3].contains("tools.0.custom.input_schema"));
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant for multi-text"),
         }
     }
@@ -715,16 +750,17 @@ mod tests {
                 {"type": "text", "text": "And fine-grained-tool-streaming-2025-05-14"}
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 3);
                 // Verify beta feature references are preserved
-                let all_text = contents.iter()
+                let all_text = contents
+                    .iter()
                     .filter_map(|c| match c {
                         Content::Text(t) => Some(t.text.as_str()),
                         _ => None,
@@ -734,7 +770,7 @@ mod tests {
                 assert!(all_text.contains("claude-code-20250219"));
                 assert!(all_text.contains("interleaved-thinking-2025-05-14"));
                 assert!(all_text.contains("fine-grained-tool-streaming-2025-05-14"));
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents for beta features test"),
         }
     }
@@ -743,17 +779,20 @@ mod tests {
     fn test_large_content_handling() {
         // Test handling of large content like we saw in logs (112KB+ requests)
         let large_text = "x".repeat(100000); // 100KB of text
-        let json = format!(r#"{{
+        let json = format!(
+            r#"{{
             "role": "user",
             "content": [
                 {{"type": "text", "text": "Processing large content:"}},
                 {{"type": "text", "text": "{}"}}
             ]
-        }}"#, large_text);
-        
+        }}"#,
+            large_text
+        );
+
         let result: Result<Message, _> = serde_json::from_str(&json);
         assert!(result.is_ok(), "Failed to parse large content message");
-        
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::Contents(contents) => {
@@ -762,10 +801,10 @@ mod tests {
                     Content::Text(text) => {
                         assert_eq!(text.text.len(), 100000);
                         assert_eq!(text.text, large_text);
-                    },
+                    }
                     _ => panic!("Expected Text content"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents for large content"),
         }
     }
@@ -774,8 +813,9 @@ mod tests {
     fn test_mixed_string_and_content_scenarios() {
         // Test edge case: ensure we handle ordering correctly (String first in untagged)
         let string_json = r#"{"role": "user", "content": "Simple string"}"#;
-        let array_json = r#"{"role": "user", "content": [{"type": "text", "text": "Array content"}]}"#;
-        
+        let array_json =
+            r#"{"role": "user", "content": [{"type": "text", "text": "Array content"}]}"#;
+
         // Test string parsing
         let string_result: Result<Message, _> = serde_json::from_str(string_json);
         assert!(string_result.is_ok());
@@ -783,8 +823,8 @@ mod tests {
             StringOrContents::String(s) => assert_eq!(s, "Simple string"),
             StringOrContents::Contents(_) => panic!("Should parse as string"),
         }
-        
-        // Test array parsing  
+
+        // Test array parsing
         let array_result: Result<Message, _> = serde_json::from_str(array_json);
         assert!(array_result.is_ok());
         match array_result.unwrap().content {
@@ -794,7 +834,7 @@ mod tests {
                     Content::Text(text) => assert_eq!(text.text, "Array content"),
                     _ => panic!("Expected Text content"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Should parse as array"),
         }
     }
@@ -806,10 +846,10 @@ mod tests {
             "role": "user", 
             "content": "Hello, Claude"
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         assert_eq!(message.role, Role::User);
         match message.content {
@@ -827,20 +867,22 @@ mod tests {
                 {"type": "text", "text": "Hello! How can I help you today?"}
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         assert_eq!(message.role, Role::Assistant);
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 1);
                 match &contents[0] {
-                    Content::Text(text) => assert_eq!(text.text, "Hello! How can I help you today?"),
+                    Content::Text(text) => {
+                        assert_eq!(text.text, "Hello! How can I help you today?")
+                    }
                     _ => panic!("Expected Text content"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant"),
         }
     }
@@ -862,34 +904,35 @@ mod tests {
                 }
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 2);
-                
+
                 // First content: text
                 match &contents[0] {
                     Content::Text(text) => assert_eq!(text.text, "What's in this image?"),
                     _ => panic!("Expected Text content"),
                 }
-                
+
                 // Second content: image
                 match &contents[1] {
-                    Content::Image { source } => {
-                        match source {
-                            ImageSource::Base64 { media_type, data } => {
-                                assert_eq!(media_type, "image/png");
-                                assert_eq!(data, "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==");
-                            }
+                    Content::Image { source } => match source {
+                        ImageSource::Base64 { media_type, data } => {
+                            assert_eq!(media_type, "image/png");
+                            assert_eq!(
+                                data,
+                                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+                            );
                         }
                     },
                     _ => panic!("Expected Image content"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant"),
         }
     }
@@ -912,22 +955,22 @@ mod tests {
                 }
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         assert_eq!(message.role, Role::Assistant);
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 2);
-                
+
                 // First content: text
                 match &contents[0] {
                     Content::Text(text) => assert_eq!(text.text, "I'll help you get the weather."),
                     _ => panic!("Expected Text content"),
                 }
-                
+
                 // Second content: tool use
                 match &contents[1] {
                     Content::ToolUse(tool_use) => {
@@ -938,10 +981,10 @@ mod tests {
                             "unit": "celsius"
                         });
                         assert_eq!(tool_use.input, expected_input);
-                    },
+                    }
                     _ => panic!("Expected ToolUse content"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant"),
         }
     }
@@ -961,25 +1004,25 @@ mod tests {
                 }
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         assert_eq!(message.role, Role::User);
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 1);
-                
+
                 match &contents[0] {
                     Content::ToolResult(tool_result) => {
                         assert_eq!(tool_result.tool_use_id, "call_1234567890");
                         assert_eq!(tool_result.is_error, None); // Default when not specified
                         assert_eq!(tool_result.content.len(), 1);
-                    },
+                    }
                     _ => panic!("Expected ToolResult content"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant"),
         }
     }
@@ -995,15 +1038,15 @@ mod tests {
                 {"type": "text", "text": "Third paragraph."}
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 3);
-                
+
                 let expected_texts = ["First paragraph.", "Second paragraph.", "Third paragraph."];
                 for (i, expected) in expected_texts.iter().enumerate() {
                     match &contents[i] {
@@ -1011,7 +1054,7 @@ mod tests {
                         _ => panic!("Expected Text content at index {}", i),
                     }
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant"),
         }
     }
@@ -1023,10 +1066,10 @@ mod tests {
             "role": "user",
             "content": ""
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::String(s) => assert_eq!(s, ""),
@@ -1041,10 +1084,10 @@ mod tests {
             "role": "user",
             "content": []
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::Contents(contents) => assert_eq!(contents.len(), 0),
@@ -1059,10 +1102,10 @@ mod tests {
             "role": "assistant",
             "content": "The answer is ("
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         assert_eq!(message.role, Role::Assistant);
         match message.content {
@@ -1095,48 +1138,46 @@ mod tests {
                 }
             ]
         }"#;
-        
+
         let result: Result<Message, _> = serde_json::from_str(json);
         assert!(result.is_ok());
-        
+
         let message = result.unwrap();
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 4);
-                
+
                 // Verify each content type in order
                 match &contents[0] {
                     Content::Text(text) => assert_eq!(text.text, "I can see the image you shared."),
                     _ => panic!("Expected Text at index 0"),
                 }
-                
+
                 match &contents[1] {
-                    Content::Image { source } => {
-                        match source {
-                            ImageSource::Base64 { media_type, data } => {
-                                assert_eq!(media_type, "image/jpeg");
-                                assert_eq!(data, "/9j/4AAQSkZJRgABAQEAYABgAAD//2Q=");
-                            }
+                    Content::Image { source } => match source {
+                        ImageSource::Base64 { media_type, data } => {
+                            assert_eq!(media_type, "image/jpeg");
+                            assert_eq!(data, "/9j/4AAQSkZJRgABAQEAYABgAAD//2Q=");
                         }
                     },
                     _ => panic!("Expected Image at index 1"),
                 }
-                
+
                 match &contents[2] {
                     Content::Text(text) => assert_eq!(text.text, "Let me analyze it for you."),
                     _ => panic!("Expected Text at index 2"),
                 }
-                
+
                 match &contents[3] {
                     Content::ToolUse(tool_use) => {
                         assert_eq!(tool_use.id, "analyze_123");
                         assert_eq!(tool_use.name, "analyze_image");
                         let expected = serde_json::json!({"mode": "detailed"});
                         assert_eq!(tool_use.input, expected);
-                    },
+                    }
                     _ => panic!("Expected ToolUse at index 3"),
                 }
-            },
+            }
             StringOrContents::String(_) => panic!("Expected Contents variant"),
         }
     }
@@ -1148,106 +1189,113 @@ mod tests {
             role: Role::User,
             content: StringOrContents::String("Hello".to_string()),
         };
-        
+
         let json_string = serde_json::to_string(&original_string).unwrap();
         let deserialized_string: Message = serde_json::from_str(&json_string).unwrap();
-        
+
         assert_eq!(original_string, deserialized_string);
-        
+
         let original_array = Message {
             role: Role::Assistant,
-            content: StringOrContents::Contents(vec![
-                Content::Text(Text::new("Hello".to_string()))
-            ]),
+            content: StringOrContents::Contents(vec![Content::Text(Text::new(
+                "Hello".to_string(),
+            ))]),
         };
-        
+
         let json_array = serde_json::to_string(&original_array).unwrap();
         let deserialized_array: Message = serde_json::from_str(&json_array).unwrap();
-        
+
         assert_eq!(original_array, deserialized_array);
     }
 
     // Tests for thinking content functionality
-    
+
     #[test]
     fn test_thinking_content_creation() {
         let thinking = ThinkingContent::new("Let me think about this problem...".to_string());
         assert_eq!(thinking.text, "Let me think about this problem...");
         assert_eq!(thinking.signature, None);
-        
+
         let thinking_with_sig = ThinkingContent::with_signature(
             "Complex reasoning here...".to_string(),
-            "signature123".to_string()
+            "signature123".to_string(),
         );
         assert_eq!(thinking_with_sig.text, "Complex reasoning here...");
-        assert_eq!(thinking_with_sig.signature, Some("signature123".to_string()));
+        assert_eq!(
+            thinking_with_sig.signature,
+            Some("signature123".to_string())
+        );
     }
-    
+
     #[test]
     fn test_thinking_content_serialization() {
         let thinking = ThinkingContent {
             text: "I need to analyze this step by step.".to_string(),
             signature: Some("sig_abc123".to_string()),
         };
-        
+
         let json = serde_json::to_string(&thinking).unwrap();
         let deserialized: ThinkingContent = serde_json::from_str(&json).unwrap();
-        
+
         assert_eq!(thinking, deserialized);
     }
-    
+
     #[test]
     fn test_thinking_content_without_signature() {
         let thinking = ThinkingContent {
             text: "Simple thinking process.".to_string(),
             signature: None,
         };
-        
+
         let json = serde_json::to_string(&thinking).unwrap();
-        assert!(!json.contains("signature"), "Signature should be omitted when None");
-        
+        assert!(
+            !json.contains("signature"),
+            "Signature should be omitted when None"
+        );
+
         let deserialized: ThinkingContent = serde_json::from_str(&json).unwrap();
         assert_eq!(thinking, deserialized);
     }
-    
+
     #[test]
     fn test_content_thinking_variant() {
         let content = Content::Thinking(ThinkingContent::new("Reasoning...".to_string()));
-        
+
         let json = serde_json::to_string(&content).unwrap();
         let expected = r#"{"type":"thinking","text":"Reasoning..."}"#;
         assert_eq!(json, expected);
-        
+
         let deserialized: Content = serde_json::from_str(&json).unwrap();
         assert_eq!(content, deserialized);
     }
-    
+
     #[test]
     fn test_thinking_content_display() {
         let content = Content::Thinking(ThinkingContent::new(
-            "This is a very long thinking process that should be truncated in display".to_string()
+            "This is a very long thinking process that should be truncated in display".to_string(),
         ));
-        
+
         let display = format!("{}", content);
         assert!(display.starts_with("[Thinking:"));
         assert!(display.contains("..."));
         assert!(display.len() < 100); // Should be truncated
     }
-    
+
     #[test]
     fn test_content_block_thinking() {
-        let json = r#"{"type":"thinking","text":"Let me think about this...","signature":"sig123"}"#;
+        let json =
+            r#"{"type":"thinking","text":"Let me think about this...","signature":"sig123"}"#;
         let content_block: ContentBlock = serde_json::from_str(json).unwrap();
-        
+
         match content_block {
             ContentBlock::Thinking { text, signature } => {
                 assert_eq!(text, "Let me think about this...");
                 assert_eq!(signature, Some("sig123".to_string()));
-            },
+            }
             _ => panic!("Expected Thinking content block"),
         }
     }
-    
+
     #[test]
     fn test_assistant_message_with_thinking() {
         let json = r#"{
@@ -1257,44 +1305,44 @@ mod tests {
                 {"type": "text", "text": "The answer is 42."}
             ]
         }"#;
-        
+
         let message: Message = serde_json::from_str(json).unwrap();
         assert_eq!(message.role, Role::Assistant);
-        
+
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 2);
-                
+
                 match &contents[0] {
                     Content::Thinking(thinking) => {
                         assert_eq!(thinking.text, "I need to solve this step by step...");
                         assert_eq!(thinking.signature, None);
-                    },
+                    }
                     _ => panic!("Expected thinking content first"),
                 }
-                
+
                 match &contents[1] {
                     Content::Text(text) => {
                         assert_eq!(text.text, "The answer is 42.");
-                    },
+                    }
                     _ => panic!("Expected text content second"),
                 }
-            },
+            }
             _ => panic!("Expected contents array"),
         }
     }
-    
+
     #[test]
     fn test_thinking_content_from_conversion() {
         let thinking = ThinkingContent::new("Test thinking".to_string());
         let content: Content = thinking.clone().into();
-        
+
         match content {
             Content::Thinking(converted) => assert_eq!(converted, thinking),
             _ => panic!("Expected thinking content"),
         }
     }
-    
+
     #[test]
     fn test_mixed_content_with_thinking() {
         let json = r#"{
@@ -1306,24 +1354,24 @@ mod tests {
                 {"type": "thinking", "text": "I should also mention..."}
             ]
         }"#;
-        
+
         let message: Message = serde_json::from_str(json).unwrap();
-        
+
         match message.content {
             StringOrContents::Contents(contents) => {
                 assert_eq!(contents.len(), 4);
-                
+
                 // Verify the sequence: text, thinking, text, thinking
                 assert!(matches!(contents[0], Content::Text(_)));
                 assert!(matches!(contents[1], Content::Thinking(_)));
                 assert!(matches!(contents[2], Content::Text(_)));
                 assert!(matches!(contents[3], Content::Thinking(_)));
-                
+
                 // Check the thinking content with signature
                 if let Content::Thinking(thinking) = &contents[1] {
                     assert_eq!(thinking.signature, Some("analysis_1".to_string()));
                 }
-            },
+            }
             _ => panic!("Expected contents array"),
         }
     }

@@ -3,12 +3,14 @@
 //! OpenRouter sends tool calls fragmented across dozens of JSON chunks,
 //! so we need stateful conversion to reassemble them correctly.
 
-use anthropic_ox::response::{StreamEvent as AnthropicStreamEvent, StreamMessage, ContentBlockDelta};
 use anthropic_ox::message::ContentBlock;
+use anthropic_ox::response::{
+    ContentBlockDelta, StreamEvent as AnthropicStreamEvent, StreamMessage,
+};
 use openrouter_ox::response::ChatCompletionChunk;
 
 /// Stateful converter for OpenRouter chunks to Anthropic stream events
-/// 
+///
 /// This is required because OpenRouter fragments tool calls and content
 /// across multiple chunks that need to be reassembled.
 pub struct AnthropicOpenRouterStreamConverter {
@@ -30,15 +32,15 @@ impl AnthropicOpenRouterStreamConverter {
     }
 
     /// Convert an OpenRouter ChatCompletionChunk to Anthropic StreamEvent
-    /// 
+    ///
     /// Returns a Vec because some chunks may generate multiple events
     /// (e.g., MessageStart + ContentBlockStart + ContentBlockDelta)
-    /// 
+    ///
     /// This is a complex, stateful operation because OpenRouter fragments
     /// tool calls and content across multiple chunks that need reassembly.
     pub fn convert_chunk(&mut self, chunk: ChatCompletionChunk) -> Vec<AnthropicStreamEvent> {
         let mut events = Vec::new();
-        
+
         // Set message ID if not set
         if self.message_id.is_none() {
             self.message_id = Some(chunk.id.clone());
@@ -48,7 +50,7 @@ impl AnthropicOpenRouterStreamConverter {
             // Handle first chunk - send MessageStart event
             if self.is_first_chunk {
                 self.is_first_chunk = false;
-                
+
                 let stream_message = StreamMessage {
                     id: chunk.id.clone(),
                     r#type: "message".to_string(),
@@ -63,7 +65,7 @@ impl AnthropicOpenRouterStreamConverter {
                         thinking_tokens: None,
                     },
                 };
-                
+
                 events.push(AnthropicStreamEvent::MessageStart {
                     message: stream_message,
                 });
@@ -72,8 +74,8 @@ impl AnthropicOpenRouterStreamConverter {
                 if choice.delta.content.is_some() {
                     events.push(AnthropicStreamEvent::ContentBlockStart {
                         index: self.content_index,
-                        content_block: ContentBlock::Text { 
-                            text: String::new() 
+                        content_block: ContentBlock::Text {
+                            text: String::new(),
                         },
                     });
                 }
@@ -83,7 +85,7 @@ impl AnthropicOpenRouterStreamConverter {
             if let Some(content) = &choice.delta.content {
                 if !content.is_empty() {
                     self.accumulated_content.push_str(content);
-                    
+
                     events.push(AnthropicStreamEvent::ContentBlockDelta {
                         index: self.content_index,
                         delta: ContentBlockDelta::TextDelta {
@@ -105,10 +107,18 @@ impl AnthropicOpenRouterStreamConverter {
                     delta: anthropic_ox::response::MessageDelta {
                         stop_reason: Some(match finish_reason {
                             openrouter_ox::response::FinishReason::Stop => "end_turn".to_string(),
-                            openrouter_ox::response::FinishReason::Length => "max_tokens".to_string(),
-                            openrouter_ox::response::FinishReason::Limit => "max_tokens".to_string(),
-                            openrouter_ox::response::FinishReason::ContentFilter => "end_turn".to_string(),
-                            openrouter_ox::response::FinishReason::ToolCalls => "tool_use".to_string(),
+                            openrouter_ox::response::FinishReason::Length => {
+                                "max_tokens".to_string()
+                            }
+                            openrouter_ox::response::FinishReason::Limit => {
+                                "max_tokens".to_string()
+                            }
+                            openrouter_ox::response::FinishReason::ContentFilter => {
+                                "end_turn".to_string()
+                            }
+                            openrouter_ox::response::FinishReason::ToolCalls => {
+                                "tool_use".to_string()
+                            }
                         }),
                         stop_sequence: None,
                     },

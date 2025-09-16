@@ -70,9 +70,17 @@ impl Capabilities {
         caps.supports_tool_use = true;
         caps.supports_tool_result_parts = false;
         caps.allowed_mime_inputs = [
-            "image/jpeg", "image/png", "image/gif", "image/webp",
-            "audio/wav", "audio/mp3", "audio/ogg"
-        ].iter().map(|s| s.to_string()).collect();
+            "image/jpeg",
+            "image/png",
+            "image/gif",
+            "image/webp",
+            "audio/wav",
+            "audio/mp3",
+            "audio/ogg",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
         caps
     }
 
@@ -86,9 +94,10 @@ impl Capabilities {
         caps.supports_files = true;
         caps.supports_tool_use = true;
         caps.supports_tool_result_parts = true; // Gemini has rich tool results
-        caps.allowed_mime_inputs = [
-            "image/*", "audio/*", "video/*", "application/pdf"
-        ].iter().map(|s| s.to_string()).collect();
+        caps.allowed_mime_inputs = ["image/*", "audio/*", "video/*", "application/pdf"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
         caps
     }
 

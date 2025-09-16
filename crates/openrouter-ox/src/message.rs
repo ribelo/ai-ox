@@ -490,15 +490,21 @@ impl Serialize for AssistantMessage {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        
+
         // Check if we have tool calls - if so, use simple string format for content
-        let has_tool_calls = self.tool_calls.as_ref().map_or(false, |calls| !calls.is_empty());
-        
+        let has_tool_calls = self
+            .tool_calls
+            .as_ref()
+            .map_or(false, |calls| !calls.is_empty());
+
         let mut state = serializer.serialize_struct("AssistantMessage", 4)?;
-        
+
         if has_tool_calls {
             // For messages with tool calls, serialize content as a simple string
-            let content_text = self.content.0.iter()
+            let content_text = self
+                .content
+                .0
+                .iter()
                 .filter_map(|part| match part {
                     ContentPart::Text(text_content) => Some(text_content.text.as_str()),
                     _ => None,
@@ -512,21 +518,21 @@ impl Serialize for AssistantMessage {
                 state.serialize_field("content", &self.content)?;
             }
         }
-        
+
         if let Some(ref tool_calls) = self.tool_calls {
             if !tool_calls.is_empty() {
                 state.serialize_field("tool_calls", tool_calls)?;
             }
         }
-        
+
         if let Some(ref refusal) = self.refusal {
             state.serialize_field("refusal", refusal)?;
         }
-        
+
         if let Some(ref name) = self.name {
             state.serialize_field("name", name)?;
         }
-        
+
         state.end()
     }
 }
@@ -547,8 +553,12 @@ impl ToolMessage {
             name: None,
         }
     }
-    
-    pub fn with_name(tool_call_id: impl Into<String>, content: impl Into<String>, name: impl Into<String>) -> Self {
+
+    pub fn with_name(
+        tool_call_id: impl Into<String>,
+        content: impl Into<String>,
+        name: impl Into<String>,
+    ) -> Self {
         Self {
             content: content.into(),
             tool_call_id: tool_call_id.into(),
@@ -716,4 +726,3 @@ impl FromIterator<Message> for Messages {
         Self(iter.into_iter().collect())
     }
 }
-

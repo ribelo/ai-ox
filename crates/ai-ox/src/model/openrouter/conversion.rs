@@ -1,8 +1,11 @@
 use openrouter_ox::{
     message::{
-        AssistantMessage, Message as OpenRouterMessage, Messages as OpenRouterMessages, SystemMessage, ToolMessage, UserMessage,
+        AssistantMessage, Message as OpenRouterMessage, Messages as OpenRouterMessages,
+        SystemMessage, ToolMessage, UserMessage,
     },
-    response::{FinishReason as OpenRouterFinishReason, FunctionCall, ToolCall as OpenRouterToolCall},
+    response::{
+        FinishReason as OpenRouterFinishReason, FunctionCall, ToolCall as OpenRouterToolCall,
+    },
     tool::FunctionMetadata,
 };
 use serde_json::Value;
@@ -14,7 +17,7 @@ use crate::{
         part::Part,
     },
     model::request::ModelRequest,
-    tool::{encode_tool_result_parts, decode_tool_result_parts, Tool},
+    tool::{Tool, decode_tool_result_parts, encode_tool_result_parts},
     usage::Usage,
 };
 
@@ -30,14 +33,18 @@ pub fn convert_finish_reason(reason: OpenRouterFinishReason) -> FinishReason {
     }
 }
 
-
 /// Build OpenRouter messages from ai-ox ModelRequest
-pub fn build_openrouter_messages(request: &ModelRequest, model_name: &str) -> Result<OpenRouterMessages, OpenRouterError> {
+pub fn build_openrouter_messages(
+    request: &ModelRequest,
+    model_name: &str,
+) -> Result<OpenRouterMessages, OpenRouterError> {
     let mut messages = Vec::new();
 
     // Add system message if present
     if let Some(system_msg) = &request.system_message {
-        let system_text = system_msg.content.iter()
+        let system_text = system_msg
+            .content
+            .iter()
             .filter_map(|part| match part {
                 Part::Text { text, .. } => Some(text.clone()),
                 _ => None,
@@ -57,20 +64,23 @@ pub fn build_openrouter_messages(request: &ModelRequest, model_name: &str) -> Re
 }
 
 /// Convert ai-ox tools to OpenRouter Tool (using FunctionMetadata directly)
-pub fn convert_tools_to_openrouter(tools: Option<Vec<Tool>>) -> Result<Vec<FunctionMetadata>, OpenRouterError> {
+pub fn convert_tools_to_openrouter(
+    tools: Option<Vec<Tool>>,
+) -> Result<Vec<FunctionMetadata>, OpenRouterError> {
     match tools {
         Some(tool_vec) => {
             let tool_schemas = tool_vec
                 .iter()
-                .flat_map(|tool| -> Vec<FunctionMetadata> { 
+                .flat_map(|tool| -> Vec<FunctionMetadata> {
                     match tool {
-                        Tool::FunctionDeclarations(functions) => {
-                            functions.iter().map(|func| FunctionMetadata {
+                        Tool::FunctionDeclarations(functions) => functions
+                            .iter()
+                            .map(|func| FunctionMetadata {
                                 name: func.name.clone(),
                                 description: func.description.clone(),
                                 parameters: func.parameters.clone(),
-                            }).collect()
-                        }
+                            })
+                            .collect(),
                         #[cfg(feature = "gemini")]
                         Tool::GeminiTool(_) => Vec::new(),
                     }
@@ -84,8 +94,7 @@ pub fn convert_tools_to_openrouter(tools: Option<Vec<Tool>>) -> Result<Vec<Funct
 
 /// Detect if the model is a Google provider model that requires simple string format
 fn is_google_model(model_name: &str) -> bool {
-    model_name.starts_with("google/") || 
-    model_name.contains("gemini")
+    model_name.starts_with("google/") || model_name.contains("gemini")
 }
 
 /// Extract usage data from OpenRouter response
@@ -93,20 +102,27 @@ pub fn extract_usage_from_response(usage_data: Option<&openrouter_ox::response::
     match usage_data {
         Some(usage) => {
             let mut result = Usage::default();
-            result.input_tokens_by_modality.insert(crate::usage::Modality::Text, usage.prompt_tokens as u64);
-            result.output_tokens_by_modality.insert(crate::usage::Modality::Text, usage.completion_tokens as u64);
+            result
+                .input_tokens_by_modality
+                .insert(crate::usage::Modality::Text, usage.prompt_tokens as u64);
+            result
+                .output_tokens_by_modality
+                .insert(crate::usage::Modality::Text, usage.completion_tokens as u64);
             result.requests = 1;
             result
-        },
+        }
         None => Usage::default(),
     }
 }
 
 /// Converts an `ai-ox` `Message` to one or more `openrouter-ox` `Message`s.
-/// 
+///
 /// Returns a vector because tool results need to be converted to separate Tool messages,
 /// which means a single ai-ox message can become multiple OpenRouter messages.
-pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Result<Vec<OpenRouterMessage>, OpenRouterError> {
+pub fn convert_message_to_openrouter(
+    message: Message,
+    model_name: &str,
+) -> Result<Vec<OpenRouterMessage>, OpenRouterError> {
     match message.role {
         MessageRole::User => {
             // For user messages, separate tool results from regular content
@@ -116,28 +132,32 @@ pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Resu
             for part in message.content {
                 match part {
                     Part::Text { text, .. } => text_parts.push(text),
-                      Part::ToolResult { id, name, parts, .. } => {
-                           // Extract text content from tool result parts for OpenRouter
-                           let content_str = parts.iter()
-                               .filter_map(|part| match part {
-                                   Part::Text { text, .. } => Some(text.clone()),
-                                   _ => None,
-                               })
-                               .collect::<Vec<_>>()
-                               .join("\n");
-                           tool_results.push((id, name, content_str));
-                       }
-                      Part::Opaque { provider, kind, .. } => {
-                          return Err(OpenRouterError::MessageConversion(
-                              format!("OpenRouter does not support Opaque content from provider: {}, kind: {}", provider, kind)
-                          ));
-                      }
-                     _ => {
-                         // Convert other parts to text representation
-                         if let Ok(serialized) = serde_json::to_string(&part) {
-                             text_parts.push(serialized);
-                         }
-                     }
+                    Part::ToolResult {
+                        id, name, parts, ..
+                    } => {
+                        // Extract text content from tool result parts for OpenRouter
+                        let content_str = parts
+                            .iter()
+                            .filter_map(|part| match part {
+                                Part::Text { text, .. } => Some(text.clone()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        tool_results.push((id, name, content_str));
+                    }
+                    Part::Opaque { provider, kind, .. } => {
+                        return Err(OpenRouterError::MessageConversion(format!(
+                            "OpenRouter does not support Opaque content from provider: {}, kind: {}",
+                            provider, kind
+                        )));
+                    }
+                    _ => {
+                        // Convert other parts to text representation
+                        if let Ok(serialized) = serde_json::to_string(&part) {
+                            text_parts.push(serialized);
+                        }
+                    }
                 }
             }
 
@@ -148,16 +168,22 @@ pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Resu
             if !text_parts.is_empty() {
                 if is_google_model(model_name) {
                     // Google models require simple string format
-                    messages.push(OpenRouterMessage::User(UserMessage::text(text_parts.join("\n"))));
+                    messages.push(OpenRouterMessage::User(UserMessage::text(
+                        text_parts.join("\n"),
+                    )));
                 } else {
                     // OpenAI and other models use complex content format
-                    messages.push(OpenRouterMessage::User(UserMessage::text(text_parts.join("\n"))));
+                    messages.push(OpenRouterMessage::User(UserMessage::text(
+                        text_parts.join("\n"),
+                    )));
                 }
             }
 
             // Add tool result messages - Google requires name field
             for (id, name, content) in tool_results {
-                messages.push(OpenRouterMessage::Tool(ToolMessage::with_name(id, content, name)));
+                messages.push(OpenRouterMessage::Tool(ToolMessage::with_name(
+                    id, content, name,
+                )));
             }
 
             // If no content at all, return empty user message
@@ -177,41 +203,45 @@ pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Resu
             for part in message.content {
                 match part {
                     Part::Text { text, .. } => text_parts.push(text),
-                     Part::ToolUse { id, name, args, .. } => {
-                         // Convert to proper OpenRouter tool call
-                         let tool_call = OpenRouterToolCall {
-                             index: None,
-                             id: Some(id),
-                             type_field: "function".to_string(),
-                             function: FunctionCall {
-                                 name: Some(name),
-                                 arguments: serde_json::to_string(&args).unwrap_or_default(),
-                             },
-                         };
-                         tool_calls.push(tool_call);
-                     }
-                       Part::ToolResult { id, name, parts, .. } => {
-                           // Extract text content from tool result parts for OpenRouter
-                           let content_str = parts.iter()
-                               .filter_map(|part| match part {
-                                   Part::Text { text, .. } => Some(text.clone()),
-                                   _ => None,
-                               })
-                               .collect::<Vec<_>>()
-                               .join("\n");
-                           tool_results.push((id, name, content_str));
-                       }
-                      Part::Opaque { provider, kind, .. } => {
-                          return Err(OpenRouterError::MessageConversion(
-                              format!("OpenRouter does not support Opaque content from provider: {}, kind: {}", provider, kind)
-                          ));
-                      }
-                     _ => {
-                         // Convert other parts to text representation
-                         if let Ok(serialized) = serde_json::to_string(&part) {
-                             text_parts.push(serialized);
-                         }
-                     }
+                    Part::ToolUse { id, name, args, .. } => {
+                        // Convert to proper OpenRouter tool call
+                        let tool_call = OpenRouterToolCall {
+                            index: None,
+                            id: Some(id),
+                            type_field: "function".to_string(),
+                            function: FunctionCall {
+                                name: Some(name),
+                                arguments: serde_json::to_string(&args).unwrap_or_default(),
+                            },
+                        };
+                        tool_calls.push(tool_call);
+                    }
+                    Part::ToolResult {
+                        id, name, parts, ..
+                    } => {
+                        // Extract text content from tool result parts for OpenRouter
+                        let content_str = parts
+                            .iter()
+                            .filter_map(|part| match part {
+                                Part::Text { text, .. } => Some(text.clone()),
+                                _ => None,
+                            })
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        tool_results.push((id, name, content_str));
+                    }
+                    Part::Opaque { provider, kind, .. } => {
+                        return Err(OpenRouterError::MessageConversion(format!(
+                            "OpenRouter does not support Opaque content from provider: {}, kind: {}",
+                            provider, kind
+                        )));
+                    }
+                    _ => {
+                        // Convert other parts to text representation
+                        if let Ok(serialized) = serde_json::to_string(&part) {
+                            text_parts.push(serialized);
+                        }
+                    }
                 }
             }
 
@@ -234,7 +264,9 @@ pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Resu
 
             // Add tool result messages (these should be separate Tool messages) - Google requires name field
             for (id, name, content) in tool_results {
-                messages.push(OpenRouterMessage::Tool(ToolMessage::with_name(id, content, name)));
+                messages.push(OpenRouterMessage::Tool(ToolMessage::with_name(
+                    id, content, name,
+                )));
             }
 
             // If no content at all, return empty assistant message
@@ -246,7 +278,9 @@ pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Resu
         }
         MessageRole::System => {
             // For system messages, convert to OpenRouter system message
-            let text_parts = message.content.iter()
+            let text_parts = message
+                .content
+                .iter()
                 .filter_map(|part| match part {
                     Part::Text { text, .. } => Some(text.clone()),
                     _ => None,
@@ -257,41 +291,56 @@ pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Resu
             if text_parts.is_empty() {
                 Ok(vec![OpenRouterMessage::System(SystemMessage::text(""))])
             } else {
-                Ok(vec![OpenRouterMessage::System(SystemMessage::text(text_parts))])
+                Ok(vec![OpenRouterMessage::System(SystemMessage::text(
+                    text_parts,
+                ))])
             }
         }
         MessageRole::Unknown(_) => {
             // Map unknown roles to User as default
-            Ok(vec![OpenRouterMessage::User(UserMessage::text("Unknown role content"))])
+            Ok(vec![OpenRouterMessage::User(UserMessage::text(
+                "Unknown role content",
+            ))])
         }
     }
 }
-
 
 /// Converts an `openrouter-ox` `Message` to an `ai-ox` `Message`.
 impl From<OpenRouterMessage> for Message {
     fn from(message: OpenRouterMessage) -> Self {
         let (role, parts) = match message {
             OpenRouterMessage::User(user_msg) => {
-                let text = user_msg.content.0.iter()
+                let text = user_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.clone()))
                     .collect::<Vec<_>>()
                     .join(" ");
 
-                let content = vec![Part::Text { text, ext: std::collections::BTreeMap::new() }];
+                let content = vec![Part::Text {
+                    text,
+                    ext: std::collections::BTreeMap::new(),
+                }];
                 (MessageRole::User, content)
             }
             OpenRouterMessage::Assistant(assistant_msg) => {
                 let mut parts = Vec::new();
 
                 // Add text content
-                let text = assistant_msg.content.0.iter()
+                let text = assistant_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.clone()))
                     .collect::<Vec<_>>()
                     .join(" ");
 
                 if !text.is_empty() {
-                    parts.push(Part::Text { text, ext: std::collections::BTreeMap::new() });
+                    parts.push(Part::Text {
+                        text,
+                        ext: std::collections::BTreeMap::new(),
+                    });
                 }
 
                 // Add tool calls
@@ -301,7 +350,12 @@ impl From<OpenRouterMessage> for Message {
                             let args: Value = serde_json::from_str(&tool_call.function.arguments)
                                 .unwrap_or(Value::Object(Default::default()));
 
-                            parts.push(Part::ToolUse { id, name, args, ext: Default::default() });
+                            parts.push(Part::ToolUse {
+                                id,
+                                name,
+                                args,
+                                ext: Default::default(),
+                            });
                         }
                     }
                 }
@@ -309,7 +363,10 @@ impl From<OpenRouterMessage> for Message {
                 (MessageRole::Assistant, parts)
             }
             OpenRouterMessage::System(system_msg) => {
-                let text = system_msg.content().0.iter()
+                let text = system_msg
+                    .content()
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.clone()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -317,20 +374,26 @@ impl From<OpenRouterMessage> for Message {
                 let content = if text.is_empty() {
                     vec![]
                 } else {
-                    vec![Part::Text { text, ext: std::collections::BTreeMap::new() }]
+                    vec![Part::Text {
+                        text,
+                        ext: std::collections::BTreeMap::new(),
+                    }]
                 };
                 (MessageRole::System, content)
             }
-             OpenRouterMessage::Tool(tool_msg) => {
-                 // Tool messages are converted to User messages with ToolResult parts
-                 let (decoded_name, parts) = match decode_tool_result_parts(&tool_msg.content) {
-                     Ok(result) => result,
-                     Err(_) => {
-                         // Use tool_msg.name if available, otherwise "unknown"
-                         let name = tool_msg.name.clone().unwrap_or_else(|| "unknown".to_string());
-                         (name, vec![])
-                     }
-                 };
+            OpenRouterMessage::Tool(tool_msg) => {
+                // Tool messages are converted to User messages with ToolResult parts
+                let (decoded_name, parts) = match decode_tool_result_parts(&tool_msg.content) {
+                    Ok(result) => result,
+                    Err(_) => {
+                        // Use tool_msg.name if available, otherwise "unknown"
+                        let name = tool_msg
+                            .name
+                            .clone()
+                            .unwrap_or_else(|| "unknown".to_string());
+                        (name, vec![])
+                    }
+                };
                 let content = vec![Part::ToolResult {
                     id: tool_msg.tool_call_id.clone(),
                     name: decoded_name,
@@ -363,7 +426,6 @@ impl From<OpenRouterMessage> for Message {
 // Note: Tool conversion is handled inline in the conversion function above
 // due to import issues with openrouter_ox::tool::Tool type
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -383,10 +445,17 @@ mod tests {
             ext: Some(std::collections::BTreeMap::new()),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         match openrouter_msg {
             OpenRouterMessage::User(user_msg) => {
-                let text = user_msg.content.0.iter()
+                let text = user_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -408,10 +477,17 @@ mod tests {
             ext: Some(std::collections::BTreeMap::new()),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         match openrouter_msg {
             OpenRouterMessage::Assistant(assistant_msg) => {
-                let text = assistant_msg.content.0.iter()
+                let text = assistant_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -439,10 +515,17 @@ mod tests {
             ext: Some(std::collections::BTreeMap::new()),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         match openrouter_msg {
             OpenRouterMessage::User(user_msg) => {
-                let text = user_msg.content.0.iter()
+                let text = user_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -461,10 +544,17 @@ mod tests {
             ext: Some(std::collections::BTreeMap::new()),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         match openrouter_msg {
             OpenRouterMessage::User(user_msg) => {
-                let text = user_msg.content.0.iter()
+                let text = user_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -478,9 +568,7 @@ mod tests {
     fn test_openrouter_to_message_conversion() {
         use openrouter_ox::message::AssistantMessage;
 
-        let openrouter_msg = OpenRouterMessage::Assistant(
-            AssistantMessage::text("AI response")
-        );
+        let openrouter_msg = OpenRouterMessage::Assistant(AssistantMessage::text("AI response"));
 
         let ai_message: Message = openrouter_msg.into();
         assert_eq!(ai_message.role, MessageRole::Assistant);
@@ -496,9 +584,7 @@ mod tests {
     fn test_openrouter_to_message_no_content() {
         use openrouter_ox::message::UserMessage;
 
-        let openrouter_msg = OpenRouterMessage::User(
-            UserMessage::text("")
-        );
+        let openrouter_msg = OpenRouterMessage::User(UserMessage::text(""));
 
         let ai_message: Message = openrouter_msg.into();
         assert_eq!(ai_message.role, MessageRole::User);
@@ -524,17 +610,24 @@ mod tests {
                     name: "search_web".to_string(),
                     args: json!({"query": "rust programming", "max_results": 5}),
                     ext: Default::default(),
-                 }
-             ],
-             timestamp: None,
-             ext: Some(std::collections::BTreeMap::new()),
-         };
+                },
+            ],
+            timestamp: None,
+            ext: Some(std::collections::BTreeMap::new()),
+        };
 
-        let openrouter_msg = convert_message_to_openrouter(message, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         match openrouter_msg {
             OpenRouterMessage::Assistant(assistant_msg) => {
                 // Check text content
-                let text = assistant_msg.content.0.iter()
+                let text = assistant_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -570,20 +663,30 @@ mod tests {
                     id: "call_123".to_string(),
                     name: "search_web".to_string(),
                     parts: vec![Part::Text {
-                        text: serde_json::to_string(&json!({"results": ["Result 1", "Result 2"], "count": 2})).unwrap(),
+                        text: serde_json::to_string(
+                            &json!({"results": ["Result 1", "Result 2"], "count": 2}),
+                        )
+                        .unwrap(),
                         ext: Default::default(),
                     }],
                     ext: Default::default(),
-                }
+                },
             ],
             timestamp: None,
             ext: Some(std::collections::BTreeMap::new()),
         };
 
-        let openrouter_msg = convert_message_to_openrouter(message, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_msg = convert_message_to_openrouter(message, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         match openrouter_msg {
             OpenRouterMessage::User(user_msg) => {
-                let text = user_msg.content.0.iter()
+                let text = user_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -591,7 +694,11 @@ mod tests {
                 // Tool results should be converted to text representation for user messages
                 assert!(text.contains("Here are the search results:"));
                 // The tool result should be serialized as JSON in the text
-                assert!(text.contains("call_123") || text.contains("search_web") || text.contains("results"));
+                assert!(
+                    text.contains("call_123")
+                        || text.contains("search_web")
+                        || text.contains("results")
+                );
             }
             _ => panic!("Expected User message"),
         }
@@ -642,18 +749,16 @@ mod tests {
     fn test_function_declarations_tool_conversion() {
         use crate::tool::FunctionMetadata as AiOxFunctionMetadata;
 
-        let tool_vec = vec![Tool::FunctionDeclarations(vec![
-            AiOxFunctionMetadata {
-                name: "test_function".to_string(),
-                description: Some("A test function".to_string()),
-                parameters: json!({
-                    "type": "object",
-                    "properties": {
-                        "param": {"type": "string"}
-                    }
-                }),
-            }
-        ])];
+        let tool_vec = vec![Tool::FunctionDeclarations(vec![AiOxFunctionMetadata {
+            name: "test_function".to_string(),
+            description: Some("A test function".to_string()),
+            parameters: json!({
+                "type": "object",
+                "properties": {
+                    "param": {"type": "string"}
+                }
+            }),
+        }])];
 
         let schemas = convert_tools_to_openrouter(Some(tool_vec)).unwrap();
         assert_eq!(schemas.len(), 1);
@@ -676,7 +781,11 @@ mod tests {
             ext: Some(std::collections::BTreeMap::new()),
         };
 
-        let openrouter_user = convert_message_to_openrouter(user_question, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_user = convert_message_to_openrouter(user_question, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         let back_to_ai: Message = openrouter_user.into();
 
         assert_eq!(back_to_ai.role, MessageRole::User);
@@ -695,13 +804,17 @@ mod tests {
                     name: "get_weather".to_string(),
                     args: json!({"location": "Tokyo", "units": "celsius"}),
                     ext: Default::default(),
-                }
+                },
             ],
             timestamp: None,
             ext: Some(std::collections::BTreeMap::new()),
         };
 
-        let openrouter_assistant = convert_message_to_openrouter(assistant_response, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_assistant = convert_message_to_openrouter(assistant_response, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         let back_to_ai_assistant: Message = openrouter_assistant.into();
 
         assert_eq!(back_to_ai_assistant.role, MessageRole::Assistant);
@@ -721,26 +834,29 @@ mod tests {
         // 3. User provides tool result
         let user_tool_result = Message {
             role: MessageRole::User,
-            content: vec![
-                Part::ToolResult {
-                    id: "call_weather_123".to_string(),
-                    name: "get_weather".to_string(),
-                    parts: vec![Part::Text {
-                        text: serde_json::to_string(&json!({
-                            "temperature": 22,
-                            "condition": "sunny",
-                            "humidity": 60
-                        })).unwrap(),
-                        ext: Default::default(),
-                    }],
+            content: vec![Part::ToolResult {
+                id: "call_weather_123".to_string(),
+                name: "get_weather".to_string(),
+                parts: vec![Part::Text {
+                    text: serde_json::to_string(&json!({
+                        "temperature": 22,
+                        "condition": "sunny",
+                        "humidity": 60
+                    }))
+                    .unwrap(),
                     ext: Default::default(),
-                }
-            ],
+                }],
+                ext: Default::default(),
+            }],
             timestamp: None,
             ext: Some(std::collections::BTreeMap::new()),
         };
 
-        let openrouter_tool_result = convert_message_to_openrouter(user_tool_result, "test-model").unwrap().into_iter().next().unwrap();
+        let openrouter_tool_result = convert_message_to_openrouter(user_tool_result, "test-model")
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap();
         let back_to_ai_tool_result: Message = openrouter_tool_result.into();
 
         assert_eq!(back_to_ai_tool_result.role, MessageRole::User);
@@ -767,11 +883,12 @@ mod tests {
                         text: serde_json::to_string(&json!({
                             "temperature": 25,
                             "condition": "cloudy"
-                        })).unwrap(),
+                        }))
+                        .unwrap(),
                         ext: Default::default(),
                     }],
                     ext: Default::default(),
-                }
+                },
             ],
             timestamp: None,
             ext: Some(std::collections::BTreeMap::new()),
@@ -779,14 +896,17 @@ mod tests {
 
         // Use the new conversion function
         let openrouter_messages = convert_message_to_openrouter(message, "test-model").unwrap();
-        
+
         // Should produce two messages: one User message and one Tool message
         assert_eq!(openrouter_messages.len(), 2);
 
         // First message should be User with text content
         match &openrouter_messages[0] {
             OpenRouterMessage::User(user_msg) => {
-                let text = user_msg.content.0.iter()
+                let text = user_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -799,7 +919,8 @@ mod tests {
         match &openrouter_messages[1] {
             OpenRouterMessage::Tool(tool_msg) => {
                 assert_eq!(tool_msg.tool_call_id, "call_123");
-                let parsed_content: serde_json::Value = serde_json::from_str(&tool_msg.content).unwrap();
+                let parsed_content: serde_json::Value =
+                    serde_json::from_str(&tool_msg.content).unwrap();
                 assert_eq!(parsed_content["temperature"], 25);
                 assert_eq!(parsed_content["condition"], "cloudy");
             }
@@ -813,24 +934,22 @@ mod tests {
 
         let message = Message {
             role: MessageRole::User,
-            content: vec![
-                Part::ToolResult {
-                    id: "call_456".to_string(),
-                    name: "calculator".to_string(),
-                    parts: vec![Part::Text {
-                        text: serde_json::to_string(&json!("42")).unwrap(),
-                        ext: std::collections::BTreeMap::new(),
-                    }],
-                    ext: Default::default(),
-                }
-            ],
+            content: vec![Part::ToolResult {
+                id: "call_456".to_string(),
+                name: "calculator".to_string(),
+                parts: vec![Part::Text {
+                    text: serde_json::to_string(&json!("42")).unwrap(),
+                    ext: std::collections::BTreeMap::new(),
+                }],
+                ext: Default::default(),
+            }],
             timestamp: None,
             ext: Some(std::collections::BTreeMap::new()),
         };
 
         // Use the new conversion function
         let openrouter_messages = convert_message_to_openrouter(message, "test-model").unwrap();
-        
+
         // Should produce one Tool message
         assert_eq!(openrouter_messages.len(), 1);
 
@@ -859,7 +978,7 @@ mod tests {
                     name: "get_weather".to_string(),
                     args: json!({"location": "Paris"}),
                     ext: Default::default(),
-                }
+                },
             ],
             timestamp: None,
             ext: Some(std::collections::BTreeMap::new()),
@@ -867,14 +986,17 @@ mod tests {
 
         // Use the new conversion function
         let openrouter_messages = convert_message_to_openrouter(message, "test-model").unwrap();
-        
+
         // Should produce one Assistant message
         assert_eq!(openrouter_messages.len(), 1);
 
         match &openrouter_messages[0] {
             OpenRouterMessage::Assistant(assistant_msg) => {
                 // Check text content
-                let text = assistant_msg.content.0.iter()
+                let text = assistant_msg
+                    .content
+                    .0
+                    .iter()
                     .filter_map(|part| part.as_text().map(|t| t.text.as_str()))
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -925,20 +1047,25 @@ mod tests {
         };
 
         // Convert to OpenRouter format
-        let openrouter_messages = convert_message_to_openrouter(tool_result_message, "test-model").unwrap();
+        let openrouter_messages =
+            convert_message_to_openrouter(tool_result_message, "test-model").unwrap();
 
         println!("Converted messages: {:#?}", openrouter_messages);
         println!("Number of messages: {}", openrouter_messages.len());
 
         // The issue might be in how tool results are converted
         // According to the conversion.rs logic, tool results should create Tool messages
-        assert_eq!(openrouter_messages.len(), 1, "Should produce exactly one Tool message");
-        
+        assert_eq!(
+            openrouter_messages.len(),
+            1,
+            "Should produce exactly one Tool message"
+        );
+
         match &openrouter_messages[0] {
             OpenRouterMessage::Tool(tool_msg) => {
                 assert_eq!(tool_msg.tool_call_id, "call_123");
                 println!("Tool message content: {}", tool_msg.content);
-                
+
                 // Verify the content is valid JSON
                 let _parsed: serde_json::Value = serde_json::from_str(&tool_msg.content)
                     .expect("Tool message content should be valid JSON");
@@ -1000,11 +1127,16 @@ mod tests {
 
         println!("Step 1: Making initial request with tool...");
         let first_response = model.request(first_request).await.unwrap();
-        
+
         // Verify we got a tool call
-        let tool_call = first_response.message.content.iter()
+        let tool_call = first_response
+            .message
+            .content
+            .iter()
             .find_map(|part| match part {
-                Part::ToolUse { id, name, args, .. } => Some((id.clone(), name.clone(), args.clone())),
+                Part::ToolUse { id, name, args, .. } => {
+                    Some((id.clone(), name.clone(), args.clone()))
+                }
                 _ => None,
             })
             .expect("Expected a tool use in the response");
@@ -1075,9 +1207,17 @@ mod tests {
             println!("  Message {}: {:?}", i, msg.role);
             for (j, part) in msg.content.iter().enumerate() {
                 match part {
-                    Part::Text { text, .. } => println!("    Part {}: Text({})", j, text.chars().take(50).collect::<String>()),
-                    Part::ToolUse { id, name, .. } => println!("    Part {}: ToolUse({}, {})", j, id, name),
-                    Part::ToolResult { id, name, .. } => println!("    Part {}: ToolResult({}, {})", j, id, name),
+                    Part::Text { text, .. } => println!(
+                        "    Part {}: Text({})",
+                        j,
+                        text.chars().take(50).collect::<String>()
+                    ),
+                    Part::ToolUse { id, name, .. } => {
+                        println!("    Part {}: ToolUse({}, {})", j, id, name)
+                    }
+                    Part::ToolResult { id, name, .. } => {
+                        println!("    Part {}: ToolResult({}, {})", j, id, name)
+                    }
                     _ => println!("    Part {}: {:?}", j, part),
                 }
             }
@@ -1085,7 +1225,7 @@ mod tests {
 
         // This should reproduce the 400 error we're seeing in Agronauts
         let result = model.request(second_request).await;
-        
+
         match result {
             Ok(_) => {
                 println!("SUCCESS: Tool result processed without error!");
@@ -1094,11 +1234,14 @@ mod tests {
             Err(e) => {
                 println!("ERROR: {}", e);
                 println!("DETAILED ERROR DEBUG: {:?}", e);
-                
+
                 // Check if it's the specific 400 error we're debugging
                 let error_str = e.to_string();
                 if error_str.contains("400") && error_str.contains("Provider returned error") {
-                    panic!("REPRODUCED: OpenRouter 400 error when processing tool results: {}", e);
+                    panic!(
+                        "REPRODUCED: OpenRouter 400 error when processing tool results: {}",
+                        e
+                    );
                 } else {
                     // Some other error occurred
                     println!("Different error occurred: {}", e);
@@ -1108,4 +1251,3 @@ mod tests {
         }
     }
 }
-

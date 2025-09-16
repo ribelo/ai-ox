@@ -1,16 +1,16 @@
 // Base OpenAI format types shared across compatible providers
 // Extracted from the 80% duplication across openai-ox, groq-ox, mistral-ox, openrouter-ox
 
+use bon::Builder;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use bon::Builder;
 
 /// Core message roles used across all OpenAI-format providers
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum MessageRole {
     System,
-    User, 
+    User,
     Assistant,
     Tool,
 }
@@ -50,7 +50,7 @@ pub struct Tool {
     pub function: Function,
 }
 
-/// Function definition (identical across providers) 
+/// Function definition (identical across providers)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Function {
     pub name: String,
@@ -77,35 +77,35 @@ pub struct ChatRequest {
     /// Messages in the conversation
     #[builder(field)]
     pub messages: Vec<Message>,
-    
+
     /// Model identifier
     #[builder(into)]
     pub model: String,
-    
+
     /// Temperature for randomness (0.0 to 2.0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
-    
+
     /// Maximum tokens in response
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
-    
+
     /// Top-p sampling (0.0 to 1.0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_p: Option<f32>,
-    
+
     /// Stop sequences
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stop: Option<Vec<String>>,
-    
+
     /// Whether to stream the response
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stream: Option<bool>,
-    
+
     /// Available tools
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<Tool>>,
-    
+
     /// Tool choice strategy
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
@@ -195,7 +195,7 @@ impl Message {
             tool_call_id: None,
         }
     }
-    
+
     /// Create a system message
     pub fn system(content: impl Into<String>) -> Self {
         Self {
@@ -206,7 +206,7 @@ impl Message {
             tool_call_id: None,
         }
     }
-    
+
     /// Create an assistant message
     pub fn assistant(content: impl Into<String>) -> Self {
         Self {
@@ -217,7 +217,7 @@ impl Message {
             tool_call_id: None,
         }
     }
-    
+
     /// Create a tool message
     pub fn tool(tool_call_id: impl Into<String>, content: impl Into<String>) -> Self {
         Self {
@@ -257,7 +257,7 @@ pub struct ChatCompletionResponse {
 /// A single completion choice
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionChoice {
-    /// Choice index 
+    /// Choice index
     pub index: u32,
     /// The message content
     pub message: Message,
@@ -314,7 +314,7 @@ pub struct MessageDelta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<MessageRole>,
     /// Incremental content
-    #[serde(skip_serializing_if = "Option::is_none")]  
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
     /// Tool calls being built incrementally
     #[serde(skip_serializing_if = "Option::is_none")]

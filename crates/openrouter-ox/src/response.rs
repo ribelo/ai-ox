@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    message::{AssistantMessage, Content, ContentPart, Message},
     OpenRouterRequestError,
+    message::{AssistantMessage, Content, ContentPart, Message},
 };
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -124,9 +124,9 @@ impl<'de> Deserialize<'de> for Choice {
                     }
                 }
                 let index = index.ok_or_else(|| serde::de::Error::missing_field("index"))?;
-                let response_msg = response_message
-                    .ok_or_else(|| serde::de::Error::missing_field("message"))?;
-                
+                let response_msg =
+                    response_message.ok_or_else(|| serde::de::Error::missing_field("message"))?;
+
                 let message = response_msg.into();
                 let finish_reason =
                     finish_reason.ok_or_else(|| serde::de::Error::missing_field("finishReason"))?;
@@ -143,7 +143,15 @@ impl<'de> Deserialize<'de> for Choice {
             }
         }
 
-        const FIELDS: &[&str] = &["index", "message", "logprobs", "finishReason", "nativeFinishReason", "reasoning", "reasoningDetails"];
+        const FIELDS: &[&str] = &[
+            "index",
+            "message",
+            "logprobs",
+            "finishReason",
+            "nativeFinishReason",
+            "reasoning",
+            "reasoningDetails",
+        ];
         deserializer.deserialize_struct("Choice", FIELDS, ChoiceVisitor)
     }
 }
@@ -222,35 +230,37 @@ pub struct ResponseMessage {
 }
 
 /// Extract content from OpenRouter response, handling various content patterns.
-/// 
+///
 /// GPT-5 and some other models return empty `content` but provide actual text in:
-/// - `reasoning` field (some models) 
+/// - `reasoning` field (some models)
 /// - `reasoning_details` array with summary/text/data fields (GPT-5)
-/// 
+///
 /// This function implements a cascade: content → reasoning → reasoning_details
 fn extract_reasoning_content(
     content: Option<String>,
-    reasoning: Option<String>, 
-    reasoning_details: Option<Vec<ReasoningDetail>>
+    reasoning: Option<String>,
+    reasoning_details: Option<Vec<ReasoningDetail>>,
 ) -> Vec<ContentPart> {
     match (content, reasoning, reasoning_details) {
         // Normal content (most models)
         (Some(text), _, _) if !text.is_empty() => vec![ContentPart::Text(text.into())],
-        
+
         // Reasoning field (some models like o1)
-        (_, Some(reasoning), _) if !reasoning.is_empty() => vec![ContentPart::Text(reasoning.into())],
-        
+        (_, Some(reasoning), _) if !reasoning.is_empty() => {
+            vec![ContentPart::Text(reasoning.into())]
+        }
+
         // Reasoning details (GPT-5 pattern) - extract from first detail
         (_, _, Some(details)) if !details.is_empty() => {
             if let Some(first_detail) = details.first() {
                 // Try summary first (human-readable reasoning)
                 if let Some(summary) = &first_detail.summary {
                     vec![ContentPart::Text(summary.into())]
-                } 
+                }
                 // Then text field
                 else if let Some(text) = &first_detail.text {
                     vec![ContentPart::Text(text.into())]
-                } 
+                }
                 // Finally encrypted data (show placeholder)
                 else if let Some(_data) = &first_detail.data {
                     vec![ContentPart::Text("[Encrypted reasoning data]".into())]
@@ -260,8 +270,8 @@ fn extract_reasoning_content(
             } else {
                 vec![]
             }
-        },
-        
+        }
+
         // No content found
         _ => vec![],
     }
@@ -269,12 +279,9 @@ fn extract_reasoning_content(
 
 impl From<ResponseMessage> for AssistantMessage {
     fn from(resp: ResponseMessage) -> Self {
-        let content_parts = extract_reasoning_content(
-            resp.content,
-            resp.reasoning,
-            resp.reasoning_details
-        );
-        
+        let content_parts =
+            extract_reasoning_content(resp.content, resp.reasoning, resp.reasoning_details);
+
         AssistantMessage {
             content: Content(content_parts),
             tool_calls: resp.tool_calls,
@@ -296,11 +303,8 @@ mod tests {
 
     #[test]
     fn test_extract_reasoning_content_normal_content() {
-        let result = extract_reasoning_content(
-            Some("Regular text content".to_string()),
-            None,
-            None,
-        );
+        let result =
+            extract_reasoning_content(Some("Regular text content".to_string()), None, None);
         assert_eq!(result.len(), 1);
         if let ContentPart::Text(text) = &result[0] {
             assert_eq!(text.text, "Regular text content");
@@ -399,7 +403,7 @@ impl ChatCompletionChunk {
             code: i32,
             message: String,
         }
-        
+
         let mut results = Vec::new();
         for line in lines_str.lines() {
             let trimmed = line.trim();

@@ -1,7 +1,20 @@
 #[cfg(test)]
 mod tests {
-    use mistral_ox::*;
     use mistral_ox::message::{Message, Messages};
+    use mistral_ox::request::{
+        AgentsRequest,
+        BatchJobRequest,
+        ChatModerationRequest,
+        EmbeddingInput,
+        EmbeddingsRequest,
+        FineTuningHyperparameters,
+        FineTuningRequest,
+        FimRequest,
+        ModerationInput,
+        ModerationRequest,
+        TrainingFile,
+    };
+    use mistral_ox::*;
 
     #[test]
     fn test_embeddings_request_builder() {
@@ -19,11 +32,15 @@ mod tests {
     #[test]
     fn test_moderation_request_builder() {
         let request = ModerationRequest::builder()
-            .input(ModerationInput::Single("This is a test message".to_string()))
+            .input(ModerationInput::Single(
+                "This is a test message".to_string(),
+            ))
             .model("mistral-moderation-latest".to_string())
             .build();
 
-        assert!(matches!(request.input, ModerationInput::Single(ref s) if s == "This is a test message"));
+        assert!(
+            matches!(request.input, ModerationInput::Single(ref s) if s == "This is a test message")
+        );
         assert_eq!(request.model, Some("mistral-moderation-latest".to_string()));
     }
 

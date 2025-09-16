@@ -63,6 +63,9 @@ impl GenerateContentError {
 
 impl From<serde_json::Error> for GenerateContentError {
     fn from(error: serde_json::Error) -> Self {
-        Self::ResponseParsing(format!("JSON serialization/deserialization error: {}", error))
+        Self::ResponseParsing(format!(
+            "JSON serialization/deserialization error: {}",
+            error
+        ))
     }
 }

@@ -1,9 +1,9 @@
 use ai_ox::{
     content::{
-        part::{Part, DataRef},
         message::{Message, MessageRole},
+        part::{DataRef, Part},
     },
-    provider::{Capabilities, ConversionPolicy, ConversionPlan, ConversionError},
+    provider::{Capabilities, ConversionError, ConversionPlan, ConversionPolicy},
 };
 use serde_json::json;
 
@@ -13,7 +13,10 @@ fn test_mistral_fails_on_unsupported_image() {
     let _message = Message::new(
         MessageRole::User,
         vec![
-            Part::Text { text: "Look at this:".to_string(), ext: Default::default() },
+            Part::Text {
+                text: "Look at this:".to_string(),
+                ext: Default::default(),
+            },
             Part::Blob {
                 data_ref: DataRef::uri("https://example.com/image.jpg".to_string()),
                 mime_type: "image/jpeg".to_string(),
@@ -44,15 +47,13 @@ fn test_mistral_fails_on_unsupported_image() {
 fn test_mistral_fails_on_base64_audio() {
     let _message = Message::new(
         MessageRole::User,
-        vec![
-            Part::Blob {
-                data_ref: DataRef::base64("SGVsbG8gV29ybGQ=".to_string()),
-                mime_type: "audio/wav".to_string(),
-                name: None,
-                description: None,
-                ext: Default::default(),
-            },
-        ],
+        vec![Part::Blob {
+            data_ref: DataRef::base64("SGVsbG8gV29ybGQ=".to_string()),
+            mime_type: "audio/wav".to_string(),
+            name: None,
+            description: None,
+            ext: Default::default(),
+        }],
     );
 
     let caps = Capabilities::mistral();
@@ -65,7 +66,10 @@ fn test_mistral_fails_on_base64_audio() {
 fn test_partv2_migration_preserves_content() {
     // Test that Part -> Part conversion is lossless
     let original_parts = vec![
-        Part::Text { text: "Hello".to_string(), ext: Default::default() },
+        Part::Text {
+            text: "Hello".to_string(),
+            ext: Default::default(),
+        },
         Part::Blob {
             data_ref: DataRef::uri("https://example.com/image.jpg".to_string()),
             mime_type: "image/jpeg".to_string(),
@@ -101,7 +105,12 @@ fn test_partv2_migration_preserves_content() {
     }
 
     // Check second part (Image -> Blob)
-    if let Part::Blob { data_ref, mime_type, .. } = &v2_parts[1] {
+    if let Part::Blob {
+        data_ref,
+        mime_type,
+        ..
+    } = &v2_parts[1]
+    {
         assert!(matches!(data_ref, DataRef::Uri { .. }));
         assert!(mime_type.starts_with("image/"));
     } else {
@@ -109,7 +118,12 @@ fn test_partv2_migration_preserves_content() {
     }
 
     // Check third part (Audio -> Blob)
-    if let Part::Blob { data_ref, mime_type, .. } = &v2_parts[2] {
+    if let Part::Blob {
+        data_ref,
+        mime_type,
+        ..
+    } = &v2_parts[2]
+    {
         assert!(matches!(data_ref, DataRef::Base64 { .. }));
         assert_eq!(mime_type, "audio/mp3");
     } else {
@@ -352,7 +366,13 @@ fn test_partv2_opaque_provider_content() {
         ext: Default::default(),
     };
 
-    if let Part::Opaque { provider, kind, payload, .. } = opaque {
+    if let Part::Opaque {
+        provider,
+        kind,
+        payload,
+        ..
+    } = opaque
+    {
         assert_eq!(provider, "custom_provider");
         assert_eq!(kind, "special_content");
         assert_eq!(payload["custom"], "data");
@@ -367,7 +387,10 @@ fn test_tool_result_with_empty_parts() {
     // Test edge case: tool result with no parts
     let empty_tool_result = Part::tool_result("call_empty", "empty_tool", vec![]);
 
-    if let Part::ToolResult { parts, id, name, .. } = empty_tool_result {
+    if let Part::ToolResult {
+        parts, id, name, ..
+    } = empty_tool_result
+    {
         assert_eq!(id, "call_empty");
         assert_eq!(name, "empty_tool");
         assert!(parts.is_empty());
@@ -403,9 +426,6 @@ fn test_ext_namespacing_prevents_collisions() {
     if let Part::Text { ext, .. } = part {
         assert_eq!(ext.get("provider_a.setting"), Some(&json!("value_a")));
         assert_eq!(ext.get("provider_b.setting"), Some(&json!("value_b")));
-        assert_ne!(
-            ext.get("provider_a.setting"),
-            ext.get("provider_b.setting")
-        );
+        assert_ne!(ext.get("provider_a.setting"), ext.get("provider_b.setting"));
     }
 }

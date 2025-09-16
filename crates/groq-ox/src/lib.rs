@@ -19,20 +19,24 @@ pub use error::GroqRequestError;
 pub use model::Model;
 pub use models::response::{ListModelsResponse, ModelInfo};
 pub use request::ChatRequest;
-pub use response::{ChatResponse, ChatCompletionChunk};
+pub use response::{ChatCompletionChunk, ChatResponse};
 pub use usage::Usage;
 
 // Re-export types from ai-ox-common for convenience
-pub use ai_ox_common::openai_format::{Message, Tool, ToolChoice, ToolCall};
+pub use ai_ox_common::openai_format::{Message, Tool, ToolCall, ToolChoice};
 
 // Create a tool module with helper functions for backward compatibility
 pub mod tool {
-    use ai_ox_common::openai_format::{Tool, Function};
-    
+    use ai_ox_common::openai_format::{Function, Tool};
+
     pub struct ToolFunction;
-    
+
     impl ToolFunction {
-        pub fn with_parameters(name: &str, description: &str, parameters: serde_json::Value) -> Tool {
+        pub fn with_parameters(
+            name: &str,
+            description: &str,
+            parameters: serde_json::Value,
+        ) -> Tool {
             Tool {
                 r#type: "function".to_string(),
                 function: Function {
@@ -110,7 +114,7 @@ impl Groq {
         request: &request::ChatRequest,
     ) -> BoxStream<'static, Result<response::ChatCompletionChunk, GroqRequestError>> {
         use async_stream::try_stream;
-        
+
         let helper = self.request_helper();
         let mut request_data = request.clone();
         request_data.stream = Some(true);
@@ -126,7 +130,7 @@ impl Groq {
 
             let mut stream = helper.stream_chat_request(&request_data);
             use futures_util::StreamExt;
-            
+
             while let Some(result) = stream.next().await {
                 yield result?;
             }

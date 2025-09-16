@@ -30,62 +30,83 @@ pub enum OpenRouterError {
 impl From<OpenRouterError> for GenerateContentError {
     fn from(error: OpenRouterError) -> Self {
         match error {
-            OpenRouterError::Api(api_error) => {
-                match api_error {
-                    OpenRouterRequestError::Http(http_err) => {
-                        GenerateContentError::provider_error("openrouter", format!("Network error: {}", http_err))
-                    }
-                    OpenRouterRequestError::Json(json_err) => {
-                        GenerateContentError::response_parsing(format!("OpenRouter JSON parsing error: {}", json_err))
-                    }
-                    OpenRouterRequestError::InvalidRequest { code, message, .. } => {
-                        let code_str = code.as_deref().unwrap_or("unknown");
-                        GenerateContentError::provider_error("openrouter", format!("API error {}: {}", code_str, message))
-                    }
-                    OpenRouterRequestError::UnexpectedResponse(response) => {
-                        GenerateContentError::response_parsing(format!("OpenRouter unexpected response: {}", response))
-                    }
-                    OpenRouterRequestError::Stream(stream_error) => {
-                        GenerateContentError::provider_error("openrouter", format!("Stream error: {}", stream_error))
-                    }
-                    OpenRouterRequestError::JsonDeserializationError(json_err) => {
-                        GenerateContentError::response_parsing(format!("OpenRouter JSON deserialization error: {}", json_err))
-                    }
-                    OpenRouterRequestError::InvalidEventData(event_error) => {
-                        GenerateContentError::response_parsing(format!("OpenRouter invalid event data: {}", event_error))
-                    }
-                    OpenRouterRequestError::RateLimit => {
-                        GenerateContentError::provider_error("openrouter", "Rate limit exceeded".to_string())
-                    }
-                    OpenRouterRequestError::UrlBuildError(url_error) => {
-                        GenerateContentError::configuration(format!("OpenRouter URL build error: {}", url_error))
-                    }
-                    OpenRouterRequestError::Io(io_error) => {
-                        GenerateContentError::provider_error("openrouter", format!("I/O error: {}", io_error))
-                    }
-                    _ => {
-                        GenerateContentError::provider_error("openrouter", format!("Unknown error: {}", api_error))
-                    }
+            OpenRouterError::Api(api_error) => match api_error {
+                OpenRouterRequestError::Http(http_err) => GenerateContentError::provider_error(
+                    "openrouter",
+                    format!("Network error: {}", http_err),
+                ),
+                OpenRouterRequestError::Json(json_err) => GenerateContentError::response_parsing(
+                    format!("OpenRouter JSON parsing error: {}", json_err),
+                ),
+                OpenRouterRequestError::InvalidRequest { code, message, .. } => {
+                    let code_str = code.as_deref().unwrap_or("unknown");
+                    GenerateContentError::provider_error(
+                        "openrouter",
+                        format!("API error {}: {}", code_str, message),
+                    )
                 }
-            }
-            OpenRouterError::Env(var_error) => {
-                GenerateContentError::configuration(format!("OpenRouter environment variable error: {}", var_error))
-            }
+                OpenRouterRequestError::UnexpectedResponse(response) => {
+                    GenerateContentError::response_parsing(format!(
+                        "OpenRouter unexpected response: {}",
+                        response
+                    ))
+                }
+                OpenRouterRequestError::Stream(stream_error) => {
+                    GenerateContentError::provider_error(
+                        "openrouter",
+                        format!("Stream error: {}", stream_error),
+                    )
+                }
+                OpenRouterRequestError::JsonDeserializationError(json_err) => {
+                    GenerateContentError::response_parsing(format!(
+                        "OpenRouter JSON deserialization error: {}",
+                        json_err
+                    ))
+                }
+                OpenRouterRequestError::InvalidEventData(event_error) => {
+                    GenerateContentError::response_parsing(format!(
+                        "OpenRouter invalid event data: {}",
+                        event_error
+                    ))
+                }
+                OpenRouterRequestError::RateLimit => GenerateContentError::provider_error(
+                    "openrouter",
+                    "Rate limit exceeded".to_string(),
+                ),
+                OpenRouterRequestError::UrlBuildError(url_error) => {
+                    GenerateContentError::configuration(format!(
+                        "OpenRouter URL build error: {}",
+                        url_error
+                    ))
+                }
+                OpenRouterRequestError::Io(io_error) => GenerateContentError::provider_error(
+                    "openrouter",
+                    format!("I/O error: {}", io_error),
+                ),
+                _ => GenerateContentError::provider_error(
+                    "openrouter",
+                    format!("Unknown error: {}", api_error),
+                ),
+            },
+            OpenRouterError::Env(var_error) => GenerateContentError::configuration(format!(
+                "OpenRouter environment variable error: {}",
+                var_error
+            )),
             OpenRouterError::RequestBuilder(msg) => {
                 GenerateContentError::configuration(format!("OpenRouter request builder: {}", msg))
             }
-            OpenRouterError::ResponseParsing(msg) => {
-                GenerateContentError::response_parsing(format!("OpenRouter response parsing: {}", msg))
-            }
+            OpenRouterError::ResponseParsing(msg) => GenerateContentError::response_parsing(
+                format!("OpenRouter response parsing: {}", msg),
+            ),
             OpenRouterError::InvalidSchema(msg) => {
                 GenerateContentError::configuration(format!("OpenRouter invalid schema: {}", msg))
             }
             OpenRouterError::ToolConversion(msg) => {
                 GenerateContentError::configuration(format!("OpenRouter tool conversion: {}", msg))
             }
-            OpenRouterError::MessageConversion(msg) => {
-                GenerateContentError::message_conversion(format!("OpenRouter message conversion: {}", msg))
-            }
+            OpenRouterError::MessageConversion(msg) => GenerateContentError::message_conversion(
+                format!("OpenRouter message conversion: {}", msg),
+            ),
         }
     }
 }

@@ -78,7 +78,8 @@ impl Usage {
         self.prompt_tokens_details
             .as_ref()
             .and_then(|details| details.cached_tokens)
-            .unwrap_or(0) > 0
+            .unwrap_or(0)
+            > 0
     }
 }
 

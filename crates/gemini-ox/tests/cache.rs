@@ -1,4 +1,3 @@
-
 #[allow(dead_code)]
 fn get_api_key() -> String {
     std::env::var("GEMINI_API_KEY")

@@ -18,6 +18,7 @@
 
           libs = with pkgs; [
             uv
+            alsa-lib
             alsa-lib.dev
             portaudio
             libclang
@@ -31,7 +32,7 @@
             nativeBuildInputs = native-libs;
             buildInputs = libs;
             shellHook = ''
-              export LD_LIBRARY_PATH="$LD_LIBRARY_PATH:${pkgs.lib.makeLibraryPath libs}:./"
+              export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath libs}:$LD_LIBRARY_PATH"
               export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib.outPath}/lib:$LD_LIBRARY_PATH"
               export LIBCLANG_PATH="${pkgs.libclang.lib}/lib"
             '';

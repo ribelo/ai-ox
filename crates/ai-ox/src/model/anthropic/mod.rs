@@ -4,20 +4,20 @@ mod error;
 pub use error::AnthropicError;
 
 use crate::{
+    ModelResponse,
     content::delta::StreamEvent,
     errors::GenerateContentError,
     model::{Model, ModelInfo, ModelRequest, Provider, response::RawStructuredResponse},
     usage::Usage,
-    ModelResponse,
 };
 use anthropic_ox::{
+    Anthropic,
     message::Content,
     tool::{Tool, ToolChoice},
-    Anthropic,
 };
 use async_stream::try_stream;
 use bon::Builder;
-use futures_util::{future::BoxFuture, FutureExt, StreamExt};
+use futures_util::{FutureExt, StreamExt, future::BoxFuture};
 
 /// Default maximum tokens for Anthropic models
 const DEFAULT_MAX_TOKENS: u32 = 4096;
@@ -58,8 +58,8 @@ impl AnthropicModel {
     ///
     /// This function reads the ANTHROPIC_API_KEY from the environment and returns an error if missing.
     pub async fn new(model: impl Into<String>) -> Result<Self, AnthropicError> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
-            .map_err(|_| AnthropicError::MissingApiKey)?;
+        let api_key =
+            std::env::var("ANTHROPIC_API_KEY").map_err(|_| AnthropicError::MissingApiKey)?;
 
         let client = Anthropic::new(&api_key);
 
@@ -96,7 +96,8 @@ impl Model for AnthropicModel {
                 self.max_tokens,
                 None, // No tools for standard request
             )?;
-            let response = self.client
+            let response = self
+                .client
                 .send(&anthropic_request)
                 .await
                 .map_err(|e| AnthropicError::Api(e))
@@ -153,13 +154,14 @@ impl Model for AnthropicModel {
         const TOOL_NAME: &str = "json_data";
 
         async move {
-            let schema_json: serde_json::Value =
-                serde_json::from_str(&schema).map_err(|e| AnthropicError::InvalidSchema(e.to_string()))?;
+            let schema_json: serde_json::Value = serde_json::from_str(&schema)
+                .map_err(|e| AnthropicError::InvalidSchema(e.to_string()))?;
 
             let tool = Tool::Custom(anthropic_ox::tool::CustomTool {
                 object_type: "function".to_string(),
                 name: TOOL_NAME.to_string(),
-                description: "Function call with a JSON schema for structured data extraction.".to_string(),
+                description: "Function call with a JSON schema for structured data extraction."
+                    .to_string(),
                 input_schema: schema_json,
             });
 
@@ -175,17 +177,24 @@ impl Model for AnthropicModel {
                 Some((vec![tool], Some(tool_choice))),
             )?;
 
-            let response = self.client
+            let response = self
+                .client
                 .send(&anthropic_request)
                 .await
                 .map_err(|e| AnthropicError::Api(e))?;
 
-            let tool_use = response.content.iter().find_map(|c| match c {
-                Content::ToolUse(tool_use) => Some(tool_use),
-                _ => None,
-            }).ok_or_else(|| {
-                AnthropicError::ResponseParsing("No tool use content found in response".to_string())
-            })?;
+            let tool_use = response
+                .content
+                .iter()
+                .find_map(|c| match c {
+                    Content::ToolUse(tool_use) => Some(tool_use),
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    AnthropicError::ResponseParsing(
+                        "No tool use content found in response".to_string(),
+                    )
+                })?;
 
             Ok(RawStructuredResponse {
                 json: tool_use.input.clone(),

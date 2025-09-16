@@ -2,7 +2,7 @@
 // This demonstrates Grug's approach: inherit base types, add provider extensions
 
 use bon::Builder;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 // Import base OpenAI format types
@@ -14,14 +14,14 @@ pub enum ResponseFormat {
     Text,
     JsonObject,
     #[serde(untagged)]
-    JsonSchema { 
+    JsonSchema {
         r#type: String,
-        json_schema: Value 
+        json_schema: Value,
     },
 }
 
 /// Groq chat request - uses base OpenAI format with Groq-specific extensions
-/// 
+///
 /// This replaces the old 113-line ChatRequest with one that reuses base types.
 /// Demonstrates ~50% reduction in code by sharing common OpenAI structures.
 #[derive(Debug, Clone, Serialize, Builder)]
@@ -44,7 +44,7 @@ pub struct ChatRequest {
     pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
-    
+
     // Groq-specific extensions beyond base OpenAI format
     #[serde(skip_serializing_if = "Option::is_none")]
     pub frequency_penalty: Option<f32>,
@@ -56,7 +56,7 @@ pub struct ChatRequest {
     pub seed: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    
+
     // Groq uses max_completion_tokens instead of max_tokens (provider quirk)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_completion_tokens: Option<u32>,
@@ -82,7 +82,7 @@ impl ChatRequest {
             max_completion_tokens: None,
         }
     }
-    
+
     /// Create a chat request with JSON response format
     pub fn with_json_response(model: impl Into<String>, messages: Vec<Message>) -> Self {
         let mut request = Self::new(model, messages);
@@ -97,17 +97,17 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
         self.messages = messages.into_iter().collect();
         self
     }
-    
+
     pub fn message(mut self, message: Message) -> Self {
         self.messages.push(message);
         self
     }
-    
+
     pub fn user_message(mut self, content: impl Into<String>) -> Self {
         self.messages.push(Message::user(content));
         self
     }
-    
+
     pub fn system_message(mut self, content: impl Into<String>) -> Self {
         self.messages.push(Message::system(content));
         self

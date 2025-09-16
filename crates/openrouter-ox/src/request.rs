@@ -2,9 +2,9 @@
 // Most complex provider - extensive OpenAI base + many OpenRouter-specific extensions
 
 use bon::Builder;
-use schemars::{generate::SchemaSettings, JsonSchema};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{json, Value};
+use schemars::{JsonSchema, generate::SchemaSettings};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
 
 // Import base OpenAI format types for tools only
 use ai_ox_common::openai_format::{Tool, ToolChoice};
@@ -37,13 +37,13 @@ pub struct ReasoningConfig {
 }
 
 /// OpenRouter chat request - uses base OpenAI format with extensive OpenRouter extensions
-/// 
+///
 /// This is the most complex provider - demonstrates the pattern can handle extensive extensions
 /// while still sharing the core OpenAI format types.
 #[derive(Debug, Clone, Serialize, Deserialize, Builder)]
 #[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
 pub struct ChatRequest {
-    // Core OpenAI-format fields (using shared base types from ai-ox-common)  
+    // Core OpenAI-format fields (using shared base types from ai-ox-common)
     #[builder(field)]
     pub messages: Vec<Message>,
     #[builder(field)]
@@ -52,9 +52,9 @@ pub struct ChatRequest {
     #[builder(into)]
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub temperature: Option<f64>,  // OpenRouter uses f64 for temperature
+    pub temperature: Option<f64>, // OpenRouter uses f64 for temperature
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub top_p: Option<f64>,        // OpenRouter uses f64 for top_p
+    pub top_p: Option<f64>, // OpenRouter uses f64 for top_p
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tokens: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -66,7 +66,7 @@ pub struct ChatRequest {
     pub tools: Option<Vec<Tool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
-    
+
     // OpenRouter-specific extensions (LOTS of them!)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub seed: Option<u32>,
@@ -86,7 +86,7 @@ pub struct ChatRequest {
     pub min_p: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_a: Option<f64>,
-    
+
     // OpenRouter routing and provider selection features
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prediction: Option<Prediction>,
@@ -113,22 +113,22 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
         self.messages = messages.into_iter().collect();
         self
     }
-    
+
     pub fn message(mut self, message: Message) -> Self {
         self.messages.push(message);
         self
     }
-    
+
     pub fn user_message(mut self, content: impl Into<String>) -> Self {
         self.messages.push(Message::user(content));
         self
     }
-    
+
     pub fn system_message(mut self, content: impl Into<String>) -> Self {
         self.messages.push(Message::system(content));
         self
     }
-    
+
     pub fn response_format<T: JsonSchema + DeserializeOwned>(mut self) -> Self {
         let type_name = std::any::type_name::<T>().split("::").last().unwrap();
         let mut schema_settings = SchemaSettings::draft2020_12();
@@ -176,7 +176,7 @@ impl ChatRequest {
             reasoning: None,
         }
     }
-    
+
     /// Enable OpenRouter's reasoning inclusion feature
     pub fn with_reasoning(mut self) -> Self {
         self.reasoning = Some(ReasoningConfig {
@@ -187,7 +187,7 @@ impl ChatRequest {
         });
         self
     }
-    
+
     /// Enable OpenRouter's reasoning with specific effort level
     pub fn with_reasoning_effort(mut self, effort: &str) -> Self {
         self.reasoning = Some(ReasoningConfig {
@@ -198,7 +198,7 @@ impl ChatRequest {
         });
         self
     }
-    
+
     /// Enable OpenRouter's reasoning with specific token limit
     pub fn with_reasoning_tokens(mut self, max_tokens: u32) -> Self {
         self.reasoning = Some(ReasoningConfig {
@@ -209,7 +209,7 @@ impl ChatRequest {
         });
         self
     }
-    
+
     /// Set specific provider preferences for OpenRouter
     pub fn with_provider(mut self, provider: ProviderPreferences) -> Self {
         self.provider = Some(provider);

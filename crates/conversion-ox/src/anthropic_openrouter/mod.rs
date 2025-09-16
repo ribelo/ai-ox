@@ -19,10 +19,7 @@
 //! - Computer tools: Not supported in OpenRouter (logged and skipped)
 
 use anthropic_ox::{
-    message::{
-        Content as AnthropicContent, Message as AnthropicMessage, 
-        Role as AnthropicRole,
-    },
+    message::{Content as AnthropicContent, Message as AnthropicMessage, Role as AnthropicRole},
     request::ChatRequest as AnthropicRequest,
     response::{ChatResponse as AnthropicResponse, StopReason as AnthropicStopReason},
     tool::Tool as AnthropicTool,
@@ -30,24 +27,22 @@ use anthropic_ox::{
 
 use openrouter_ox::{
     message::{
-        AssistantMessage, ContentPart, Message as OpenRouterMessage,
-        SystemMessage, ToolMessage, UserMessage,
+        AssistantMessage, ContentPart, Message as OpenRouterMessage, SystemMessage, ToolMessage,
+        UserMessage,
     },
     request::ChatRequest as OpenRouterRequest,
     response::{
-        ChatCompletionResponse as OpenRouterResponse, 
-        FinishReason as OpenRouterFinishReason,
+        ChatCompletionResponse as OpenRouterResponse, FinishReason as OpenRouterFinishReason,
     },
     tool::{FunctionMetadata, Tool as OpenRouterTool},
 };
 
 use crate::ConversionError;
-use ai_ox::tool::{decode_tool_result_parts};
 
 pub mod streaming;
 
 /// Convert Anthropic ChatRequest directly to OpenRouter ChatRequest
-/// 
+///
 /// This is an explicit, single-hop conversion that handles all edge cases
 /// without going through intermediate formats.
 pub fn anthropic_to_openrouter_request(
@@ -67,12 +62,15 @@ pub fn anthropic_to_openrouter_request(
                         AnthropicContent::Text(text) => Some(text.text.clone()),
                         AnthropicContent::SearchResult(search_result) => {
                             log::warn!("SearchResult content in system message converted to text");
-                            Some(format!("Search Result: {}\n{}", search_result.title, search_result.source))
-                        },
+                            Some(format!(
+                                "Search Result: {}\n{}",
+                                search_result.title, search_result.source
+                            ))
+                        }
                         AnthropicContent::Thinking(thinking) => {
                             log::debug!("Converting thinking content in system message to text");
                             Some(thinking.text.clone())
-                        },
+                        }
                         _ => {
                             log::warn!("Unsupported content type in system message, skipping");
                             None
@@ -83,48 +81,57 @@ pub fn anthropic_to_openrouter_request(
             }
         };
         if !system_content.is_empty() {
-            openrouter_messages.push(OpenRouterMessage::System(SystemMessage::text(system_content)));
+            openrouter_messages.push(OpenRouterMessage::System(SystemMessage::text(
+                system_content,
+            )));
         }
     }
 
     // Check if we have thinking content to enable reasoning (before moving messages)
     let has_thinking = anthropic_request.messages.0.iter().any(|msg| {
-        msg.content.as_vec().iter().any(|content| {
-            matches!(content, AnthropicContent::Thinking(_))
-        })
+        msg.content
+            .as_vec()
+            .iter()
+            .any(|content| matches!(content, AnthropicContent::Thinking(_)))
     });
 
     // Convert messages using helper function
-    let converted_messages = convert_anthropic_messages_to_openrouter(anthropic_request.messages.0)?;
+    let converted_messages =
+        convert_anthropic_messages_to_openrouter(anthropic_request.messages.0)?;
     openrouter_messages.extend(converted_messages);
 
     // Convert tools - direct conversion without intermediate format
-    let tools: Option<Vec<ai_ox_common::openai_format::Tool>> = if let Some(anthropic_tools) = anthropic_request.tools {
-        let mut openrouter_tools = Vec::new();
-        for tool in anthropic_tools {
-            match helpers::anthropic_tool_to_openrouter(tool) {
-                Ok(or_tool) => {
-                    // Convert to ai_ox_common::openai_format::Tool for OpenRouter request
-                    let final_tool = ai_ox_common::openai_format::Tool {
-                        r#type: or_tool.tool_type,
-                        function: ai_ox_common::openai_format::Function {
-                            name: or_tool.function.name,
-                            description: or_tool.function.description,
-                            parameters: Some(or_tool.function.parameters),
-                        }
-                    };
-                    openrouter_tools.push(final_tool);
-                }
-                Err(e) => {
-                    log::warn!("Skipping unsupported tool: {}", e);
-                    // Continue without this tool instead of failing the whole request
+    let tools: Option<Vec<ai_ox_common::openai_format::Tool>> =
+        if let Some(anthropic_tools) = anthropic_request.tools {
+            let mut openrouter_tools = Vec::new();
+            for tool in anthropic_tools {
+                match helpers::anthropic_tool_to_openrouter(tool) {
+                    Ok(or_tool) => {
+                        // Convert to ai_ox_common::openai_format::Tool for OpenRouter request
+                        let final_tool = ai_ox_common::openai_format::Tool {
+                            r#type: or_tool.tool_type,
+                            function: ai_ox_common::openai_format::Function {
+                                name: or_tool.function.name,
+                                description: or_tool.function.description,
+                                parameters: Some(or_tool.function.parameters),
+                            },
+                        };
+                        openrouter_tools.push(final_tool);
+                    }
+                    Err(e) => {
+                        log::warn!("Skipping unsupported tool: {}", e);
+                        // Continue without this tool instead of failing the whole request
+                    }
                 }
             }
-        }
-        if openrouter_tools.is_empty() { None } else { Some(openrouter_tools) }
-    } else {
-        None
-    };
+            if openrouter_tools.is_empty() {
+                None
+            } else {
+                Some(openrouter_tools)
+            }
+        } else {
+            None
+        };
 
     // Build OpenRouter request
     let request_builder = OpenRouterRequest::builder()
@@ -136,7 +143,7 @@ pub fn anthropic_to_openrouter_request(
         .maybe_top_k(anthropic_request.top_k.map(|tk| tk as u32))
         .maybe_tools(tools)
         .maybe_stop(anthropic_request.stop_sequences);
-    
+
     // Enable reasoning if thinking content is present
     let final_request = if has_thinking {
         let mut req = request_builder.build();
@@ -150,12 +157,12 @@ pub fn anthropic_to_openrouter_request(
     } else {
         request_builder.build()
     };
-    
+
     Ok(final_request)
 }
 
 /// Convert OpenRouter ChatResponse directly to Anthropic ChatResponse
-/// 
+///
 /// This is an explicit, single-hop conversion that handles all edge cases
 /// without going through intermediate formats.
 pub fn openrouter_to_anthropic_response(
@@ -165,7 +172,9 @@ pub fn openrouter_to_anthropic_response(
         .choices
         .into_iter()
         .next()
-        .ok_or_else(|| ConversionError::MissingData("No choices in OpenRouter response".to_string()))?;
+        .ok_or_else(|| {
+            ConversionError::MissingData("No choices in OpenRouter response".to_string())
+        })?;
 
     let mut content = Vec::new();
 
@@ -192,9 +201,9 @@ pub fn openrouter_to_anthropic_response(
     for part in first_choice.message.content.0 {
         match part {
             ContentPart::Text(text) => {
-                content.push(AnthropicContent::Text(
-                    anthropic_ox::message::Text::new(text.text),
-                ));
+                content.push(AnthropicContent::Text(anthropic_ox::message::Text::new(
+                    text.text,
+                )));
             }
             ContentPart::ImageUrl(image) => {
                 // Convert data URL back to base64 format
@@ -216,9 +225,8 @@ pub fn openrouter_to_anthropic_response(
     if let Some(tool_calls) = first_choice.message.tool_calls {
         for tool_call in tool_calls {
             if let (Some(id), Some(name)) = (tool_call.id, tool_call.function.name) {
-                let input: serde_json::Value =
-                    serde_json::from_str(&tool_call.function.arguments)
-                        .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
+                let input: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
+                    .unwrap_or_else(|_| serde_json::Value::Object(serde_json::Map::new()));
 
                 content.push(AnthropicContent::ToolUse(anthropic_ox::tool::ToolUse {
                     id,
@@ -273,38 +281,30 @@ fn convert_anthropic_messages_to_openrouter(
                         AnthropicContent::Text(text) => {
                             text_parts.push(ContentPart::Text(text.text.into()));
                         }
-                        AnthropicContent::Image { source } => {
-                            match source {
-                                anthropic_ox::message::ImageSource::Base64 {
-                                    media_type,
-                                    data,
-                                } => {
-                                    let data_url = format!("data:{};base64,{}", media_type, data);
-                                    text_parts.push(ContentPart::ImageUrl(
-                                        openrouter_ox::message::ImageContent::new(data_url),
-                                    ));
-                                }
+                        AnthropicContent::Image { source } => match source {
+                            anthropic_ox::message::ImageSource::Base64 { media_type, data } => {
+                                let data_url = format!("data:{};base64,{}", media_type, data);
+                                text_parts.push(ContentPart::ImageUrl(
+                                    openrouter_ox::message::ImageContent::new(data_url),
+                                ));
                             }
+                        },
+                        AnthropicContent::ToolResult(tool_result) => {
+                            // Tool results become separate ToolMessage
+                            let content_str = match &tool_result.content[0] {
+                                anthropic_ox::tool::ToolResultContent::Text { text } => {
+                                    text.clone()
+                                }
+                                anthropic_ox::tool::ToolResultContent::Image { .. } => {
+                                    "[Image content]".to_string()
+                                }
+                            };
+
+                            // For Anthropic tool results, the content is plain text, not encoded
+                            // The tool name is not stored in the content, so we omit it (it's optional in OpenRouter)
+                            tool_results
+                                .push(ToolMessage::new(tool_result.tool_use_id, content_str));
                         }
-                         AnthropicContent::ToolResult(tool_result) => {
-                             // Tool results become separate ToolMessage
-                             let content_str = match &tool_result.content[0] {
-                                 anthropic_ox::tool::ToolResultContent::Text { text } => text.clone(),
-                                 anthropic_ox::tool::ToolResultContent::Image { .. } => {
-                                     "[Image content]".to_string()
-                                 }
-                             };
-
-                              // Try to decode the tool name from the encoded content
-                              let (name, _) = decode_tool_result_parts(&content_str)
-                                  .map_err(|e| ConversionError::ContentConversion(e.to_string()))?;
-
-                             tool_results.push(ToolMessage::with_name(
-                                 tool_result.tool_use_id,
-                                 content_str,
-                                 name,
-                             ));
-                         }
                         AnthropicContent::ToolUse(_) => {
                             // Tool use should not appear in user messages
                             log::warn!("ToolUse content found in user message, skipping");
@@ -315,7 +315,10 @@ fn convert_anthropic_messages_to_openrouter(
                         }
                         AnthropicContent::SearchResult(search_result) => {
                             log::warn!("SearchResult content converted to text for OpenRouter");
-                            let text_content = format!("Search Result: {}\n{}", search_result.title, search_result.source);
+                            let text_content = format!(
+                                "Search Result: {}\n{}",
+                                search_result.title, search_result.source
+                            );
                             text_parts.push(ContentPart::Text(text_content.into()));
                         }
                     }
@@ -338,19 +341,14 @@ fn convert_anthropic_messages_to_openrouter(
                         AnthropicContent::Text(text) => {
                             text_parts.push(ContentPart::Text(text.text.into()));
                         }
-                        AnthropicContent::Image { source } => {
-                            match source {
-                                anthropic_ox::message::ImageSource::Base64 {
-                                    media_type,
-                                    data,
-                                } => {
-                                    let data_url = format!("data:{};base64,{}", media_type, data);
-                                    text_parts.push(ContentPart::ImageUrl(
-                                        openrouter_ox::message::ImageContent::new(data_url),
-                                    ));
-                                }
+                        AnthropicContent::Image { source } => match source {
+                            anthropic_ox::message::ImageSource::Base64 { media_type, data } => {
+                                let data_url = format!("data:{};base64,{}", media_type, data);
+                                text_parts.push(ContentPart::ImageUrl(
+                                    openrouter_ox::message::ImageContent::new(data_url),
+                                ));
                             }
-                        }
+                        },
                         AnthropicContent::ToolUse(tool_use) => {
                             tool_calls.push(openrouter_ox::response::ToolCall {
                                 index: None,
@@ -358,7 +356,8 @@ fn convert_anthropic_messages_to_openrouter(
                                 type_field: "function".to_string(),
                                 function: openrouter_ox::response::FunctionCall {
                                     name: Some(tool_use.name),
-                                    arguments: serde_json::to_string(&tool_use.input).unwrap_or_default(),
+                                    arguments: serde_json::to_string(&tool_use.input)
+                                        .unwrap_or_default(),
                                 },
                             });
                         }
@@ -371,7 +370,10 @@ fn convert_anthropic_messages_to_openrouter(
                         }
                         AnthropicContent::SearchResult(search_result) => {
                             log::warn!("SearchResult content converted to text for OpenRouter");
-                            let text_content = format!("Search Result: {}\n{}", search_result.title, search_result.source);
+                            let text_content = format!(
+                                "Search Result: {}\n{}",
+                                search_result.title, search_result.source
+                            );
                             text_parts.push(ContentPart::Text(text_content.into()));
                         }
                     }
@@ -395,36 +397,39 @@ fn convert_anthropic_messages_to_openrouter(
 // Helper functions for internal use
 mod helpers {
     use super::*;
-    
+
     /// Convert Anthropic Tool to OpenRouter Tool (direct conversion)
-    pub fn anthropic_tool_to_openrouter(tool: AnthropicTool) -> Result<OpenRouterTool, ConversionError> {
+    pub fn anthropic_tool_to_openrouter(
+        tool: AnthropicTool,
+    ) -> Result<OpenRouterTool, ConversionError> {
         match tool {
-            AnthropicTool::Custom(custom_tool) => {
-                Ok(OpenRouterTool {
-                    tool_type: "function".to_string(),
-                    function: FunctionMetadata {
-                        name: custom_tool.name,
-                        description: Some(custom_tool.description),
-                        parameters: custom_tool.input_schema,
-                    }
-                })
-            }
+            AnthropicTool::Custom(custom_tool) => Ok(OpenRouterTool {
+                tool_type: "function".to_string(),
+                function: FunctionMetadata {
+                    name: custom_tool.name,
+                    description: Some(custom_tool.description),
+                    parameters: custom_tool.input_schema,
+                },
+            }),
             AnthropicTool::Computer(_) => {
                 log::warn!("Computer tool not supported in OpenRouter, skipping");
                 Err(ConversionError::UnsupportedConversion(
-                    "Computer tools are not supported by OpenRouter".to_string()
+                    "Computer tools are not supported by OpenRouter".to_string(),
                 ))
             }
         }
     }
 
     /// Convert OpenRouter Tool to Anthropic Tool (direct conversion)
-    pub fn openrouter_tool_to_anthropic(tool: OpenRouterTool) -> Result<AnthropicTool, ConversionError> {
+    pub fn openrouter_tool_to_anthropic(
+        tool: OpenRouterTool,
+    ) -> Result<AnthropicTool, ConversionError> {
         let custom_tool = anthropic_ox::tool::CustomTool::new(
             tool.function.name,
             tool.function.description.unwrap_or_default(),
-        ).with_schema(tool.function.parameters);
-        
+        )
+        .with_schema(tool.function.parameters);
+
         Ok(AnthropicTool::Custom(custom_tool))
     }
 }

@@ -10,17 +10,19 @@ use openrouter_ox::{OpenRouter, request::ChatRequest as OpenRouterRequest};
 use serde_json::Value;
 
 // Import the correct OpenAI format types
-use ai_ox_common::openai_format::{Tool as OaiTool, Function as OaiFunction, ToolChoice as OaiToolChoice};
+use ai_ox_common::openai_format::{
+    Function as OaiFunction, Tool as OaiTool, ToolChoice as OaiToolChoice,
+};
 
 use crate::{
     content::delta::StreamEvent,
-    tool::ToolUse,
     errors::GenerateContentError,
     model::{
         Model, ModelInfo, Provider,
         request::ModelRequest,
         response::{ModelResponse, RawStructuredResponse},
     },
+    tool::ToolUse,
 };
 use std::collections::HashMap;
 
@@ -46,7 +48,10 @@ impl OpenRouterStreamProcessor {
         !s.trim().is_empty() && serde_json::from_str::<Value>(s).is_ok()
     }
 
-    fn process_chunk(&mut self, chunk: openrouter_ox::response::ChatCompletionChunk) -> Vec<StreamEvent> {
+    fn process_chunk(
+        &mut self,
+        chunk: openrouter_ox::response::ChatCompletionChunk,
+    ) -> Vec<StreamEvent> {
         let mut events = Vec::new();
 
         // Process each choice in the chunk
@@ -63,17 +68,22 @@ impl OpenRouterStreamProcessor {
                 for tool_call in tool_calls {
                     if let Some(id) = tool_call.id {
                         // New tool call - create entry
-                        self.partial_calls.insert(id.clone(), PartialCall {
-                            id: id.clone(),
-                            name: tool_call.function.name,
-                            args: tool_call.function.arguments,
-                        });
+                        self.partial_calls.insert(
+                            id.clone(),
+                            PartialCall {
+                                id: id.clone(),
+                                name: tool_call.function.name,
+                                args: tool_call.function.arguments,
+                            },
+                        );
                     } else {
                         // Continue existing tool call - append to the most recent incomplete one
                         // NOTE: This assumes OpenRouter streams one tool at a time (which it does in practice).
                         // If multiple tools streamed simultaneously, we'd need tool call indexing.
-                        if let Some(partial) = self.partial_calls.values_mut()
-                            .find(|p| p.name.is_some() && !Self::is_valid_json(&p.args)) 
+                        if let Some(partial) = self
+                            .partial_calls
+                            .values_mut()
+                            .find(|p| p.name.is_some() && !Self::is_valid_json(&p.args))
                         {
                             partial.args.push_str(&tool_call.function.arguments);
                         }
@@ -93,7 +103,10 @@ impl OpenRouterStreamProcessor {
                             let args = match serde_json::from_str(&partial.args) {
                                 Ok(json) => json,
                                 Err(e) => {
-                                    eprintln!("Warning: Failed to parse tool call args as JSON: {}. Args: '{}'", e, partial.args);
+                                    eprintln!(
+                                        "Warning: Failed to parse tool call args as JSON: {}. Args: '{}'",
+                                        e, partial.args
+                                    );
                                     serde_json::Value::Object(Default::default())
                                 }
                             };
@@ -111,18 +124,22 @@ impl OpenRouterStreamProcessor {
             // Handle finish reason and usage
             if let Some(finish_reason) = choice.finish_reason {
                 // Emit any remaining complete tool calls
-                let remaining_complete: Vec<String> = self.partial_calls
+                let remaining_complete: Vec<String> = self
+                    .partial_calls
                     .iter()
                     .filter(|(_, p)| p.name.is_some() && Self::is_valid_json(&p.args))
                     .map(|(id, _)| id.clone())
                     .collect();
-                
+
                 for id in remaining_complete {
                     if let Some(partial) = self.partial_calls.remove(&id) {
                         let args = match serde_json::from_str(&partial.args) {
                             Ok(json) => json,
                             Err(e) => {
-                                eprintln!("Warning: Failed to parse final tool call args as JSON: {}. Args: '{}'", e, partial.args);
+                                eprintln!(
+                                    "Warning: Failed to parse final tool call args as JSON: {}. Args: '{}'",
+                                    e, partial.args
+                                );
                                 serde_json::Value::Object(Default::default())
                             }
                         };
@@ -175,11 +192,14 @@ fn default_tool_choice() -> OaiToolChoice {
     OaiToolChoice::Auto
 }
 
-impl<S: open_router_model_builder::State> OpenRouterModelBuilder<S> 
-where 
-    <S as open_router_model_builder::State>::Client: open_router_model_builder::IsUnset
+impl<S: open_router_model_builder::State> OpenRouterModelBuilder<S>
+where
+    <S as open_router_model_builder::State>::Client: open_router_model_builder::IsUnset,
 {
-    pub fn api_key(self, api_key: impl Into<String>) -> OpenRouterModelBuilder<open_router_model_builder::SetClient<S>> {
+    pub fn api_key(
+        self,
+        api_key: impl Into<String>,
+    ) -> OpenRouterModelBuilder<open_router_model_builder::SetClient<S>> {
         self.client(OpenRouter::new(api_key))
     }
 }
@@ -263,9 +283,11 @@ impl Model for OpenRouterModel {
     ) -> BoxFuture<'_, Result<ModelResponse, GenerateContentError>> {
         async move {
             // Build the request using the helper function
-            let chat_request = Self::build_openrouter_request(request, &self.model, &self.tool_choice, None)?;
+            let chat_request =
+                Self::build_openrouter_request(request, &self.model, &self.tool_choice, None)?;
 
-            let response = self.client
+            let response = self
+                .client
                 .send(&chat_request)
                 .await
                 .map_err(OpenRouterError::Api)?;
@@ -276,7 +298,8 @@ impl Model for OpenRouterModel {
             })?;
 
             // Convert the OpenRouter message to ai-ox Message using the From trait
-            let openrouter_message = openrouter_ox::message::Message::Assistant(choice.message.clone());
+            let openrouter_message =
+                openrouter_ox::message::Message::Assistant(choice.message.clone());
             let message = openrouter_message.into();
 
             // Extract usage data using conversion module
@@ -349,10 +372,15 @@ impl Model for OpenRouterModel {
             });
 
             // Build the request using the helper function
-            let chat_request =
-                Self::build_openrouter_request(request, &self.model, &self.tool_choice, Some(response_format))?;
+            let chat_request = Self::build_openrouter_request(
+                request,
+                &self.model,
+                &self.tool_choice,
+                Some(response_format),
+            )?;
 
-            let response = self.client
+            let response = self
+                .client
                 .send(&chat_request)
                 .await
                 .map_err(OpenRouterError::Api)?;
@@ -371,12 +399,10 @@ impl Model for OpenRouterModel {
                 .map(|text| text.text.clone())
                 .unwrap_or_else(|| "{}".to_string());
 
-
             let json: Value = serde_json::from_str(&content).map_err(|e| {
                 OpenRouterError::ResponseParsing(format!(
-                    "Failed to parse JSON: {}. Response content: '{}'", 
-                    e, 
-                    content
+                    "Failed to parse JSON: {}. Response content: '{}'",
+                    e, content
                 ))
             })?;
 

@@ -5,26 +5,26 @@
     clippy::missing_docs_in_private_items
 )]
 
+#[cfg(feature = "admin")]
+pub mod admin;
+#[cfg(feature = "batches")]
+pub mod batches;
 pub mod client;
 pub mod error;
+#[cfg(feature = "files")]
+pub mod files;
 #[doc(hidden)]
 pub mod internal;
 pub mod message;
 pub mod model;
 #[cfg(feature = "models")]
 pub mod models;
-#[cfg(feature = "batches")]
-pub mod batches;
-#[cfg(feature = "files")]
-pub mod files;
-#[cfg(feature = "admin")]
-pub mod admin;
 pub mod prelude;
 pub mod request;
 pub mod response;
-pub mod tool;
 #[cfg(feature = "tokens")]
 pub mod tokens;
+pub mod tool;
 pub mod usage;
 
 // Re-export main types

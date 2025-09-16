@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use super::users::UserRole;
+use serde::{Deserialize, Serialize};
 
 /// The status of an invitation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

@@ -72,7 +72,7 @@ impl Model {
             | Model::Mixtral8x7b32768
             | Model::Gemma2_9bIt
             | Model::Gemma7bIt => true,
-            
+
             // Audio models don't support tools
             Model::WhisperLargeV3
             | Model::WhisperLargeV3Turbo
@@ -86,9 +86,7 @@ impl Model {
     pub fn is_speech_to_text(&self) -> bool {
         matches!(
             self,
-            Model::WhisperLargeV3
-                | Model::WhisperLargeV3Turbo
-                | Model::DistilWhisperLargeV3En
+            Model::WhisperLargeV3 | Model::WhisperLargeV3Turbo | Model::DistilWhisperLargeV3En
         )
     }
 

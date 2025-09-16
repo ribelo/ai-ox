@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::{Message, Usage};
+use serde::{Deserialize, Serialize};
 
 /// Response from chat completion
 #[derive(Debug, Clone, Serialize, Deserialize)]

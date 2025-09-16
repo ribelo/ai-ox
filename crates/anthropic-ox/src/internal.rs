@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use reqwest::{Method, RequestBuilder as ReqwestRequestBuilder, Response};
-use futures_util::stream::{BoxStream, StreamExt};
-use async_stream::try_stream;
 use crate::error::{self, AnthropicRequestError};
+use async_stream::try_stream;
+use futures_util::stream::{BoxStream, StreamExt};
+use reqwest::{Method, RequestBuilder as ReqwestRequestBuilder, Response};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// HTTP method for API endpoints
 #[derive(Debug, Clone)]
@@ -11,6 +11,68 @@ pub enum HttpMethod {
     Get,
     Post,
     Delete,
+}
+
+#[derive(Default)]
+struct SseParser {
+    buffer: String,
+    data_lines: Vec<String>,
+}
+
+impl SseParser {
+    fn feed<T>(&mut self, chunk: &str) -> Result<Vec<T>, AnthropicRequestError>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        self.buffer.push_str(chunk);
+        let mut events = Vec::new();
+
+        while let Some(newline_idx) = self.buffer.find('\n') {
+            let mut line = self.buffer[..newline_idx].to_string();
+            if line.ends_with('\r') {
+                line.pop();
+            }
+            self.buffer.drain(..=newline_idx);
+
+            if line.is_empty() {
+                if self.data_lines.is_empty() {
+                    continue;
+                }
+
+                let payload = self.data_lines.join("\n");
+                self.data_lines.clear();
+
+                if payload == "[DONE]" || payload.is_empty() {
+                    continue;
+                }
+
+                let event: T = serde_json::from_str(&payload)
+                    .map_err(|e| AnthropicRequestError::InvalidEventData(e.to_string()))?;
+                events.push(event);
+                continue;
+            }
+
+            if line.starts_with(':') {
+                // Comment line; ignore and continue.
+                continue;
+            }
+
+            if let Some(value) = line.strip_prefix("data:") {
+                let data = value.trim_start_matches(' ');
+
+                if data == "[DONE]" {
+                    self.data_lines.clear();
+                    continue;
+                }
+
+                if !data.is_empty() {
+                    self.data_lines.push(data.to_string());
+                }
+            }
+        }
+
+        Ok(events)
+    }
 }
 
 impl From<HttpMethod> for Method {
@@ -83,7 +145,10 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Build a request for the given endpoint
-    pub fn build_request(&self, endpoint: &Endpoint) -> Result<ReqwestRequestBuilder, AnthropicRequestError> {
+    pub fn build_request(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Result<ReqwestRequestBuilder, AnthropicRequestError> {
         let url = format!("{}/{}", self.base_url, endpoint.path);
         let method: Method = endpoint.method.clone().into();
 
@@ -105,7 +170,7 @@ impl<'a> RequestBuilder<'a> {
 
         // Add standard headers
         req = req.header("anthropic-version", self.api_version);
-        
+
         // Only add content-type for POST requests
         if matches!(endpoint.method, HttpMethod::Post) {
             req = req.header("content-type", "application/json");
@@ -168,7 +233,7 @@ impl<'a> RequestBuilder<'a> {
     pub async fn request_unit(&self, endpoint: &Endpoint) -> Result<(), AnthropicRequestError> {
         let req = self.build_request(endpoint)?;
         let res = req.send().await?;
-        
+
         if res.status().is_success() {
             Ok(())
         } else {
@@ -179,10 +244,13 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Execute a request and return raw bytes (for file downloads)
-    pub async fn request_bytes(&self, endpoint: &Endpoint) -> Result<bytes::Bytes, AnthropicRequestError> {
+    pub async fn request_bytes(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Result<bytes::Bytes, AnthropicRequestError> {
         let req = self.build_request(endpoint)?;
         let res = req.send().await?;
-        
+
         if res.status().is_success() {
             Ok(res.bytes().await?)
         } else {
@@ -238,38 +306,19 @@ impl<'a> RequestBuilder<'a> {
                 Err(error::parse_error_response(status, bytes))?;
             } else {
                 let mut byte_stream = response.bytes_stream();
+                let mut parser = SseParser::default();
 
                 while let Some(chunk_result) = byte_stream.next().await {
                     let chunk = chunk_result?;
                     let chunk_str = String::from_utf8(chunk.to_vec())
                         .map_err(|e| AnthropicRequestError::InvalidEventData(format!("UTF-8 decode error: {e}")))?;
 
-                    for event in Self::parse_sse_events(&chunk_str)? {
+                    for event in parser.feed::<T>(&chunk_str)? {
                         yield event;
                     }
                 }
             }
         })
-    }
-
-    /// Parse Server-Sent Events from a chunk of data
-    fn parse_sse_events<T: for<'de> Deserialize<'de>>(
-        chunk: &str,
-    ) -> Result<Vec<T>, AnthropicRequestError> {
-        let mut events = Vec::new();
-        
-        for line in chunk.lines() {
-            if line.starts_with("data: ") {
-                let json_data = line.trim_start_matches("data: ");
-                if json_data != "[DONE]" && !json_data.is_empty() {
-                    let event: T = serde_json::from_str(json_data)
-                        .map_err(|e| AnthropicRequestError::InvalidEventData(e.to_string()))?;
-                    events.push(event);
-                }
-            }
-        }
-        
-        Ok(events)
     }
 
     /// Stream JSONL data (for batch results)
@@ -326,7 +375,7 @@ impl<'a> RequestBuilder<'a> {
                         }
                     }
                 }
-                
+
                 // Process any remaining data in the buffer
                 if !buffer.is_empty() {
                     let line = String::from_utf8(buffer)

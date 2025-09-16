@@ -8,6 +8,7 @@ use crate::content::{Content, FunctionCall, Part, Role};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GenerateContentResponse {
+    #[serde(default)]
     pub candidates: Vec<ResponseCandidate>,
     pub prompt_feedback: Option<PromptFeedback>,
     pub usage_metadata: Option<UsageMetadata>,

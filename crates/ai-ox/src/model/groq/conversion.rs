@@ -1,15 +1,15 @@
+use ai_ox_common::openai_format::{Message as GroqMessage, MessageRole as GroqMessageRole};
 use groq_ox::{
     request::ChatRequest,
-    response::{ChatResponse, ChatCompletionChunk},
+    response::{ChatCompletionChunk, ChatResponse},
 };
-use ai_ox_common::openai_format::{Message as GroqMessage, MessageRole as GroqMessageRole};
 
 use crate::{
     ModelResponse,
     content::{
-        delta::{StreamEvent, StreamStop, FinishReason},
-        message::{Message, MessageRole}, 
-        part::Part
+        delta::{FinishReason, StreamEvent, StreamStop},
+        message::{Message, MessageRole},
+        part::Part,
     },
     errors::GenerateContentError,
     model::ModelRequest,
@@ -48,7 +48,10 @@ pub fn convert_request_to_groq(
                 groq_messages.push(GroqMessage::system(content));
             }
             MessageRole::Unknown(role) => {
-                return Err(GenerateContentError::message_conversion(&format!("Unknown role: {}", role)));
+                return Err(GenerateContentError::message_conversion(&format!(
+                    "Unknown role: {}",
+                    role
+                )));
             }
         }
     }
@@ -64,7 +67,10 @@ pub fn convert_request_to_groq(
 fn extract_text_content(content: &[Part]) -> Result<String, GenerateContentError> {
     let mut text = String::new();
     for part in content {
-        if let Part::Text { text: part_text, .. } = part {
+        if let Part::Text {
+            text: part_text, ..
+        } = part
+        {
             if !text.is_empty() {
                 text.push('\n');
             }
@@ -72,7 +78,9 @@ fn extract_text_content(content: &[Part]) -> Result<String, GenerateContentError
         }
     }
     if text.is_empty() {
-        return Err(GenerateContentError::message_conversion("No text content found in message"));
+        return Err(GenerateContentError::message_conversion(
+            "No text content found in message",
+        ));
     }
     Ok(text)
 }
@@ -82,12 +90,13 @@ pub fn convert_groq_response_to_ai_ox(
     response: ChatResponse,
     model_name: String,
 ) -> Result<ModelResponse, GenerateContentError> {
-    let choice = response.choices
+    let choice = response
+        .choices
         .first()
         .ok_or_else(|| GroqError::ResponseParsing("No choices in response".to_string()))?;
-    
+
     let mut content_parts = Vec::new();
-    
+
     // Add text content if present
     if let Some(text) = &choice.message.content {
         if !text.is_empty() {
@@ -104,15 +113,22 @@ pub fn convert_groq_response_to_ai_ox(
         timestamp: Some(chrono::Utc::now()),
         ext: None,
     };
-    
-    let usage = response.usage.map(|u| {
-        let mut usage = Usage::new();
-        usage.requests = 1;
-        usage.input_tokens_by_modality.insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
-        usage.output_tokens_by_modality.insert(crate::usage::Modality::Text, u.completion_tokens as u64);
-        usage
-    }).unwrap_or_else(Usage::new);
-    
+
+    let usage = response
+        .usage
+        .map(|u| {
+            let mut usage = Usage::new();
+            usage.requests = 1;
+            usage
+                .input_tokens_by_modality
+                .insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
+            usage
+                .output_tokens_by_modality
+                .insert(crate::usage::Modality::Text, u.completion_tokens as u64);
+            usage
+        })
+        .unwrap_or_else(Usage::new);
+
     Ok(ModelResponse {
         message,
         usage,
@@ -126,17 +142,17 @@ pub fn convert_response_to_stream_events(
     chunk: ChatCompletionChunk,
 ) -> Vec<Result<StreamEvent, GenerateContentError>> {
     let mut events = Vec::new();
-    
+
     if let Some(choice) = chunk.choices.first() {
         let delta = &choice.delta;
-        
+
         // Handle content delta
         if let Some(content) = &delta.content {
             if !content.is_empty() {
                 events.push(Ok(StreamEvent::TextDelta(content.clone())));
             }
         }
-        
+
         // Handle finish reason
         if let Some(finish_reason) = &choice.finish_reason {
             let reason = match finish_reason.as_str() {
@@ -144,21 +160,28 @@ pub fn convert_response_to_stream_events(
                 "length" => FinishReason::Length,
                 _ => FinishReason::Other,
             };
-            
-            let usage = chunk.usage.map(|u| {
-                let mut usage = Usage::new();
-                usage.requests = 1;
-                usage.input_tokens_by_modality.insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
-                usage.output_tokens_by_modality.insert(crate::usage::Modality::Text, u.completion_tokens as u64);
-                usage
-            }).unwrap_or_else(Usage::new);
-            
+
+            let usage = chunk
+                .usage
+                .map(|u| {
+                    let mut usage = Usage::new();
+                    usage.requests = 1;
+                    usage
+                        .input_tokens_by_modality
+                        .insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
+                    usage
+                        .output_tokens_by_modality
+                        .insert(crate::usage::Modality::Text, u.completion_tokens as u64);
+                    usage
+                })
+                .unwrap_or_else(Usage::new);
+
             events.push(Ok(StreamEvent::StreamStop(StreamStop {
                 usage,
                 finish_reason: reason,
             })));
         }
     }
-    
+
     events
 }

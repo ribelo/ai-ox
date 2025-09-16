@@ -7,7 +7,7 @@ use crate::{
     ModelResponse,
     content::delta::StreamEvent,
     errors::GenerateContentError,
-    model::{Model, ModelRequest, ModelInfo, Provider, response::RawStructuredResponse},
+    model::{Model, ModelInfo, ModelRequest, Provider, response::RawStructuredResponse},
     usage::Usage,
 };
 use async_stream::try_stream;
@@ -527,7 +527,10 @@ Received {} events total",
     #[tokio::test]
     async fn test_gemini_tool_conversion_to_request() {
         use crate::{
-            content::{message::{Message, MessageRole}, part::Part},
+            content::{
+                message::{Message, MessageRole},
+                part::Part,
+            },
             tool::{FunctionMetadata, Tool},
         };
         use serde_json::json;
@@ -577,20 +580,26 @@ Received {} events total",
             Ok(gemini_request) => {
                 println!("Tool conversion succeeded!");
                 println!("Tools in request: {:?}", gemini_request.tools);
-                
+
                 // Verify tools were converted
-                assert!(gemini_request.tools.is_some(), "Tools should be present in converted request");
+                assert!(
+                    gemini_request.tools.is_some(),
+                    "Tools should be present in converted request"
+                );
                 let tools = gemini_request.tools.unwrap();
                 assert_eq!(tools.len(), 1, "Should have exactly one tool");
-                
+
                 // Print the JSON to see what it looks like
                 let json_str = serde_json::to_string_pretty(&tools[0]).unwrap();
                 println!("Converted tool JSON: {}", json_str);
-                
+
                 // Check that it's the right structure - this should expose issues
                 let tool_json = &tools[0];
                 if tool_json.get("function_declarations").is_none() {
-                    panic!("Expected 'function_declarations' field in converted tool JSON, got: {}", json_str);
+                    panic!(
+                        "Expected 'function_declarations' field in converted tool JSON, got: {}",
+                        json_str
+                    );
                 }
             }
             Err(e) => {
@@ -598,6 +607,4 @@ Received {} events total",
             }
         }
     }
-
-
 }

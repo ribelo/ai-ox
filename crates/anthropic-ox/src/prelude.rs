@@ -12,32 +12,15 @@
 //!     .messages(vec![Message::from("Hello!")])
 //!     .temperature(0.7)
 //!     .build();
-//! 
+//!
 //! let response = client.send(&request).await?;
 //! # Ok(())
 //! # }
 //! ```
 
 pub use crate::{
-    Anthropic,
-    ChatRequest,
-    ChatResponse,
-    AnthropicRequestError,
-    Model,
-    message::{
-        Message,
-        Messages, 
-        Role,
-        Content,
-        Text,
-        ImageSource,
-    },
-    tool::{
-        Tool,
-        ToolChoice,
-        ToolUse,
-        ToolResult,
-        ToolResultContent,
-    },
+    Anthropic, AnthropicRequestError, ChatRequest, ChatResponse, Model,
+    message::{Content, ImageSource, Message, Messages, Role, Text},
+    tool::{Tool, ToolChoice, ToolResult, ToolResultContent, ToolUse},
     usage::Usage,
 };

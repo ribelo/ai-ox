@@ -1,9 +1,12 @@
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
-use reqwest::{Method, RequestBuilder as ReqwestRequestBuilder, Response};
-use futures_util::stream::BoxStream;
+use crate::{
+    error::{self, CommonRequestError},
+    streaming::SseParser,
+};
 use async_stream::try_stream;
-use crate::{error::{self, CommonRequestError}, streaming::SseParser};
+use futures_util::stream::BoxStream;
+use reqwest::{Method, RequestBuilder as ReqwestRequestBuilder, Response};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// HTTP method for API endpoints
 #[derive(Debug, Clone)]
@@ -119,13 +122,24 @@ impl RequestBuilder {
     }
 
     /// Build a reqwest RequestBuilder for the given endpoint
-    pub fn build_request(&self, endpoint: &Endpoint) -> Result<ReqwestRequestBuilder, CommonRequestError> {
+    pub fn build_request(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Result<ReqwestRequestBuilder, CommonRequestError> {
         self.build_request_with_options(endpoint, true)
     }
 
     /// Build a reqwest RequestBuilder with options for content-type handling
-    pub fn build_request_with_options(&self, endpoint: &Endpoint, add_json_content_type: bool) -> Result<ReqwestRequestBuilder, CommonRequestError> {
-        let url = format!("{}/{}", self.config.base_url.trim_end_matches('/'), endpoint.path.trim_start_matches('/'));
+    pub fn build_request_with_options(
+        &self,
+        endpoint: &Endpoint,
+        add_json_content_type: bool,
+    ) -> Result<ReqwestRequestBuilder, CommonRequestError> {
+        let url = format!(
+            "{}/{}",
+            self.config.base_url.trim_end_matches('/'),
+            endpoint.path.trim_start_matches('/')
+        );
         let method: Method = endpoint.method.clone().into();
 
         let mut req = self.client.request(method, &url);
@@ -140,7 +154,9 @@ impl RequestBuilder {
             req = match auth {
                 AuthMethod::Bearer(token) => req.bearer_auth(token),
                 AuthMethod::ApiKey { header_name, key } => req.header(header_name, key),
-                AuthMethod::OAuth { header_name, token } => req.header(header_name, format!("Bearer {}", token)),
+                AuthMethod::OAuth { header_name, token } => {
+                    req.header(header_name, format!("Bearer {}", token))
+                }
                 AuthMethod::QueryParam(param_name, value) => req.query(&[(param_name, value)]),
             };
         }
@@ -163,7 +179,12 @@ impl RequestBuilder {
         }
 
         // Add content-type for POST/PUT/PATCH requests (only for JSON requests)
-        if add_json_content_type && matches!(endpoint.method, HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch) {
+        if add_json_content_type
+            && matches!(
+                endpoint.method,
+                HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch
+            )
+        {
             req = req.header("content-type", "application/json");
         }
 
@@ -200,7 +221,7 @@ impl RequestBuilder {
     pub async fn request_unit(&self, endpoint: &Endpoint) -> Result<(), CommonRequestError> {
         let req = self.build_request(endpoint)?;
         let res = req.send().await?;
-        
+
         if res.status().is_success() {
             Ok(())
         } else {
@@ -211,10 +232,13 @@ impl RequestBuilder {
     }
 
     /// Execute a request and return raw bytes (for file downloads)
-    pub async fn request_bytes(&self, endpoint: &Endpoint) -> Result<bytes::Bytes, CommonRequestError> {
+    pub async fn request_bytes(
+        &self,
+        endpoint: &Endpoint,
+    ) -> Result<bytes::Bytes, CommonRequestError> {
         let req = self.build_request(endpoint)?;
         let res = req.send().await?;
-        
+
         if res.status().is_success() {
             Ok(res.bytes().await?)
         } else {
@@ -258,7 +282,7 @@ impl RequestBuilder {
                 Err(error::parse_error_response(status, bytes))?;
             } else {
                 let mut parser = SseParser::new(response);
-                
+
                 while let Some(event) = parser.next_event().await? {
                     yield event;
                 }
@@ -315,13 +339,12 @@ impl MultipartForm {
 
     /// Add a file from bytes
     pub fn file_from_bytes(
-        mut self, 
-        name: impl Into<String>, 
+        mut self,
+        name: impl Into<String>,
         filename: impl Into<String>,
-        data: Vec<u8>
+        data: Vec<u8>,
     ) -> Self {
-        let part = reqwest::multipart::Part::bytes(data)
-            .file_name(filename.into());
+        let part = reqwest::multipart::Part::bytes(data).file_name(filename.into());
         self.form = self.form.part(name.into(), part);
         self
     }
@@ -330,9 +353,9 @@ impl MultipartForm {
     pub fn file_from_bytes_with_mime(
         mut self,
         name: impl Into<String>,
-        filename: impl Into<String>, 
+        filename: impl Into<String>,
         data: Vec<u8>,
-        mime_type: impl Into<String>
+        mime_type: impl Into<String>,
     ) -> Self {
         let mime_str = mime_type.into();
         let part = reqwest::multipart::Part::bytes(data.clone())

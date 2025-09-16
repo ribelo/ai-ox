@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use ai_ox_common::openai_format::ToolCall;
 use crate::Usage;
+use ai_ox_common::openai_format::ToolCall;
+use serde::{Deserialize, Serialize};
 
 /// Error object returned when the model fails to generate a Response
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,15 +107,15 @@ pub struct ResponsesResponse {
     /// A stable identifier for your end-users
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prompt_cache_key: Option<String>,
-    
+
     /// Maximum tool calls allowed
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_tool_calls: Option<u32>,
-    
+
     /// Service tier information
     #[serde(skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
-    
+
     /// Number of top logprobs to return
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub top_logprobs: Option<u32>,
@@ -165,7 +165,7 @@ pub enum ResponseOutputItem {
         /// The status of the message
         status: String, // "in_progress", "completed", "incomplete"
     },
-    
+
     /// Reasoning item containing the model's internal reasoning
     #[serde(rename = "reasoning")]
     Reasoning {
@@ -177,7 +177,7 @@ pub enum ResponseOutputItem {
         #[serde(skip_serializing_if = "Option::is_none")]
         content: Option<Vec<serde_json::Value>>,
     },
-    
+
     /// File search tool call
     #[serde(rename = "file_search_tool_call")]
     FileSearchToolCall {
@@ -185,7 +185,7 @@ pub enum ResponseOutputItem {
         #[serde(flatten)]
         details: serde_json::Value,
     },
-    
+
     /// Function tool call
     #[serde(rename = "function_tool_call")]
     FunctionToolCall {
@@ -193,7 +193,7 @@ pub enum ResponseOutputItem {
         #[serde(flatten)]
         details: serde_json::Value,
     },
-    
+
     /// Computer tool call
     #[serde(rename = "computer_tool_call")]
     ComputerToolCall {
@@ -201,7 +201,7 @@ pub enum ResponseOutputItem {
         #[serde(flatten)]
         details: serde_json::Value,
     },
-    
+
     /// Code interpreter tool call
     #[serde(rename = "code_interpreter_tool_call")]
     CodeInterpreterToolCall {
@@ -209,7 +209,7 @@ pub enum ResponseOutputItem {
         #[serde(flatten)]
         details: serde_json::Value,
     },
-    
+
     /// Custom tool call
     #[serde(rename = "custom_tool_call")]
     CustomToolCall {
@@ -232,7 +232,7 @@ pub enum ResponseOutputContent {
         #[serde(default)]
         annotations: Vec<serde_json::Value>,
     },
-    
+
     /// Refusal from the model
     #[serde(rename = "refusal")]
     Refusal {
@@ -308,11 +308,11 @@ pub struct ResponsesUsage {
 
     /// Total tokens used
     pub total_tokens: u32,
-    
+
     /// Detailed input token breakdown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input_tokens_details: Option<InputTokensDetails>,
-    
+
     /// Detailed output token breakdown
     #[serde(skip_serializing_if = "Option::is_none")]
     pub output_tokens_details: Option<OutputTokensDetails>,
@@ -388,15 +388,15 @@ pub enum OutputDelta {
     /// Reasoning delta
     #[serde(rename = "reasoning")]
     ReasoningDelta(ReasoningDelta),
-    
+
     /// Message delta
     #[serde(rename = "message")]
     MessageDelta(MessageDelta),
-    
+
     /// Tool call delta
     #[serde(rename = "tool_call")]
     ToolCallDelta(ToolCallDelta),
-    
+
     /// Text delta
     #[serde(rename = "text")]
     TextDelta(TextDelta),
@@ -462,7 +462,7 @@ pub struct TextDelta {
 // Helper function to add output_text field like the official SDK does
 pub fn add_output_text(response: &mut ResponsesResponse) {
     let mut texts = Vec::new();
-    
+
     for output in &response.output {
         if let ResponseOutputItem::Message { content, .. } = output {
             for content_item in content {
@@ -472,7 +472,7 @@ pub fn add_output_text(response: &mut ResponsesResponse) {
             }
         }
     }
-    
+
     response.output_text = texts.join("");
 }
 
@@ -484,7 +484,7 @@ impl ResponsesResponse {
         if !self.output_text.is_empty() {
             return Some(self.output_text.clone());
         }
-        
+
         // Fallback: extract from output items
         let mut content_parts = Vec::new();
 
@@ -536,7 +536,9 @@ impl ResponsesResponse {
         self.output
             .iter()
             .filter_map(|item| match item {
-                ResponseOutputItem::Message { id, role, content, .. } => Some((id.as_str(), role.as_str(), content)),
+                ResponseOutputItem::Message {
+                    id, role, content, ..
+                } => Some((id.as_str(), role.as_str(), content)),
                 _ => None,
             })
             .collect()
@@ -547,11 +549,13 @@ impl ResponsesResponse {
         self.output
             .iter()
             .filter_map(|item| match item {
-                ResponseOutputItem::FunctionToolCall { id, details } |
-                ResponseOutputItem::FileSearchToolCall { id, details } |
-                ResponseOutputItem::ComputerToolCall { id, details } |
-                ResponseOutputItem::CodeInterpreterToolCall { id, details } |
-                ResponseOutputItem::CustomToolCall { id, details } => Some((id.as_str(), details)),
+                ResponseOutputItem::FunctionToolCall { id, details }
+                | ResponseOutputItem::FileSearchToolCall { id, details }
+                | ResponseOutputItem::ComputerToolCall { id, details }
+                | ResponseOutputItem::CodeInterpreterToolCall { id, details }
+                | ResponseOutputItem::CustomToolCall { id, details } => {
+                    Some((id.as_str(), details))
+                }
                 _ => None,
             })
             .collect()

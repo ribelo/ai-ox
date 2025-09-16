@@ -2,7 +2,7 @@
 //!
 //! This crate provides conversions between different AI provider API formats,
 //! enabling interoperability between Anthropic, OpenAI, OpenRouter, Gemini, and other
-//! AI service APIs. 
+//! AI service APIs.
 //!
 //! Since Rust's orphan rule prevents implementing `From` traits for external types,
 //! this crate provides wrapper traits and re-exports to enable conversions.
@@ -38,4 +38,3 @@ pub mod anthropic_gemini;
 /// Conversions between Anthropic and OpenAI formats
 #[cfg(feature = "anthropic-openai")]
 pub mod anthropic_openai;
-

@@ -3,7 +3,7 @@
 //! These tests verify that converting from ai-ox format to provider formats
 //! and back preserves ALL information without loss.
 
-use ai_ox::content::part::{Part, DataRef};
+use ai_ox::content::part::{DataRef, Part};
 use std::collections::BTreeMap;
 
 /// Test roundtrip conversion for ToolResult parts
@@ -44,7 +44,9 @@ fn test_toolresult_roundtrip_preservation() {
     // TODO: Add actual conversion tests once conversion functions are implemented
     // For now, just verify the structure is correct
     match &original_tool_result {
-        Part::ToolResult { id, name, parts, .. } => {
+        Part::ToolResult {
+            id, name, parts, ..
+        } => {
             assert_eq!(id, "call_12345");
             assert_eq!(name, "complex_tool");
 
@@ -59,7 +61,12 @@ fn test_toolresult_roundtrip_preservation() {
             }
 
             // Verify second content part
-            if let Some(Part::Blob { data_ref, mime_type, .. }) = parts.get(1) {
+            if let Some(Part::Blob {
+                data_ref,
+                mime_type,
+                ..
+            }) = parts.get(1)
+            {
                 assert_eq!(mime_type, "image/png");
                 if let DataRef::Base64 { data } = data_ref {
                     assert!(data.len() > 0);
@@ -71,7 +78,13 @@ fn test_toolresult_roundtrip_preservation() {
             }
 
             // Verify third content part (nested tool result)
-            if let Some(Part::ToolResult { id: nested_id, name: nested_name, parts: nested_parts, .. }) = parts.get(2) {
+            if let Some(Part::ToolResult {
+                id: nested_id,
+                name: nested_name,
+                parts: nested_parts,
+                ..
+            }) = parts.get(2)
+            {
                 assert_eq!(nested_id, "nested_call");
                 assert_eq!(nested_name, "nested_tool");
                 assert_eq!(nested_parts.len(), 1);
@@ -99,7 +112,9 @@ fn test_empty_toolresult_roundtrip() {
     };
 
     match &original_tool_result {
-        Part::ToolResult { id, name, parts, .. } => {
+        Part::ToolResult {
+            id, name, parts, ..
+        } => {
             assert_eq!(id, "empty_call");
             assert_eq!(name, "empty_tool");
             assert!(parts.is_empty());
@@ -122,7 +137,9 @@ fn test_text_only_toolresult_roundtrip() {
     };
 
     match &original_tool_result {
-        Part::ToolResult { id, name, parts, .. } => {
+        Part::ToolResult {
+            id, name, parts, ..
+        } => {
             assert_eq!(id, "text_call");
             assert_eq!(name, "text_tool");
             assert_eq!(parts.len(), 1);

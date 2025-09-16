@@ -108,9 +108,12 @@ impl LiveOperation {
     #[allow(clippy::too_many_lines)]
     pub async fn connect(self) -> Result<ActiveLiveSession, GeminiRequestError> {
         // Live API only supports API key authentication, not OAuth
-        let api_key = self.gemini.api_key.as_ref()
+        let api_key = self
+            .gemini
+            .api_key
+            .as_ref()
             .ok_or(GeminiRequestError::AuthenticationMissing)?;
-        
+
         // Construct the WebSocket URL with API key
         let url_str = format!(
             "wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key={}",

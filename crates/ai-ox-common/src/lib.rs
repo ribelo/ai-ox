@@ -17,7 +17,7 @@ pub mod streaming;
 
 pub use error::CommonRequestError;
 pub use openai_format::*;
-pub use request_builder::{Endpoint, HttpMethod, RequestBuilder, MultipartForm};
+pub use request_builder::{Endpoint, HttpMethod, MultipartForm, RequestBuilder};
 pub use streaming::SseParser;
 
 /// Re-export common types for convenience

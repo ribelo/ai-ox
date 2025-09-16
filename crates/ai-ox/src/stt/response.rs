@@ -6,37 +6,37 @@ use std::time::Duration;
 pub struct TranscriptionResponse {
     /// Primary transcription text
     pub text: String,
-    
+
     /// Detected or specified language (ISO-639-1 code)
     pub language: Option<String>,
-    
+
     /// Audio duration in seconds
     pub duration: Option<Duration>,
-    
+
     /// Overall confidence score (0.0 - 1.0)
     pub confidence: Option<f32>,
-    
+
     /// Alternative transcriptions with confidence scores
     #[serde(default)]
     pub alternatives: Vec<Alternative>,
-    
+
     /// Time-aligned segments of the transcription
     #[serde(default)]
     pub segments: Vec<Segment>,
-    
+
     /// Word-level details with timestamps
     #[serde(default)]
     pub words: Vec<Word>,
-    
+
     /// Provider name for reference
     pub provider: String,
-    
+
     /// Model used for transcription
     pub model: String,
-    
+
     /// Usage and performance statistics
     pub usage: SttUsage,
-    
+
     /// Additional provider-specific metadata
     #[serde(default)]
     pub metadata: serde_json::Value,
@@ -86,10 +86,7 @@ impl TranscriptionResponse {
             return self.confidence;
         }
 
-        let confidences: Vec<f32> = self.words
-            .iter()
-            .filter_map(|w| w.confidence)
-            .collect();
+        let confidences: Vec<f32> = self.words.iter().filter_map(|w| w.confidence).collect();
 
         if confidences.is_empty() {
             self.confidence

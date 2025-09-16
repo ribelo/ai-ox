@@ -83,7 +83,12 @@ pub struct ToolUse {
 
 impl ToolUse {
     pub fn new(id: String, name: String, input: serde_json::Value) -> Self {
-        Self { id, name, input, cache_control: None }
+        Self {
+            id,
+            name,
+            input,
+            cache_control: None,
+        }
     }
 }
 
@@ -141,7 +146,6 @@ pub enum ToolResultContent {
     Image { source: crate::message::ImageSource },
 }
 
-
 impl<'de> Deserialize<'de> for ToolResult {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -174,7 +178,8 @@ impl<'de> Deserialize<'de> for ToolResult {
                             tool_use_id = Some(map.next_value()?);
                         }
                         "content" => {
-                            content = Some(deserialize_tool_result_content_value(map.next_value()?)?);
+                            content =
+                                Some(deserialize_tool_result_content_value(map.next_value()?)?);
                         }
                         "is_error" => {
                             is_error = Some(map.next_value()?);
@@ -200,27 +205,28 @@ impl<'de> Deserialize<'de> for ToolResult {
             }
         }
 
-        deserializer.deserialize_struct("ToolResult", &["tool_use_id", "content", "is_error", "cache_control"], ToolResultVisitor)
+        deserializer.deserialize_struct(
+            "ToolResult",
+            &["tool_use_id", "content", "is_error", "cache_control"],
+            ToolResultVisitor,
+        )
     }
 }
 
-fn deserialize_tool_result_content_value<E>(value: serde_json::Value) -> Result<Vec<ToolResultContent>, E>
+fn deserialize_tool_result_content_value<E>(
+    value: serde_json::Value,
+) -> Result<Vec<ToolResultContent>, E>
 where
     E: serde::de::Error,
 {
     match value {
         // Handle string format (Claude Code format)
-        serde_json::Value::String(text) => {
-            Ok(vec![ToolResultContent::Text { text }])
-        }
+        serde_json::Value::String(text) => Ok(vec![ToolResultContent::Text { text }]),
         // Handle array format (standard Anthropic format)
-        serde_json::Value::Array(arr) => {
-            arr.into_iter()
-                .map(|item| {
-                    serde_json::from_value(item).map_err(E::custom)
-                })
-                .collect()
-        }
+        serde_json::Value::Array(arr) => arr
+            .into_iter()
+            .map(|item| serde_json::from_value(item).map_err(E::custom))
+            .collect(),
         _ => Err(E::custom("content must be either a string or an array")),
     }
 }
@@ -259,7 +265,6 @@ impl fmt::Display for ToolResult {
         write!(f, "ToolResult(id: {})", self.tool_use_id)
     }
 }
-
 
 /// Trait for tools that can be called by the AI
 #[async_trait]

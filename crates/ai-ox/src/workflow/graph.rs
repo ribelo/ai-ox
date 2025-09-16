@@ -16,7 +16,11 @@ where
     Output: Send + Sync,
 {
     /// Creates a new workflow with an initial node, state, and dependencies.
-    pub fn new(initial_node: impl Node<State, Deps, Output> + 'static, initial_state: State, deps: Deps) -> Self {
+    pub fn new(
+        initial_node: impl Node<State, Deps, Output> + 'static,
+        initial_state: State,
+        deps: Deps,
+    ) -> Self {
         Self {
             initial_node: Box::new(initial_node),
             context: RunContext::new(initial_state, deps),

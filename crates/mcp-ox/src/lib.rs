@@ -14,9 +14,17 @@ pub trait ToMcp<T> {
 }
 
 pub trait FromMcp<T> {
-    fn from_mcp(value: T) -> Result<Self, McpConversionError> where Self: Sized;
+    fn from_mcp(value: T) -> Result<Self, McpConversionError>
+    where
+        Self: Sized;
 
-    fn from_mcp_with_config(value: T, _config: &ConversionConfig) -> Result<Self, McpConversionError> where Self: Sized {
+    fn from_mcp_with_config(
+        value: T,
+        _config: &ConversionConfig,
+    ) -> Result<Self, McpConversionError>
+    where
+        Self: Sized,
+    {
         Self::from_mcp(value)
     }
 }

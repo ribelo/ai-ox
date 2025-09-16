@@ -48,9 +48,13 @@ impl Part {
             data: data.into(),
         }
     }
-    
+
     /// Creates a new `Part` with the given data, thought information, and signature.
-    pub fn new_with_thought_and_signature(data: impl Into<PartData>, thought: bool, signature: String) -> Self {
+    pub fn new_with_thought_and_signature(
+        data: impl Into<PartData>,
+        thought: bool,
+        signature: String,
+    ) -> Self {
         Self {
             thought: Some(thought),
             thought_signature: Some(signature),

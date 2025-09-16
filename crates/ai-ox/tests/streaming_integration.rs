@@ -53,8 +53,11 @@ async fn test_all_providers_streaming_with_tools() {
 
     for model in models {
         let model_name = model.name().to_string();
-        println!("\n--- Testing streaming with tools for model: {} ---", &model_name);
-        
+        println!(
+            "\n--- Testing streaming with tools for model: {} ---",
+            &model_name
+        );
+
         let weather_service = MockWeatherService;
         let agent = Agent::builder()
             .model(model.into())
@@ -132,10 +135,7 @@ async fn test_all_providers_streaming_with_tools() {
                                     println!("  Response messages: {}", messages.len());
 
                                     // Verify the tool result has proper structure
-                                    assert!(
-                                        !name.is_empty(),
-                                        "Tool result should have a name"
-                                    );
+                                    assert!(!name.is_empty(), "Tool result should have a name");
                                     assert!(
                                         !messages.is_empty(),
                                         "Tool result should have response messages"
@@ -177,7 +177,7 @@ async fn test_all_providers_streaming_with_tools() {
             delta_received,
             "Must receive at least one Delta event with text"
         );
-        
+
         // Note: Some models might not support tools, so we check but don't fail
         if tool_execution_received {
             assert!(
@@ -185,9 +185,12 @@ async fn test_all_providers_streaming_with_tools() {
                 "If tool was executed, must receive ToolResult event"
             );
         } else {
-            println!("⚠️  Model {} did not use tools (might not support them)", &model_name);
+            println!(
+                "⚠️  Model {} did not use tools (might not support them)",
+                &model_name
+            );
         }
-        
+
         assert!(completed_received, "Must receive Completed event");
 
         // Verify the event sequence makes sense
@@ -199,10 +202,7 @@ async fn test_all_providers_streaming_with_tools() {
         // Last event should be Completed
         assert_eq!(events.last().unwrap().event_type(), "Completed");
 
-        println!(
-            "🎉 Model {} passed streaming with tools test!",
-            &model_name
-        );
+        println!("🎉 Model {} passed streaming with tools test!", &model_name);
     }
 }
 
@@ -217,8 +217,11 @@ async fn test_all_providers_streaming_without_tools() {
 
     for model in models {
         let model_name = model.name().to_string();
-        println!("\n--- Testing streaming without tools for model: {} ---", &model_name);
-        
+        println!(
+            "\n--- Testing streaming without tools for model: {} ---",
+            &model_name
+        );
+
         let agent = Agent::builder()
             .model(model.into())
             .system_instruction("You are a helpful assistant. Keep responses brief.")

@@ -1,9 +1,5 @@
 #[cfg(feature = "groq")]
-use ai_ox::stt::{
-    TranscriptionRequest, AudioSource, 
-    SpeechToText, OutputFormat,
-    groq_stt
-};
+use ai_ox::stt::{AudioSource, OutputFormat, SpeechToText, TranscriptionRequest, groq_stt};
 use std::path::PathBuf;
 
 #[cfg(feature = "groq")]
@@ -31,14 +27,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Duration: {:?}", response.duration);
             println!("Provider: {}", response.provider);
             println!("Model: {}", response.model);
-            
+
             if response.has_segments() {
                 println!("\n=== Segments ===");
                 for (i, segment) in response.segments.iter().enumerate() {
-                    println!("Segment {}: {} - {} | {}", 
-                        i + 1, 
-                        segment.start.as_secs_f32(), 
-                        segment.end.as_secs_f32(), 
+                    println!(
+                        "Segment {}: {} - {} | {}",
+                        i + 1,
+                        segment.start.as_secs_f32(),
+                        segment.end.as_secs_f32(),
                         segment.text
                     );
                     if let Some(confidence) = segment.confidence {
@@ -49,10 +46,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             if response.has_words() {
                 println!("\n=== Words ===");
-                for word in response.words.iter().take(10) { // Show first 10 words
-                    println!("{}: {} - {}", 
-                        word.text, 
-                        word.start.as_secs_f32(), 
+                for word in response.words.iter().take(10) {
+                    // Show first 10 words
+                    println!(
+                        "{}: {} - {}",
+                        word.text,
+                        word.start.as_secs_f32(),
                         word.end.as_secs_f32()
                     );
                 }
@@ -63,7 +62,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
             println!("\n=== Usage Stats ===");
             println!("Audio duration: {:?}", response.usage.audio_duration);
-            println!("Characters transcribed: {}", response.usage.characters_transcribed);
+            println!(
+                "Characters transcribed: {}",
+                response.usage.characters_transcribed
+            );
             if let Some(processing_time) = response.usage.processing_time {
                 println!("Processing time: {:?}", processing_time);
                 if let Some(speed_ratio) = response.usage.speed_ratio() {
@@ -82,6 +84,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(not(feature = "groq"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("This example requires the 'groq' feature. Run with: cargo run --example stt_groq --features groq");
+    println!(
+        "This example requires the 'groq' feature. Run with: cargo run --example stt_groq --features groq"
+    );
     Ok(())
 }

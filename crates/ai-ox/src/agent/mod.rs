@@ -1,13 +1,13 @@
-use std::{sync::Arc, collections::HashSet};
+use std::{collections::HashSet, sync::Arc};
 
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 
 use crate::{
     content::{
+        Part,
         delta::StreamEvent,
         message::{Message, MessageRole},
-        Part,
     },
     errors::GenerateContentError,
     model::{
@@ -15,7 +15,7 @@ use crate::{
         request::ModelRequest,
         response::{ModelResponse, StructuredResponse},
     },
-    tool::{ToolBox, ToolUse, ToolSet, ToolHooks, ApprovalRequest, ToolError},
+    tool::{ApprovalRequest, ToolBox, ToolError, ToolHooks, ToolSet, ToolUse},
     usage::Usage,
 };
 
@@ -84,18 +84,17 @@ impl Agent {
     }
 
     /// Pre-approve specific dangerous tools for this agent.
-    /// 
+    ///
     /// These tools will execute without requesting approval through hooks.
     /// Use this for session-based approval where the user has already
     /// granted permission for certain operations.
     pub fn approve_dangerous_tools(&mut self, tool_names: &[&str]) {
-        self.approved_dangerous_tools.extend(
-            tool_names.iter().map(|s| s.to_string())
-        );
+        self.approved_dangerous_tools
+            .extend(tool_names.iter().map(|s| s.to_string()));
     }
 
     /// Remove approval for specific dangerous tools.
-    /// 
+    ///
     /// These tools will once again require approval through hooks.
     pub fn revoke_dangerous_tools(&mut self, tool_names: &[&str]) {
         for name in tool_names {
@@ -104,17 +103,20 @@ impl Agent {
     }
 
     /// Pre-approve ALL dangerous tools for this agent (trust mode).
-    /// 
+    ///
     /// This allows the agent to execute any dangerous operation without
     /// requesting approval. Use with caution.
     pub fn approve_all_dangerous_tools(&mut self) {
         self.approved_dangerous_tools.extend(
-            self.tools.get_all_dangerous_functions().iter().map(|s| s.to_string())
+            self.tools
+                .get_all_dangerous_functions()
+                .iter()
+                .map(|s| s.to_string()),
         );
     }
 
     /// Clear all pre-approved dangerous tools.
-    /// 
+    ///
     /// All dangerous tools will once again require approval through hooks.
     pub fn clear_approved_dangerous_tools(&mut self) {
         self.approved_dangerous_tools.clear();
@@ -134,8 +136,8 @@ impl Agent {
     async fn execute_tool_call(
         tools: &ToolSet,
         approved_dangerous_tools: &HashSet<String>,
-        call: ToolUse, 
-        hooks: Option<&ToolHooks>
+        call: ToolUse,
+        hooks: Option<&ToolHooks>,
     ) -> Result<Part, ToolError> {
         let call_name = &call.name;
         if tools.is_dangerous_function(call_name) {
@@ -143,27 +145,27 @@ impl Agent {
                 return tools.invoke(call).await;
             }
             if let Some(h) = hooks {
-                let req = ApprovalRequest { 
-                    tool_name: call_name.clone(), 
-                    args: call.args.clone() 
+                let req = ApprovalRequest {
+                    tool_name: call_name.clone(),
+                    args: call.args.clone(),
                 };
                 if h.request_approval(req).await {
                     return tools.invoke(call).await;
                 }
                 return Err(ToolError::execution(
-                    call_name, 
+                    call_name,
                     std::io::Error::new(
-                        std::io::ErrorKind::PermissionDenied, 
-                        "User denied execution of dangerous operation"
-                    )
+                        std::io::ErrorKind::PermissionDenied,
+                        "User denied execution of dangerous operation",
+                    ),
                 ));
             }
             return Err(ToolError::execution(
-                call_name, 
+                call_name,
                 std::io::Error::new(
-                    std::io::ErrorKind::PermissionDenied, 
-                    "Dangerous operation requires approval but no hooks provided"
-                )
+                    std::io::ErrorKind::PermissionDenied,
+                    "Dangerous operation requires approval but no hooks provided",
+                ),
             ));
         }
         tools.invoke(call).await
@@ -237,14 +239,14 @@ impl Agent {
                 // Clone hooks once outside the loop for better performance
                 let hooks_clone = hooks.clone();
                 let approved_tools = self.approved_dangerous_tools.clone();
-                
+
                 // Start all tool calls concurrently
                 for call in tool_calls {
                     let tools = self.tools.clone();
                     let call_clone = call.clone();
                     let hooks_for_task = hooks_clone.clone();
                     let approved_tools_for_task = approved_tools.clone();
-                    
+
                     join_set.spawn(async move { 
                         let call_name = call_clone.name.clone();
                         let result = if tools.is_dangerous_function(&call_name) {
@@ -300,7 +302,7 @@ impl Agent {
                             // The tool result is a Part that should be added to the conversation history.
                             conversation.push(crate::content::Message::new(
                                 crate::content::MessageRole::Assistant,
-                                vec![result]
+                                vec![result],
                             ));
                         }
                         Err(e) => {
@@ -344,8 +346,9 @@ impl Agent {
         {
             Ok(raw_structured_content) => {
                 let response_text = raw_structured_content.json.to_string();
-                let data: O = serde_json::from_value(raw_structured_content.json)
-                    .map_err(|e| AgentError::response_parsing_failed(e, response_text, schema_string.clone()))?;
+                let data: O = serde_json::from_value(raw_structured_content.json).map_err(|e| {
+                    AgentError::response_parsing_failed(e, response_text, schema_string.clone())
+                })?;
                 Ok(StructuredResponse {
                     data,
                     model_name: raw_structured_content.model_name,
@@ -497,7 +500,7 @@ impl Agent {
 
                     // Execute all tool calls in parallel
                     let mut join_set = tokio::task::JoinSet::new();
-                    
+
                     // Clone hooks once outside the loop for better performance
                     let hooks_clone = hooks.clone();
                     let approved_tools = self.approved_dangerous_tools.clone();
@@ -523,7 +526,7 @@ impl Agent {
                                         tool_name: call_name.clone(),
                                         args: call_clone.args.clone(),
                                     };
-                                    
+
                                     if hooks.request_approval(approval_request).await {
                                         // Approved this time - execute the tool
                                         tools.invoke(call_clone.clone()).await
@@ -669,15 +672,23 @@ impl StreamAccumulator {
     fn finalize(self) -> (Message, Vec<ToolUse>) {
         let mut content = vec![];
         if !self.text.is_empty() {
-            content.push(Part::Text { text: self.text, ext: std::collections::BTreeMap::new() });
+            content.push(Part::Text {
+                text: self.text,
+                ext: std::collections::BTreeMap::new(),
+            });
         }
 
-        content.extend(self.tool_calls.iter().cloned().map(|tool_use| Part::ToolUse {
-            id: tool_use.id,
-            name: tool_use.name,
-            args: tool_use.args,
-            ext: tool_use.ext.unwrap_or_default(),
-        }));
+        content.extend(
+            self.tool_calls
+                .iter()
+                .cloned()
+                .map(|tool_use| Part::ToolUse {
+                    id: tool_use.id,
+                    name: tool_use.name,
+                    args: tool_use.args,
+                    ext: tool_use.ext.unwrap_or_default(),
+                }),
+        );
 
         let message = Message::new(MessageRole::Assistant, content);
         (message, self.tool_calls)
@@ -729,5 +740,6 @@ where
 {
     let text = response.to_string().ok_or(AgentError::NoResponse)?;
     let schema = crate::tool::schema_for_type::<O>();
-    serde_json::from_str(&text).map_err(|e| AgentError::response_parsing_failed(e, &text, schema.to_string()))
+    serde_json::from_str(&text)
+        .map_err(|e| AgentError::response_parsing_failed(e, &text, schema.to_string()))
 }

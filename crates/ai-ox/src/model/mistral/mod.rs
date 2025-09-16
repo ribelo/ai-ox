@@ -7,7 +7,7 @@ use crate::{
     ModelResponse,
     content::delta::StreamEvent,
     errors::GenerateContentError,
-    model::{Model, ModelRequest, ModelInfo, Provider, response::RawStructuredResponse},
+    model::{Model, ModelInfo, ModelRequest, Provider, response::RawStructuredResponse},
     usage::Usage,
 };
 use async_stream::try_stream;
@@ -50,8 +50,7 @@ impl MistralModel {
     ///
     /// This function reads the MISTRAL_API_KEY from the environment and returns an error if missing.
     pub async fn new(model: impl Into<String>) -> Result<Self, MistralError> {
-        let api_key = std::env::var("MISTRAL_API_KEY")
-            .map_err(|_| MistralError::MissingApiKey)?;
+        let api_key = std::env::var("MISTRAL_API_KEY").map_err(|_| MistralError::MissingApiKey)?;
 
         let client = Mistral::new(&api_key);
 
@@ -85,7 +84,8 @@ impl Model for MistralModel {
                 self.system_instruction.clone(),
                 Some(mistral_ox::tool::ToolChoice::Auto),
             )?;
-            let response = self.client
+            let response = self
+                .client
                 .send(&mistral_request)
                 .await
                 .map_err(MistralError::Api)?;
@@ -135,13 +135,14 @@ impl Model for MistralModel {
                 self.system_instruction.clone(),
                 Some(self.tool_choice.clone()),
             )?;
-            
+
             // Set response format to JSON
             mistral_request.response_format = Some(serde_json::json!({
                 "type": "json_object"
             }));
 
-            let response = self.client
+            let response = self
+                .client
                 .send(&mistral_request)
                 .await
                 .map_err(MistralError::Api)?;
@@ -162,8 +163,12 @@ impl Model for MistralModel {
                 .map(|u| {
                     let mut usage = Usage::new();
                     usage.requests = 1;
-                    usage.input_tokens_by_modality.insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
-                    usage.output_tokens_by_modality.insert(crate::usage::Modality::Text, u.completion_tokens as u64);
+                    usage
+                        .input_tokens_by_modality
+                        .insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
+                    usage
+                        .output_tokens_by_modality
+                        .insert(crate::usage::Modality::Text, u.completion_tokens as u64);
                     usage
                 })
                 .unwrap_or_else(Usage::new);

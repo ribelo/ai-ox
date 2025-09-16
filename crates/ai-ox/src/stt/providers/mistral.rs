@@ -1,19 +1,14 @@
-use futures_util::{future::BoxFuture, FutureExt};
 use base64::Engine;
+use futures_util::{FutureExt, future::BoxFuture};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use crate::stt::{
-    SpeechToText, SttInfo, SttModel, SttError,
-    TranscriptionRequest, TranscriptionResponse, 
-    AudioSource, AudioFormat, OutputFormat, TimestampGranularity,
-    Segment, Word, SttUsage,
+    AudioFormat, AudioSource, OutputFormat, Segment, SpeechToText, SttError, SttInfo, SttModel,
+    SttUsage, TimestampGranularity, TranscriptionRequest, TranscriptionResponse, Word,
 };
 
-use mistral_ox::audio::{
-    TranscriptionFormat, 
-    TimestampGranularity as MistralTimestampGranularity
-};
+use mistral_ox::audio::{TimestampGranularity as MistralTimestampGranularity, TranscriptionFormat};
 
 /// Mistral STT provider implementation using Voxtral models
 #[derive(Debug, Clone)]
@@ -47,16 +42,17 @@ impl MistralSttBuilder {
     }
 
     pub fn api_key_from_env(mut self, env_var: &str) -> Result<Self, SttError> {
-        let key = std::env::var(env_var)
-            .map_err(|_| SttError::MissingApiKey)?;
+        let key = std::env::var(env_var).map_err(|_| SttError::MissingApiKey)?;
         self.api_key = Some(key);
         Ok(self)
     }
 
     pub fn build(self) -> Result<Arc<dyn SpeechToText>, SttError> {
         let api_key = self.api_key.ok_or(SttError::MissingApiKey)?;
-        let model = self.model.unwrap_or_else(|| "voxtral-large-24-05".to_string());
-        
+        let model = self
+            .model
+            .unwrap_or_else(|| "voxtral-large-24-05".to_string());
+
         let client = mistral_ox::Mistral::new(&api_key);
         Ok(Arc::new(MistralStt::new(client, model)))
     }
@@ -83,28 +79,29 @@ impl MistralStt {
     fn convert_audio_source(&self, source: AudioSource) -> Result<Vec<u8>, SttError> {
         match source {
             AudioSource::Bytes { data, .. } => Ok(data),
-            AudioSource::File(path) => {
-                std::fs::read(&path).map_err(|e| {
-                    SttError::InvalidConfig(format!("Failed to read file {:?}: {}", path, e))
-                })
-            }
+            AudioSource::File(path) => std::fs::read(&path).map_err(|e| {
+                SttError::InvalidConfig(format!("Failed to read file {:?}: {}", path, e))
+            }),
             AudioSource::Base64 { data, .. } => {
                 use base64::Engine;
                 base64::engine::general_purpose::STANDARD
                     .decode(data)
                     .map_err(|e| SttError::InvalidAudioData(format!("Invalid base64: {}", e)))
             }
-            AudioSource::Url(_) => {
-                Err(SttError::InvalidConfig("URL audio sources not supported by Mistral".to_string()))
-            }
-            AudioSource::RecordingId(_) => {
-                Err(SttError::InvalidConfig("Recording ID sources not supported by Mistral".to_string()))
-            }
+            AudioSource::Url(_) => Err(SttError::InvalidConfig(
+                "URL audio sources not supported by Mistral".to_string(),
+            )),
+            AudioSource::RecordingId(_) => Err(SttError::InvalidConfig(
+                "Recording ID sources not supported by Mistral".to_string(),
+            )),
         }
     }
 
     /// Convert unified request to Mistral format
-    fn convert_request(&self, request: TranscriptionRequest) -> Result<mistral_ox::audio::TranscriptionRequest, SttError> {
+    fn convert_request(
+        &self,
+        request: TranscriptionRequest,
+    ) -> Result<mistral_ox::audio::TranscriptionRequest, SttError> {
         let audio_data = self.convert_audio_source(request.audio)?;
 
         // Convert output format
@@ -131,7 +128,11 @@ impl MistralStt {
             language: request.language,
             prompt: request.prompt,
             response_format,
-            temperature: if request.temperature > 0.0 { Some(request.temperature) } else { None },
+            temperature: if request.temperature > 0.0 {
+                Some(request.temperature)
+            } else {
+                None
+            },
             timestamp_granularities,
         };
 
@@ -139,7 +140,10 @@ impl MistralStt {
     }
 
     /// Convert Mistral response to unified format
-    fn convert_response(&self, mistral_response: mistral_ox::audio::TranscriptionResponse) -> TranscriptionResponse {
+    fn convert_response(
+        &self,
+        mistral_response: mistral_ox::audio::TranscriptionResponse,
+    ) -> TranscriptionResponse {
         let mut response = TranscriptionResponse::simple(
             mistral_response.text,
             "mistral".to_string(),
@@ -192,28 +196,34 @@ impl MistralStt {
 
 /// Available Mistral STT models with metadata
 static MISTRAL_MODELS: LazyLock<Vec<SttModel>> = LazyLock::new(|| {
-    vec![
-        SttModel {
-            id: "voxtral-large-24-05".to_string(),
-            name: "Voxtral Large 24.05".to_string(),
-            description: Some("Mistral's flagship multilingual audio transcription model".to_string()),
-            supported_formats: vec![
-                AudioFormat::Mp3,
-                AudioFormat::Wav,
-                AudioFormat::Flac,
-                AudioFormat::M4a,
-                AudioFormat::WebM,
-                AudioFormat::Ogg,
-            ],
-            max_duration: Some(Duration::from_secs(30 * 60)), // 30 minutes
-            supports_streaming: false,
-            supported_languages: vec![
-                "en".to_string(), "fr".to_string(), "es".to_string(), "de".to_string(),
-                "it".to_string(), "nl".to_string(), "pt".to_string(), "ru".to_string(),
-                "zh".to_string(), "ja".to_string(), "ar".to_string(),
-            ],
-        },
-    ]
+    vec![SttModel {
+        id: "voxtral-large-24-05".to_string(),
+        name: "Voxtral Large 24.05".to_string(),
+        description: Some("Mistral's flagship multilingual audio transcription model".to_string()),
+        supported_formats: vec![
+            AudioFormat::Mp3,
+            AudioFormat::Wav,
+            AudioFormat::Flac,
+            AudioFormat::M4a,
+            AudioFormat::WebM,
+            AudioFormat::Ogg,
+        ],
+        max_duration: Some(Duration::from_secs(30 * 60)), // 30 minutes
+        supports_streaming: false,
+        supported_languages: vec![
+            "en".to_string(),
+            "fr".to_string(),
+            "es".to_string(),
+            "de".to_string(),
+            "it".to_string(),
+            "nl".to_string(),
+            "pt".to_string(),
+            "ru".to_string(),
+            "zh".to_string(),
+            "ja".to_string(),
+            "ar".to_string(),
+        ],
+    }]
 });
 
 impl SpeechToText for MistralStt {
@@ -231,7 +241,10 @@ impl SpeechToText for MistralStt {
     ) -> BoxFuture<'_, Result<TranscriptionResponse, SttError>> {
         async move {
             let mistral_request = self.convert_request(request)?;
-            let mistral_response = self.client.transcribe(&mistral_request).await
+            let mistral_response = self
+                .client
+                .transcribe(&mistral_request)
+                .await
                 .map_err(SttError::from)?;
             Ok(self.convert_response(mistral_response))
         }

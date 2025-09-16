@@ -34,13 +34,21 @@ fn test_schema_conversion_bash_tool() {
     });
 
     let openapi_schema = draft07_to_openapi3(draft07_schema);
-    
-    println!("Converted schema: {}", serde_json::to_string_pretty(&openapi_schema).unwrap());
-    
+
+    println!(
+        "Converted schema: {}",
+        serde_json::to_string_pretty(&openapi_schema).unwrap()
+    );
+
     // Check that problematic fields are removed
     assert!(!openapi_schema.as_object().unwrap().contains_key("$schema"));
-    assert!(!openapi_schema.as_object().unwrap().contains_key("additionalProperties"));
-    
+    assert!(
+        !openapi_schema
+            .as_object()
+            .unwrap()
+            .contains_key("additionalProperties")
+    );
+
     // Check that the structure is valid
     assert_eq!(openapi_schema["type"], "object");
     assert!(openapi_schema["properties"].is_object());
@@ -68,9 +76,12 @@ fn test_schema_conversion_with_nullable_types() {
     });
 
     let openapi_schema = draft07_to_openapi3(draft07_schema);
-    
-    println!("Nullable conversion: {}", serde_json::to_string_pretty(&openapi_schema).unwrap());
-    
+
+    println!(
+        "Nullable conversion: {}",
+        serde_json::to_string_pretty(&openapi_schema).unwrap()
+    );
+
     // Check nullable conversion
     let optional_field = &openapi_schema["properties"]["optional_field"];
     assert_eq!(optional_field["type"], "string");
@@ -90,7 +101,7 @@ fn test_schema_conversion_property_names_with_hyphens() {
             },
             "-B": {
                 "type": ["number", "null"],
-                "description": "Number of lines to show before each match"  
+                "description": "Number of lines to show before each match"
             },
             "-i": {
                 "type": "boolean",
@@ -102,9 +113,12 @@ fn test_schema_conversion_property_names_with_hyphens() {
     });
 
     let openapi_schema = draft07_to_openapi3(draft07_schema);
-    
-    println!("Hyphen properties conversion: {}", serde_json::to_string_pretty(&openapi_schema).unwrap());
-    
+
+    println!(
+        "Hyphen properties conversion: {}",
+        serde_json::to_string_pretty(&openapi_schema).unwrap()
+    );
+
     // Check that hyphen properties are preserved
     let properties = openapi_schema["properties"].as_object().unwrap();
     assert!(properties.contains_key("-A"));
@@ -151,9 +165,12 @@ fn test_schema_conversion_complex_tool() {
     });
 
     let openapi_schema = draft07_to_openapi3(draft07_schema);
-    
-    println!("Complex schema conversion: {}", serde_json::to_string_pretty(&openapi_schema).unwrap());
-    
+
+    println!(
+        "Complex schema conversion: {}",
+        serde_json::to_string_pretty(&openapi_schema).unwrap()
+    );
+
     // Verify all problematic Draft-07 fields are removed
     let obj = openapi_schema.as_object().unwrap();
     assert!(!obj.contains_key("$schema"));
@@ -162,21 +179,21 @@ fn test_schema_conversion_complex_tool() {
     assert!(!obj.contains_key("default"));
     assert!(!obj.contains_key("maxProperties"));
     assert!(!obj.contains_key("minProperties"));
-    
+
     // Check nullable conversions
     let glob_field = &openapi_schema["properties"]["glob"];
     assert_eq!(glob_field["type"], "string");
     assert_eq!(glob_field["nullable"], true);
-    
+
     let head_limit_field = &openapi_schema["properties"]["head_limit"];
     assert_eq!(head_limit_field["type"], "number");
     assert_eq!(head_limit_field["nullable"], true);
-    
+
     // Check hyphen property transformation
     let properties = openapi_schema["properties"].as_object().unwrap();
     assert!(properties.contains_key("A")); // "-A" → "A"
     assert!(!properties.contains_key("-A")); // Original should be removed
-    
+
     let a_field = &openapi_schema["properties"]["A"];
     assert_eq!(a_field["type"], "number");
     assert_eq!(a_field["nullable"], true);

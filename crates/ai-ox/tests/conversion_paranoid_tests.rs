@@ -6,8 +6,8 @@
 //! rejections for unsupported content (Anthropic), and provider roundtrips for
 //! Gemini file-data variants and OpenRouter opaque-skipping behaviour.
 
-use ai_ox::content::part::{DataRef, Part};
 use ai_ox::content::message::{Message, MessageRole};
+use ai_ox::content::part::{DataRef, Part};
 use ai_ox::tool::encoding::{decode_tool_result_parts, encode_tool_result_parts};
 use serde_json::json;
 use std::collections::BTreeMap;
@@ -22,26 +22,30 @@ fn test_encode_decode_preserves_all_part_variants_including_opaque_and_uri() {
     ext.insert("x.test".to_string(), json!(true));
 
     let parts: Vec<Part> = vec![
-        Part::Text { text: "Leading text".into(), ext: BTreeMap::new() },
-
+        Part::Text {
+            text: "Leading text".into(),
+            ext: BTreeMap::new(),
+        },
         // Inline base64 blob
         Part::Blob {
-            data_ref: DataRef::Base64 { data: "YmFzZTY0ZGF0YQ==".into() },
+            data_ref: DataRef::Base64 {
+                data: "YmFzZTY0ZGF0YQ==".into(),
+            },
             mime_type: "application/pdf".into(),
             name: Some("doc.pdf".into()),
             description: Some("A pdf document".into()),
             ext: BTreeMap::new(),
         },
-
         // URI-backed blob
         Part::Blob {
-            data_ref: DataRef::Uri { uri: "https://example.com/image.png".into() },
+            data_ref: DataRef::Uri {
+                uri: "https://example.com/image.png".into(),
+            },
             mime_type: "image/png".into(),
             name: None,
             description: None,
             ext: BTreeMap::new(),
         },
-
         // Tool use (should survive encode/decode if included inside ToolResult parts)
         Part::ToolUse {
             id: "call-1".into(),
@@ -49,7 +53,6 @@ fn test_encode_decode_preserves_all_part_variants_including_opaque_and_uri() {
             args: json!({"value": 123}),
             ext: BTreeMap::new(),
         },
-
         // Opaque provider-specific content
         Part::Opaque {
             provider: "weird-provider".into(),
@@ -61,10 +64,14 @@ fn test_encode_decode_preserves_all_part_variants_including_opaque_and_uri() {
 
     let tool_name = "paranoid_test_tool";
     let encoded = encode_tool_result_parts(tool_name, &parts).expect("encoding should succeed");
-    let (decoded_name, decoded_parts) = decode_tool_result_parts(&encoded).expect("decoding should succeed");
+    let (decoded_name, decoded_parts) =
+        decode_tool_result_parts(&encoded).expect("decoding should succeed");
 
     assert_eq!(decoded_name, tool_name);
-    assert_eq!(decoded_parts, parts, "All Part variants (Text, Blob URI/Base64, ToolUse, Opaque) must roundtrip exactly");
+    assert_eq!(
+        decoded_parts, parts,
+        "All Part variants (Text, Blob URI/Base64, ToolUse, Opaque) must roundtrip exactly"
+    );
 }
 
 #[test]
@@ -73,7 +80,10 @@ fn test_encode_decode_deeply_nested_toolresults() {
     let level4 = Part::ToolResult {
         id: "lvl4".into(),
         name: "n4".into(),
-        parts: vec![Part::Text { text: "deep".into(), ext: BTreeMap::new() }],
+        parts: vec![Part::Text {
+            text: "deep".into(),
+            ext: BTreeMap::new(),
+        }],
         ext: BTreeMap::new(),
     };
 
@@ -98,13 +108,23 @@ fn test_encode_decode_deeply_nested_toolresults() {
         ext: BTreeMap::new(),
     };
 
-    let parts = vec![Part::Text { text: "start".into(), ext: BTreeMap::new() }, level1.clone()];
+    let parts = vec![
+        Part::Text {
+            text: "start".into(),
+            ext: BTreeMap::new(),
+        },
+        level1.clone(),
+    ];
 
-    let enc = encode_tool_result_parts("deep_tool", &parts).expect("encode deep nested should succeed");
+    let enc =
+        encode_tool_result_parts("deep_tool", &parts).expect("encode deep nested should succeed");
     let (name, dec) = decode_tool_result_parts(&enc).expect("decode deep nested should succeed");
 
     assert_eq!(name, "deep_tool");
-    assert_eq!(dec, parts, "Deeply nested ToolResult structures must be preserved exactly");
+    assert_eq!(
+        dec, parts,
+        "Deeply nested ToolResult structures must be preserved exactly"
+    );
 }
 
 #[test]
@@ -136,7 +156,9 @@ fn test_encode_decode_large_base64_payload_roundtrips() {
     let payload = "A".repeat(512 * 1024); // ~512KB base64 string
 
     let parts = vec![Part::Blob {
-        data_ref: DataRef::Base64 { data: payload.clone() },
+        data_ref: DataRef::Base64 {
+            data: payload.clone(),
+        },
         mime_type: "image/png".into(),
         name: None,
         description: None,
@@ -147,7 +169,10 @@ fn test_encode_decode_large_base64_payload_roundtrips() {
     let (name, decoded) = decode_tool_result_parts(&encoded).expect("decode");
 
     assert_eq!(name, "big_blob");
-    assert_eq!(decoded, parts, "Large base64 blob must survive encode/decode intact");
+    assert_eq!(
+        decoded, parts,
+        "Large base64 blob must survive encode/decode intact"
+    );
 }
 
 #[test]
@@ -155,7 +180,10 @@ fn test_decode_rejects_malformed_structure_with_wrong_types() {
     // ai_ox_tool_result.name is a number instead of string
     let malformed = r#"{"ai_ox_tool_result": {"name": 123, "content": []}}"#;
     let res = decode_tool_result_parts(malformed);
-    assert!(res.is_err(), "Decoding must fail for malformed/incorrectly-typed structure");
+    assert!(
+        res.is_err(),
+        "Decoding must fail for malformed/incorrectly-typed structure"
+    );
 }
 
 // --------------------------------------------------------------------------------
@@ -206,8 +234,8 @@ fn test_decode_rejects_malformed_structure_with_wrong_types() {
 #[cfg(feature = "gemini")]
 #[test]
 fn test_gemini_roundtrip_preserves_filedata_uri_blob() {
-    use std::convert::TryInto;
     use gemini_ox::content::Content as GeminiContent;
+    use std::convert::TryInto;
 
     // Build a Message with a ToolResult that contains a URI-backed blob
     let original = Message::new(
@@ -216,7 +244,9 @@ fn test_gemini_roundtrip_preserves_filedata_uri_blob() {
             id: "call_gem_uri".into(),
             name: "file_tool".into(),
             parts: vec![Part::Blob {
-                data_ref: DataRef::Uri { uri: "https://example.com/photo.jpg".into() },
+                data_ref: DataRef::Uri {
+                    uri: "https://example.com/photo.jpg".into(),
+                },
                 mime_type: "image/jpeg".into(),
                 name: None,
                 description: None,
@@ -227,10 +257,18 @@ fn test_gemini_roundtrip_preserves_filedata_uri_blob() {
     );
 
     // Convert to Gemini content and back
-    let gemini: GeminiContent = original.clone().try_into().expect("gemini conversion failed");
-    let roundtrip: Message = gemini.try_into().expect("gemini -> ai-ox conversion failed");
+    let gemini: GeminiContent = original
+        .clone()
+        .try_into()
+        .expect("gemini conversion failed");
+    let roundtrip: Message = gemini
+        .try_into()
+        .expect("gemini -> ai-ox conversion failed");
 
-    assert_eq!(original.content, roundtrip.content, "Gemini roundtrip must preserve URI-backed Blob as FileData");
+    assert_eq!(
+        original.content, roundtrip.content,
+        "Gemini roundtrip must preserve URI-backed Blob as FileData"
+    );
 }
 
 // Commented out due to private module access - conversion functions are internal implementation details

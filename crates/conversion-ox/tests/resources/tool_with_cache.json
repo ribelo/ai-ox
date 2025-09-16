@@ -1,0 +1,23 @@
+{
+  "type": "custom",
+  "name": "Task",
+  "description": "Execute a command on the shell and return the output.",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "command": {
+        "type": "string",
+        "description": "Shell command to execute"
+      },
+      "timeout": {
+        "type": "number",
+        "nullable": true,
+        "description": "Optional timeout in seconds"
+      }
+    },
+    "required": ["command"]
+  },
+  "cache_control": {
+    "type": "ephemeral"
+  }
+}

@@ -4,7 +4,7 @@ pub mod part;
 
 // Re-export commonly used types
 pub use message::{Message, MessageRole};
-pub use part::{Part, DataRef};
+pub use part::{DataRef, Part};
 
 #[cfg(test)]
 mod tests {

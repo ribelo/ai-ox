@@ -13,16 +13,19 @@ use anthropic_ox::{
 };
 
 use crate::{
+    ModelResponse,
     content::{
         delta::{FinishReason, StreamEvent, StreamStop},
         message::{Message, MessageRole},
-        part::{Part, DataRef},
+        part::{DataRef, Part},
     },
     errors::GenerateContentError,
     model::ModelRequest,
-    tool::{Tool as AiOxTool, encoding::{encode_tool_result_parts, decode_tool_result_parts}},
+    tool::{
+        Tool as AiOxTool,
+        encoding::{decode_tool_result_parts, encode_tool_result_parts},
+    },
     usage::Usage,
-    ModelResponse,
 };
 
 /// Convert ai-ox ModelRequest to Anthropic ChatRequest
@@ -101,88 +104,94 @@ impl From<anthropic_ox::response::Usage> for Usage {
 }
 
 /// Extract Anthropic content from ai-ox content parts
-fn extract_content_from_parts(content: &[Part]) -> Result<Vec<AnthropicContent>, GenerateContentError> {
+fn extract_content_from_parts(
+    content: &[Part],
+) -> Result<Vec<AnthropicContent>, GenerateContentError> {
     let mut anthropic_content = Vec::new();
-    
+
     for part in content {
         match part {
             Part::Text { text, .. } => {
                 anthropic_content.push(AnthropicContent::Text(AnthropicText::new(text.clone())));
             }
-             Part::Blob { data_ref, mime_type, .. } => {
-                 // Convert ai-ox DataRef to Anthropic ImageSource for image types
-                 match data_ref {
-                     DataRef::Base64 { data } => {
-                         if mime_type.starts_with("image/") {
-                             let anthropic_source = AnthropicImageSource::Base64 {
-                                 media_type: mime_type.clone(),
-                                 data: data.clone(),
-                             };
-                             anthropic_content.push(AnthropicContent::Image {
-                                 source: anthropic_source
-                             });
-                         } else {
-                             return Err(GenerateContentError::message_conversion(
-                                 &format!("Unsupported blob mime_type for Anthropic: {}", mime_type)
-                             ));
-                         }
-                     }
-                     DataRef::Uri { uri } => {
-                         return Err(GenerateContentError::message_conversion(
-                             &format!("URI data references not supported by Anthropic provider for mime_type: {}", mime_type)
-                         ));
-                     }
-                 }
-             }
+            Part::Blob {
+                data_ref,
+                mime_type,
+                ..
+            } => {
+                // Convert ai-ox DataRef to Anthropic ImageSource for image types
+                match data_ref {
+                    DataRef::Base64 { data } => {
+                        if mime_type.starts_with("image/") {
+                            let anthropic_source = AnthropicImageSource::Base64 {
+                                media_type: mime_type.clone(),
+                                data: data.clone(),
+                            };
+                            anthropic_content.push(AnthropicContent::Image {
+                                source: anthropic_source,
+                            });
+                        } else {
+                            return Err(GenerateContentError::message_conversion(&format!(
+                                "Unsupported blob mime_type for Anthropic: {}",
+                                mime_type
+                            )));
+                        }
+                    }
+                    DataRef::Uri { uri } => {
+                        return Err(GenerateContentError::message_conversion(&format!(
+                            "URI data references not supported by Anthropic provider for mime_type: {}",
+                            mime_type
+                        )));
+                    }
+                }
+            }
             Part::ToolUse { id, name, args, .. } => {
-                let tool_use = anthropic_ox::tool::ToolUse::new(
-                    id.clone(),
-                    name.clone(),
-                    args.clone(),
-                );
+                let tool_use =
+                    anthropic_ox::tool::ToolUse::new(id.clone(), name.clone(), args.clone());
                 anthropic_content.push(AnthropicContent::ToolUse(tool_use));
             }
-             Part::ToolResult { id, name, parts, .. } => {
-                 // Use the standardized encoding function to convert parts to string
-                 let content_text = encode_tool_result_parts(name, parts)?;
-                 let tool_result = anthropic_ox::tool::ToolResult::text(
-                     id.clone(),
-                     content_text,
-                 );
-                 anthropic_content.push(AnthropicContent::ToolResult(tool_result));
-             }
+            Part::ToolResult {
+                id, name, parts, ..
+            } => {
+                // Use the standardized encoding function to convert parts to string
+                let content_text = encode_tool_result_parts(name, parts)?;
+                let tool_result = anthropic_ox::tool::ToolResult::text(id.clone(), content_text);
+                anthropic_content.push(AnthropicContent::ToolResult(tool_result));
+            }
             Part::Opaque { provider, .. } => {
-                return Err(GenerateContentError::message_conversion(
-                    &format!("Opaque parts not supported by Anthropic provider. Provider: {}", provider)
-                ));
+                return Err(GenerateContentError::message_conversion(&format!(
+                    "Opaque parts not supported by Anthropic provider. Provider: {}",
+                    provider
+                )));
             }
             unsupported => {
-                return Err(GenerateContentError::message_conversion(
-                    &format!("Unsupported Part variant for Anthropic: {:?}", unsupported)
-                ));
+                return Err(GenerateContentError::message_conversion(&format!(
+                    "Unsupported Part variant for Anthropic: {:?}",
+                    unsupported
+                )));
             }
         }
     }
-    
+
     if anthropic_content.is_empty() {
         return Err(GenerateContentError::message_conversion(
-            "No convertible content found in message - message parts must contain text, images, tool calls, or tool results compatible with Anthropic format"
+            "No convertible content found in message - message parts must contain text, images, tool calls, or tool results compatible with Anthropic format",
         ));
     }
-    
+
     Ok(anthropic_content)
 }
 
 /// Convert Anthropic ChatResponse to ai-ox ModelResponse
-/// 
+///
 /// # Arguments
 /// * `response` - The Anthropic chat response to convert
 /// * `model_name` - The model name to include in the response
-/// 
+///
 /// # Returns
 /// * `Ok(ModelResponse)` - Successfully converted response with usage metrics
 /// * `Err(GenerateContentError)` - If conversion fails
-/// 
+///
 /// # Notes
 /// - Tool results preserve JSON structure when possible
 /// - Tool IDs are mapped from tool calls to tool results
@@ -193,35 +202,39 @@ pub fn convert_anthropic_response_to_ai_ox(
     model_name: String,
 ) -> Result<ModelResponse, GenerateContentError> {
     let mut content_parts = Vec::new();
-    
+
     // First pass: collect tool names from ToolUse for mapping to ToolResult
-    let mut tool_id_to_name: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut tool_id_to_name: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
     for content in &response.content {
         if let AnthropicContent::ToolUse(tool_use) = content {
             tool_id_to_name.insert(tool_use.id.clone(), tool_use.name.clone());
         }
     }
-    
+
     // Convert content
     for content in response.content {
         match content {
             AnthropicContent::Text(text) => {
-                content_parts.push(Part::Text { text: text.text, ext: std::collections::BTreeMap::new() });
+                content_parts.push(Part::Text {
+                    text: text.text,
+                    ext: std::collections::BTreeMap::new(),
+                });
             }
-             AnthropicContent::Image { source } => {
-                 let (data_ref, mime_type) = match source {
-                     AnthropicImageSource::Base64 { media_type, data } => {
-                         (DataRef::Base64 { data }, media_type)
-                     }
-                 };
-                 content_parts.push(Part::Blob {
-                     data_ref,
-                     mime_type,
-                     name: None,
-                     description: None,
-                     ext: std::collections::BTreeMap::new(),
-                 });
-             }
+            AnthropicContent::Image { source } => {
+                let (data_ref, mime_type) = match source {
+                    AnthropicImageSource::Base64 { media_type, data } => {
+                        (DataRef::Base64 { data }, media_type)
+                    }
+                };
+                content_parts.push(Part::Blob {
+                    data_ref,
+                    mime_type,
+                    name: None,
+                    description: None,
+                    ext: std::collections::BTreeMap::new(),
+                });
+            }
             AnthropicContent::ToolUse(tool_use) => {
                 content_parts.push(Part::ToolUse {
                     id: tool_use.id,
@@ -230,78 +243,99 @@ pub fn convert_anthropic_response_to_ai_ox(
                     ext: std::collections::BTreeMap::new(),
                 });
             }
-             AnthropicContent::ToolResult(tool_result) => {
-                  // Get the tool name from our mapping, fallback to extracting from ID
-                  let tool_name = tool_id_to_name.get(&tool_result.tool_use_id)
-                      .cloned()
-                      .unwrap_or_else(|| {
-                          // Fallback: try to extract name from tool_use_id pattern
-                          tool_result.tool_use_id.split('_')
-                              .next()
-                              .unwrap_or("unknown_tool")
-                              .to_string()
-                      });
+            AnthropicContent::ToolResult(tool_result) => {
+                // Get the tool name from our mapping, fallback to extracting from ID
+                let tool_name = tool_id_to_name
+                    .get(&tool_result.tool_use_id)
+                    .cloned()
+                    .unwrap_or_else(|| {
+                        // Fallback: try to extract name from tool_use_id pattern
+                        tool_result
+                            .tool_use_id
+                            .split('_')
+                            .next()
+                            .unwrap_or("unknown_tool")
+                            .to_string()
+                    });
 
-                   // Extract the text content from ToolResultContent
-                   let content_text = tool_result.content
-                       .iter()
-                       .filter_map(|content| match content {
-                           ToolResultContent::Text { text } => Some(text.as_str()),
-                           ToolResultContent::Image { .. } => None,
-                       })
-                       .collect::<Vec<&str>>()
-                       .join("");
+                // Extract the text content from ToolResultContent
+                let content_text = tool_result
+                    .content
+                    .iter()
+                    .filter_map(|content| match content {
+                        ToolResultContent::Text { text } => Some(text.as_str()),
+                        ToolResultContent::Image { .. } => None,
+                    })
+                    .collect::<Vec<&str>>()
+                    .join("");
 
-                   if content_text.is_empty() {
-                       return Err(GenerateContentError::message_conversion(
-                           "Tool result contains no text content"
-                       ));
-                   }
+                if content_text.is_empty() {
+                    return Err(GenerateContentError::message_conversion(
+                        "Tool result contains no text content",
+                    ));
+                }
 
-                   // Use the standardized decoding function to convert content string to parts
-                   let (decoded_name, parts) = decode_tool_result_parts(&content_text)?;
-                  // Verify the decoded name matches the expected tool name
-                  if decoded_name != tool_name {
-                      return Err(GenerateContentError::message_conversion(
-                          &format!("Tool name mismatch: expected '{}', got '{}'", tool_name, decoded_name)
-                      ));
-                  }
+                // Use the standardized decoding function to convert content string to parts
+                let (decoded_name, parts) = decode_tool_result_parts(&content_text)?;
+                // Verify the decoded name matches the expected tool name
+                if decoded_name != tool_name {
+                    return Err(GenerateContentError::message_conversion(&format!(
+                        "Tool name mismatch: expected '{}', got '{}'",
+                        tool_name, decoded_name
+                    )));
+                }
 
-                  content_parts.push(Part::ToolResult {
-                      id: tool_result.tool_use_id,
-                      name: tool_name,
-                      parts,
-                      ext: std::collections::BTreeMap::new(),
-                  });
-             }
+                content_parts.push(Part::ToolResult {
+                    id: tool_result.tool_use_id,
+                    name: tool_name,
+                    parts,
+                    ext: std::collections::BTreeMap::new(),
+                });
+            }
             AnthropicContent::Thinking(thinking) => {
                 // Thinking content is internal to Claude and not exposed in ai-ox format
                 // We can either skip it or include it as a text part
-                content_parts.push(Part::Text { text: thinking.text, ext: std::collections::BTreeMap::new() });
+                content_parts.push(Part::Text {
+                    text: thinking.text,
+                    ext: std::collections::BTreeMap::new(),
+                });
             }
             AnthropicContent::SearchResult(search_result) => {
                 // Convert search result to text content
-                let content = format!("Search result: {}", serde_json::to_string(&search_result).unwrap_or_else(|_| "Invalid search result".to_string()));
-                content_parts.push(Part::Text { text: content, ext: std::collections::BTreeMap::new() });
+                let content = format!(
+                    "Search result: {}",
+                    serde_json::to_string(&search_result)
+                        .unwrap_or_else(|_| "Invalid search result".to_string())
+                );
+                content_parts.push(Part::Text {
+                    text: content,
+                    ext: std::collections::BTreeMap::new(),
+                });
             }
         }
     }
-    
+
     let message = Message {
         role: MessageRole::Assistant,
         content: content_parts,
         timestamp: None,
         ext: Some(std::collections::BTreeMap::new()),
     };
-    
+
     let usage = {
         let mut usage = Usage::new();
         usage.requests = 1;
-        usage.input_tokens_by_modality.insert(crate::usage::Modality::Text, response.usage.input_tokens.unwrap_or(0) as u64);
-        usage.output_tokens_by_modality.insert(crate::usage::Modality::Text, response.usage.output_tokens.unwrap_or(0) as u64);
+        usage.input_tokens_by_modality.insert(
+            crate::usage::Modality::Text,
+            response.usage.input_tokens.unwrap_or(0) as u64,
+        );
+        usage.output_tokens_by_modality.insert(
+            crate::usage::Modality::Text,
+            response.usage.output_tokens.unwrap_or(0) as u64,
+        );
         usage
     };
-    
+
     Ok(ModelResponse {
         message,
         usage,
@@ -311,43 +345,46 @@ pub fn convert_anthropic_response_to_ai_ox(
 }
 
 /// Convert streaming event to ai-ox stream events
-/// 
+///
 /// **Important behavior notes:**
 /// - This is a stateless converter that processes events independently
 /// - Usage information is emitted from MessageDelta when available
-/// - StreamStop may be emitted twice: once from MessageDelta (with stop reason) 
-///   and once from MessageStop (fallback) 
+/// - StreamStop may be emitted twice: once from MessageDelta (with stop reason)
+///   and once from MessageStop (fallback)
 /// - Consumers should handle potential duplicate StreamStop events
 /// - For production use with guaranteed single StreamStop, consider a stateful converter
 pub fn convert_stream_event_to_ai_ox(
     event: AnthropicStreamEvent,
 ) -> Vec<Result<StreamEvent, GenerateContentError>> {
     let mut events = Vec::new();
-    
+
     match event {
         AnthropicStreamEvent::MessageStart { .. } => {
             // MessageStart contains initial message metadata - could be used for logging
             // For now, we skip as ai-ox doesn't have an equivalent event
         }
-        AnthropicStreamEvent::ContentBlockStart { content_block, index } => {
+        AnthropicStreamEvent::ContentBlockStart {
+            content_block,
+            index,
+        } => {
             match content_block {
                 ContentBlock::ToolUse { id, name, .. } => {
                     // Emit tool call start with ID and name
                     use crate::content::delta::{MessageDelta, ToolCallChunk};
-                    
+
                     let tool_chunk = ToolCallChunk {
                         index,
                         id: Some(id),
                         name: Some(name),
                         args_delta: None,
                     };
-                    
+
                     let message_delta = MessageDelta {
                         role: None,
                         content_delta: None,
                         tool_call_chunks: vec![tool_chunk],
                     };
-                    
+
                     events.push(Ok(StreamEvent::MessageDelta(message_delta)));
                 }
                 ContentBlock::Text { .. } => {
@@ -369,20 +406,20 @@ pub fn convert_stream_event_to_ai_ox(
                 ContentBlockDelta::InputJsonDelta { partial_json } => {
                     // Map Anthropic's input JSON delta to ai-ox tool call chunk
                     use crate::content::delta::{MessageDelta, ToolCallChunk};
-                    
+
                     let tool_chunk = ToolCallChunk {
                         index,
-                        id: None, // ID was sent in ContentBlockStart
+                        id: None,   // ID was sent in ContentBlockStart
                         name: None, // Name was sent in ContentBlockStart
                         args_delta: Some(partial_json),
                     };
-                    
+
                     let message_delta = MessageDelta {
                         role: None,
                         content_delta: None,
                         tool_call_chunks: vec![tool_chunk],
                     };
-                    
+
                     events.push(Ok(StreamEvent::MessageDelta(message_delta)));
                 }
                 ContentBlockDelta::ThinkingDelta { text } => {
@@ -404,24 +441,24 @@ pub fn convert_stream_event_to_ai_ox(
                 let mut ai_ox_usage = Usage::new();
                 ai_ox_usage.requests = 1;
                 ai_ox_usage.input_tokens_by_modality.insert(
-                    crate::usage::Modality::Text, 
-                    u64::from(usage.input_tokens.unwrap_or(0))
+                    crate::usage::Modality::Text,
+                    u64::from(usage.input_tokens.unwrap_or(0)),
                 );
                 ai_ox_usage.output_tokens_by_modality.insert(
-                    crate::usage::Modality::Text, 
-                    u64::from(usage.output_tokens.unwrap_or(0))
+                    crate::usage::Modality::Text,
+                    u64::from(usage.output_tokens.unwrap_or(0)),
                 );
-                
+
                 events.push(Ok(StreamEvent::Usage(ai_ox_usage)));
             }
-            
+
             // If we have a stop reason in delta, emit StreamStop now
             // This handles the case where MessageDelta contains the final stop reason
             if let Some(stop_reason_str) = delta.stop_reason.as_deref() {
                 let stop_reason = parse_stop_reason(Some(stop_reason_str));
                 let finish_reason = FinishReason::from(stop_reason);
                 let usage = Usage::new(); // Basic usage since detailed usage was emitted above
-                
+
                 events.push(Ok(StreamEvent::StreamStop(StreamStop {
                     usage,
                     finish_reason,
@@ -439,48 +476,52 @@ pub fn convert_stream_event_to_ai_ox(
             })));
         }
         AnthropicStreamEvent::Error { error } => {
-            events.push(Err(GenerateContentError::provider_error("anthropic", error.message)));
+            events.push(Err(GenerateContentError::provider_error(
+                "anthropic",
+                error.message,
+            )));
         }
         AnthropicStreamEvent::Ping => {
             // Ping events are for keep-alive, no need to emit anything
         }
     }
-    
+
     events
 }
 
 /// Convert ai-ox Tools to Anthropic Tools
-fn convert_tools_to_anthropic(tools: Vec<AiOxTool>) -> Result<Vec<anthropic_ox::tool::Tool>, GenerateContentError> {
+fn convert_tools_to_anthropic(
+    tools: Vec<AiOxTool>,
+) -> Result<Vec<anthropic_ox::tool::Tool>, GenerateContentError> {
     #[cfg(feature = "schema")]
     let mut anthropic_tools = Vec::new();
     #[cfg(not(feature = "schema"))]
     let anthropic_tools = Vec::new();
-    
+
     for tool in tools {
         match tool {
             AiOxTool::FunctionDeclarations(functions) => {
                 for func in functions {
-                    let _anthropic_tool = anthropic_ox::tool::Tool::Custom(
-                        anthropic_ox::tool::CustomTool {
+                    let _anthropic_tool =
+                        anthropic_ox::tool::Tool::Custom(anthropic_ox::tool::CustomTool {
                             object_type: "function".to_string(),
                             name: func.name.clone(),
                             description: func.description.clone().unwrap_or_default(),
                             input_schema: func.parameters,
-                        }
-                    );
-                    
+                        });
+
                     // Schema support requires schema feature to be enabled in anthropic-ox
                     #[cfg(feature = "schema")]
                     let anthropic_tool = _anthropic_tool.with_schema(func.parameters.clone());
-                    
+
                     #[cfg(not(feature = "schema"))]
                     {
                         // Return an error if schema feature is not enabled but tools are provided
                         return Err(GenerateContentError::configuration(
-                            "Tool schemas require the 'schema' feature to be enabled. Please enable the 'schema' feature."
+                            "Tool schemas require the 'schema' feature to be enabled. Please enable the 'schema' feature.",
                         ));
                     }
-                    
+
                     #[cfg(feature = "schema")]
                     anthropic_tools.push(anthropic_tool);
                 }
@@ -491,12 +532,12 @@ fn convert_tools_to_anthropic(tools: Vec<AiOxTool>) -> Result<Vec<anthropic_ox::
             }
         }
     }
-    
+
     Ok(anthropic_tools)
 }
 
 /// Convert Anthropic stop reason string to StopReason enum
-/// 
+///
 /// Maps string values from Anthropic's streaming API to the StopReason enum.
 /// Used internally to parse stop reasons from MessageDelta events.
 fn parse_stop_reason(reason_str: Option<&str>) -> Option<AnthropicStopReason> {
@@ -510,7 +551,7 @@ fn parse_stop_reason(reason_str: Option<&str>) -> Option<AnthropicStopReason> {
 }
 
 /// Convert Anthropic StopReason to ai-ox FinishReason
-/// 
+///
 /// Maps Anthropic's stop reasons to ai-ox finish reasons:
 /// - `EndTurn` -> `Stop` (natural completion)  
 /// - `MaxTokens` -> `Length` (hit token limit)
@@ -532,7 +573,7 @@ impl From<Option<AnthropicStopReason>> for FinishReason {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tool::{Tool as AiOxTool, FunctionMetadata};
+    use crate::tool::{FunctionMetadata, Tool as AiOxTool};
     use serde_json::json;
 
     #[cfg(feature = "schema")]
@@ -577,9 +618,9 @@ mod tests {
     #[cfg(feature = "gemini")]
     fn test_convert_tools_to_anthropic_skips_gemini_tools() {
         use crate::tool::gemini::GeminiTool;
-        
+
         let gemini_tool = AiOxTool::GeminiTool(GeminiTool::FunctionDeclarations(vec![]));
-        
+
         let tools = vec![gemini_tool];
         let result = convert_tools_to_anthropic(tools).unwrap();
         assert!(result.is_empty());
@@ -593,17 +634,15 @@ mod tests {
             "condition": "sunny"
         });
 
-        let parts = vec![
-            Part::ToolResult {
-                id: "call_123".to_string(),
-                name: "get_weather".to_string(),
-                parts: vec![Part::Text {
-                    text: serde_json::to_string_pretty(&json_content).unwrap(),
-                    ext: std::collections::BTreeMap::new(),
-                }],
+        let parts = vec![Part::ToolResult {
+            id: "call_123".to_string(),
+            name: "get_weather".to_string(),
+            parts: vec![Part::Text {
+                text: serde_json::to_string_pretty(&json_content).unwrap(),
                 ext: std::collections::BTreeMap::new(),
-            }
-        ];
+            }],
+            ext: std::collections::BTreeMap::new(),
+        }];
 
         let result = extract_content_from_parts(&parts).unwrap();
         assert_eq!(result.len(), 1);
@@ -618,10 +657,13 @@ mod tests {
             // Decode the content and verify it matches the original
             let (decoded_name, decoded_parts) = decode_tool_result_parts(content_text).unwrap();
             assert_eq!(decoded_name, "get_weather");
-            assert_eq!(decoded_parts, vec![Part::Text {
-                text: serde_json::to_string_pretty(&json_content).unwrap(),
-                ext: std::collections::BTreeMap::new(),
-            }]);
+            assert_eq!(
+                decoded_parts,
+                vec![Part::Text {
+                    text: serde_json::to_string_pretty(&json_content).unwrap(),
+                    ext: std::collections::BTreeMap::new(),
+                }]
+            );
         } else {
             panic!("Expected ToolResult content");
         }
@@ -631,17 +673,15 @@ mod tests {
     fn test_tool_result_string_preservation() {
         let string_content = "Just a simple string response";
 
-        let parts = vec![
-            Part::ToolResult {
-                id: "call_456".to_string(),
-                name: "simple_func".to_string(),
-                parts: vec![Part::Text {
-                    text: string_content.to_string(),
-                    ext: std::collections::BTreeMap::new(),
-                }],
+        let parts = vec![Part::ToolResult {
+            id: "call_456".to_string(),
+            name: "simple_func".to_string(),
+            parts: vec![Part::Text {
+                text: string_content.to_string(),
                 ext: std::collections::BTreeMap::new(),
-            }
-        ];
+            }],
+            ext: std::collections::BTreeMap::new(),
+        }];
 
         let result = extract_content_from_parts(&parts).unwrap();
         assert_eq!(result.len(), 1);
@@ -654,10 +694,13 @@ mod tests {
             // Decode the content and verify it matches the original
             let (decoded_name, decoded_parts) = decode_tool_result_parts(content_text).unwrap();
             assert_eq!(decoded_name, "simple_func");
-            assert_eq!(decoded_parts, vec![Part::Text {
-                text: string_content.to_string(),
-                ext: std::collections::BTreeMap::new(),
-            }]);
+            assert_eq!(
+                decoded_parts,
+                vec![Part::Text {
+                    text: string_content.to_string(),
+                    ext: std::collections::BTreeMap::new(),
+                }]
+            );
         } else {
             panic!("Expected ToolResult content");
         }
@@ -666,7 +709,7 @@ mod tests {
     #[test]
     fn test_stream_event_message_start_skipped() {
         use anthropic_ox::response::{StreamEvent as AnthropicStreamEvent, StreamMessage};
-        
+
         let message_start = AnthropicStreamEvent::MessageStart {
             message: StreamMessage {
                 id: "msg_123".to_string(),
@@ -679,16 +722,16 @@ mod tests {
                 usage: anthropic_ox::response::Usage::default(),
             },
         };
-        
+
         let result = convert_stream_event_to_ai_ox(message_start);
         assert!(result.is_empty()); // MessageStart should be skipped
     }
 
     #[test]
     fn test_stream_event_content_block_start_tool_use() {
-        use anthropic_ox::response::StreamEvent as AnthropicStreamEvent;
         use anthropic_ox::message::message::ContentBlock;
-        
+        use anthropic_ox::response::StreamEvent as AnthropicStreamEvent;
+
         let tool_start = AnthropicStreamEvent::ContentBlockStart {
             index: 0,
             content_block: ContentBlock::ToolUse {
@@ -697,15 +740,18 @@ mod tests {
                 input: json!({"location": "NYC"}),
             },
         };
-        
+
         let result = convert_stream_event_to_ai_ox(tool_start);
         assert_eq!(result.len(), 1);
-        
+
         if let Ok(StreamEvent::MessageDelta(delta)) = &result[0] {
             assert_eq!(delta.tool_call_chunks.len(), 1);
             assert_eq!(delta.tool_call_chunks[0].index, 0);
             assert_eq!(delta.tool_call_chunks[0].id, Some("call_123".to_string()));
-            assert_eq!(delta.tool_call_chunks[0].name, Some("get_weather".to_string()));
+            assert_eq!(
+                delta.tool_call_chunks[0].name,
+                Some("get_weather".to_string())
+            );
             assert_eq!(delta.tool_call_chunks[0].args_delta, None);
         } else {
             panic!("Expected MessageDelta with tool call chunk");
@@ -714,18 +760,18 @@ mod tests {
 
     #[test]
     fn test_stream_event_content_block_delta_text() {
-        use anthropic_ox::response::{StreamEvent as AnthropicStreamEvent, ContentBlockDelta};
-        
+        use anthropic_ox::response::{ContentBlockDelta, StreamEvent as AnthropicStreamEvent};
+
         let text_delta = AnthropicStreamEvent::ContentBlockDelta {
             index: 0,
             delta: ContentBlockDelta::TextDelta {
                 text: "Hello world".to_string(),
             },
         };
-        
+
         let result = convert_stream_event_to_ai_ox(text_delta);
         assert_eq!(result.len(), 1);
-        
+
         if let Ok(StreamEvent::TextDelta(text)) = &result[0] {
             assert_eq!(text, "Hello world");
         } else {
@@ -735,22 +781,25 @@ mod tests {
 
     #[test]
     fn test_stream_event_content_block_delta_json() {
-        use anthropic_ox::response::{StreamEvent as AnthropicStreamEvent, ContentBlockDelta};
-        
+        use anthropic_ox::response::{ContentBlockDelta, StreamEvent as AnthropicStreamEvent};
+
         let json_delta = AnthropicStreamEvent::ContentBlockDelta {
             index: 1,
             delta: ContentBlockDelta::InputJsonDelta {
                 partial_json: "{\"location\":".to_string(),
             },
         };
-        
+
         let result = convert_stream_event_to_ai_ox(json_delta);
         assert_eq!(result.len(), 1);
-        
+
         if let Ok(StreamEvent::MessageDelta(delta)) = &result[0] {
             assert_eq!(delta.tool_call_chunks.len(), 1);
             assert_eq!(delta.tool_call_chunks[0].index, 1);
-            assert_eq!(delta.tool_call_chunks[0].args_delta, Some("{\"location\":".to_string()));
+            assert_eq!(
+                delta.tool_call_chunks[0].args_delta,
+                Some("{\"location\":".to_string())
+            );
         } else {
             panic!("Expected MessageDelta with JSON delta");
         }
@@ -758,8 +807,8 @@ mod tests {
 
     #[test]
     fn test_stream_event_message_delta_with_usage() {
-        use anthropic_ox::response::{StreamEvent as AnthropicStreamEvent, MessageDelta, Usage};
-        
+        use anthropic_ox::response::{MessageDelta, StreamEvent as AnthropicStreamEvent, Usage};
+
         let message_delta = AnthropicStreamEvent::MessageDelta {
             delta: MessageDelta {
                 stop_reason: None,
@@ -771,14 +820,24 @@ mod tests {
                 thinking_tokens: None,
             }),
         };
-        
+
         let result = convert_stream_event_to_ai_ox(message_delta);
         assert_eq!(result.len(), 1);
-        
+
         if let Ok(StreamEvent::Usage(usage)) = &result[0] {
             assert_eq!(usage.requests, 1);
-            assert_eq!(usage.input_tokens_by_modality.get(&crate::usage::Modality::Text), Some(&100));
-            assert_eq!(usage.output_tokens_by_modality.get(&crate::usage::Modality::Text), Some(&50));
+            assert_eq!(
+                usage
+                    .input_tokens_by_modality
+                    .get(&crate::usage::Modality::Text),
+                Some(&100)
+            );
+            assert_eq!(
+                usage
+                    .output_tokens_by_modality
+                    .get(&crate::usage::Modality::Text),
+                Some(&50)
+            );
         } else {
             panic!("Expected Usage event");
         }
@@ -786,8 +845,8 @@ mod tests {
 
     #[test]
     fn test_stream_event_message_delta_with_stop_reason() {
-        use anthropic_ox::response::{StreamEvent as AnthropicStreamEvent, MessageDelta};
-        
+        use anthropic_ox::response::{MessageDelta, StreamEvent as AnthropicStreamEvent};
+
         let message_delta = AnthropicStreamEvent::MessageDelta {
             delta: MessageDelta {
                 stop_reason: Some("tool_use".to_string()),
@@ -795,10 +854,10 @@ mod tests {
             },
             usage: None,
         };
-        
+
         let result = convert_stream_event_to_ai_ox(message_delta);
         assert_eq!(result.len(), 1);
-        
+
         if let Ok(StreamEvent::StreamStop(stop)) = &result[0] {
             assert_eq!(stop.finish_reason, FinishReason::ToolCalls);
         } else {
@@ -809,12 +868,12 @@ mod tests {
     #[test]
     fn test_stream_event_message_stop() {
         use anthropic_ox::response::StreamEvent as AnthropicStreamEvent;
-        
+
         let message_stop = AnthropicStreamEvent::MessageStop;
-        
+
         let result = convert_stream_event_to_ai_ox(message_stop);
         assert_eq!(result.len(), 1);
-        
+
         if let Ok(StreamEvent::StreamStop(stop)) = &result[0] {
             assert_eq!(stop.finish_reason, FinishReason::Stop);
         } else {
@@ -824,19 +883,19 @@ mod tests {
 
     #[test]
     fn test_stream_event_error() {
-        use anthropic_ox::response::StreamEvent as AnthropicStreamEvent;
         use anthropic_ox::error::ErrorInfo;
-        
+        use anthropic_ox::response::StreamEvent as AnthropicStreamEvent;
+
         let error_event = AnthropicStreamEvent::Error {
             error: ErrorInfo {
                 r#type: "error".to_string(),
                 message: "Something went wrong".to_string(),
             },
         };
-        
+
         let result = convert_stream_event_to_ai_ox(error_event);
         assert_eq!(result.len(), 1);
-        
+
         if let Err(err) = &result[0] {
             assert!(err.to_string().contains("Something went wrong"));
         } else {
@@ -847,28 +906,52 @@ mod tests {
     #[test]
     fn test_stream_event_ping_skipped() {
         use anthropic_ox::response::StreamEvent as AnthropicStreamEvent;
-        
+
         let ping = AnthropicStreamEvent::Ping;
-        
+
         let result = convert_stream_event_to_ai_ox(ping);
         assert!(result.is_empty()); // Ping should be skipped
     }
 
     #[test]
     fn test_stop_reason_from_conversion() {
-        assert_eq!(FinishReason::from(Some(AnthropicStopReason::EndTurn)), FinishReason::Stop);
-        assert_eq!(FinishReason::from(Some(AnthropicStopReason::MaxTokens)), FinishReason::Length);
-        assert_eq!(FinishReason::from(Some(AnthropicStopReason::StopSequence)), FinishReason::Stop);
-        assert_eq!(FinishReason::from(Some(AnthropicStopReason::ToolUse)), FinishReason::ToolCalls);
+        assert_eq!(
+            FinishReason::from(Some(AnthropicStopReason::EndTurn)),
+            FinishReason::Stop
+        );
+        assert_eq!(
+            FinishReason::from(Some(AnthropicStopReason::MaxTokens)),
+            FinishReason::Length
+        );
+        assert_eq!(
+            FinishReason::from(Some(AnthropicStopReason::StopSequence)),
+            FinishReason::Stop
+        );
+        assert_eq!(
+            FinishReason::from(Some(AnthropicStopReason::ToolUse)),
+            FinishReason::ToolCalls
+        );
         assert_eq!(FinishReason::from(None), FinishReason::Stop);
     }
 
     #[test]
     fn test_parse_stop_reason() {
-        assert_eq!(parse_stop_reason(Some("end_turn")), Some(AnthropicStopReason::EndTurn));
-        assert_eq!(parse_stop_reason(Some("max_tokens")), Some(AnthropicStopReason::MaxTokens));
-        assert_eq!(parse_stop_reason(Some("stop_sequence")), Some(AnthropicStopReason::StopSequence));
-        assert_eq!(parse_stop_reason(Some("tool_use")), Some(AnthropicStopReason::ToolUse));
+        assert_eq!(
+            parse_stop_reason(Some("end_turn")),
+            Some(AnthropicStopReason::EndTurn)
+        );
+        assert_eq!(
+            parse_stop_reason(Some("max_tokens")),
+            Some(AnthropicStopReason::MaxTokens)
+        );
+        assert_eq!(
+            parse_stop_reason(Some("stop_sequence")),
+            Some(AnthropicStopReason::StopSequence)
+        );
+        assert_eq!(
+            parse_stop_reason(Some("tool_use")),
+            Some(AnthropicStopReason::ToolUse)
+        );
         assert_eq!(parse_stop_reason(Some("unknown")), None);
         assert_eq!(parse_stop_reason(None), None);
     }
@@ -878,7 +961,10 @@ mod tests {
         let request = ModelRequest {
             messages: vec![Message {
                 role: MessageRole::Unknown("custom_role".to_string()),
-                content: vec![Part::Text { text: "Test message".to_string(), ext: std::collections::BTreeMap::new() }],
+                content: vec![Part::Text {
+                    text: "Test message".to_string(),
+                    ext: std::collections::BTreeMap::new(),
+                }],
                 timestamp: None,
                 ext: None,
             }],
@@ -886,7 +972,8 @@ mod tests {
             tools: None,
         };
 
-        let result = convert_request_to_anthropic(request, "test-model".to_string(), None, 100, None);
+        let result =
+            convert_request_to_anthropic(request, "test-model".to_string(), None, 100, None);
         assert!(result.is_ok());
         let chat_request = result.unwrap();
         assert_eq!(chat_request.messages.len(), 1);
@@ -905,7 +992,11 @@ mod tests {
         let result = extract_content_from_parts(&parts);
         assert!(result.is_err());
         let error = result.unwrap_err();
-        assert!(error.to_string().contains("Opaque parts not supported by Anthropic provider"));
+        assert!(
+            error
+                .to_string()
+                .contains("Opaque parts not supported by Anthropic provider")
+        );
         assert!(error.to_string().contains("test_provider"));
     }
 }

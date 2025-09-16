@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use openai_ox::{OpenAI, Message, Model, Usage};
     use ai_ox_common::openai_format::MessageRole;
+    use openai_ox::{Message, Model, OpenAI, Usage};
 
     #[test]
     fn test_message_creation() {
@@ -38,7 +38,7 @@ mod tests {
             .model("gpt-3.5-turbo")
             .messages(vec![
                 Message::user("Hello"),
-                Message::assistant("Hi there!")
+                Message::assistant("Hi there!"),
             ])
             .temperature(0.7)
             .max_tokens(100)

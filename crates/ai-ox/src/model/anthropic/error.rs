@@ -23,11 +23,17 @@ pub enum AnthropicError {
 impl From<AnthropicError> for GenerateContentError {
     fn from(error: AnthropicError) -> Self {
         match error {
-            AnthropicError::MissingApiKey => GenerateContentError::configuration("Missing ANTHROPIC_API_KEY environment variable"),
-            AnthropicError::Api(e) => GenerateContentError::provider_error("anthropic", e.to_string()),
+            AnthropicError::MissingApiKey => GenerateContentError::configuration(
+                "Missing ANTHROPIC_API_KEY environment variable",
+            ),
+            AnthropicError::Api(e) => {
+                GenerateContentError::provider_error("anthropic", e.to_string())
+            }
             AnthropicError::ResponseParsing(e) => GenerateContentError::response_parsing(e),
             AnthropicError::MessageConversion(e) => GenerateContentError::message_conversion(e),
-            AnthropicError::InvalidSchema(e) => GenerateContentError::configuration(format!("Invalid schema: {}", e)),
+            AnthropicError::InvalidSchema(e) => {
+                GenerateContentError::configuration(format!("Invalid schema: {}", e))
+            }
         }
     }
 }

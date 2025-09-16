@@ -5,6 +5,9 @@ pub use ai_ox_common::error::{ProviderError, parse_api_error_response};
 pub type GroqRequestError = ProviderError;
 
 /// Parse an error response from the Groq API (backward compatibility wrapper)
-pub(crate) fn parse_error_response(status: reqwest::StatusCode, bytes: bytes::Bytes) -> GroqRequestError {
+pub(crate) fn parse_error_response(
+    status: reqwest::StatusCode,
+    bytes: bytes::Bytes,
+) -> GroqRequestError {
     parse_api_error_response(status, &bytes)
 }

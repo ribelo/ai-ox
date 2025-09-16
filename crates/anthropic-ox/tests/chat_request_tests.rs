@@ -1,5 +1,5 @@
 use anthropic_ox::{
-    message::{Message, Messages, Role, Content, Text, StringOrContents},
+    message::{Content, Message, Messages, Role, StringOrContents, Text},
     request::ChatRequest,
 };
 use serde_json;
@@ -16,15 +16,19 @@ fn test_chat_request_with_string_content() {
             }
         ]
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Failed to deserialize ChatRequest: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize ChatRequest: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     assert_eq!(request.model, "claude-3-5-sonnet-20241022");
     assert_eq!(request.max_tokens, 4096);
     assert_eq!(request.messages.len(), 1);
-    
+
     let message = &request.messages[0];
     assert_eq!(message.role, Role::User);
     match &message.content {
@@ -47,13 +51,17 @@ fn test_chat_request_with_array_content() {
             }
         ]
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Failed to deserialize ChatRequest: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize ChatRequest: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     assert_eq!(request.messages.len(), 1);
-    
+
     let message = &request.messages[0];
     match &message.content {
         StringOrContents::String(_) => panic!("Expected Contents variant"),
@@ -92,13 +100,17 @@ fn test_chat_request_multiple_messages_mixed_content() {
             }
         ]
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Failed to deserialize ChatRequest: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize ChatRequest: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     assert_eq!(request.messages.len(), 3);
-    
+
     // First message: string content
     let msg1 = &request.messages[0];
     assert_eq!(msg1.role, Role::User);
@@ -106,7 +118,7 @@ fn test_chat_request_multiple_messages_mixed_content() {
         StringOrContents::String(s) => assert_eq!(s, "Simple string message"),
         StringOrContents::Contents(_) => panic!("Expected String variant for message 1"),
     }
-    
+
     // Second message: array content
     let msg2 = &request.messages[1];
     assert_eq!(msg2.role, Role::Assistant);
@@ -120,7 +132,7 @@ fn test_chat_request_multiple_messages_mixed_content() {
             }
         }
     }
-    
+
     // Third message: multiple content items
     let msg3 = &request.messages[2];
     assert_eq!(msg3.role, Role::User);
@@ -155,10 +167,14 @@ fn test_chat_request_streaming() {
         ],
         "stream": true
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Failed to deserialize streaming ChatRequest: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize streaming ChatRequest: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     assert_eq!(request.stream, Some(true));
 }
@@ -176,13 +192,20 @@ fn test_chat_request_with_system_prompt() {
             }
         ]
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Failed to deserialize ChatRequest with system: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize ChatRequest with system: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     match request.system {
-        Some(system) => assert_eq!(system.as_string(), "You are Claude Code, Anthropic's official CLI for Claude."),
+        Some(system) => assert_eq!(
+            system.as_string(),
+            "You are Claude Code, Anthropic's official CLI for Claude."
+        ),
         None => panic!("Expected system prompt"),
     }
 }
@@ -206,15 +229,19 @@ fn test_real_claude_code_simple_request() {
         ],
         "stream": true
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Failed to deserialize real Claude Code request: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize real Claude Code request: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     assert_eq!(request.model, "claude-3-5-sonnet-20241022");
     assert_eq!(request.stream, Some(true));
     assert_eq!(request.messages.len(), 1);
-    
+
     let message = &request.messages[0];
     match &message.content {
         StringOrContents::Contents(contents) => {
@@ -251,10 +278,14 @@ fn test_real_claude_code_complex_request() {
         ],
         "stream": true
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Failed to deserialize complex Claude Code request: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize complex Claude Code request: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     let message = &request.messages[0];
     match &message.content {
@@ -265,7 +296,10 @@ fn test_real_claude_code_complex_request() {
                 _ => panic!("Expected Text content"),
             }
             match &contents[1] {
-                Content::Text(text) => assert_eq!(text.text, "fn main() {\n    println!(\"Hello, world!\");\n}"),
+                Content::Text(text) => assert_eq!(
+                    text.text,
+                    "fn main() {\n    println!(\"Hello, world!\");\n}"
+                ),
                 _ => panic!("Expected Text content"),
             }
         }
@@ -293,18 +327,21 @@ fn test_serialization_roundtrip_string_content() {
         top_p: None,
         thinking: None,
     };
-    
+
     let json = serde_json::to_string(&original).unwrap();
     let deserialized: ChatRequest = serde_json::from_str(&json).unwrap();
-    
+
     assert_eq!(original.model, deserialized.model);
     assert_eq!(original.messages.len(), deserialized.messages.len());
-    
+
     // Check content specifically
-    match (&original.messages[0].content, &deserialized.messages[0].content) {
+    match (
+        &original.messages[0].content,
+        &deserialized.messages[0].content,
+    ) {
         (StringOrContents::String(orig), StringOrContents::String(deser)) => {
             assert_eq!(orig, deser);
-        },
+        }
         _ => panic!("Content type mismatch in roundtrip"),
     }
 }
@@ -316,9 +353,9 @@ fn test_serialization_roundtrip_array_content() {
         max_tokens: 4096,
         messages: Messages::from(vec![Message {
             role: Role::User,
-            content: StringOrContents::Contents(vec![
-                Content::Text(Text::new("Hello world".to_string()))
-            ]),
+            content: StringOrContents::Contents(vec![Content::Text(Text::new(
+                "Hello world".to_string(),
+            ))]),
         }]),
         system: None,
         metadata: None,
@@ -331,23 +368,26 @@ fn test_serialization_roundtrip_array_content() {
         top_p: None,
         thinking: None,
     };
-    
+
     let json = serde_json::to_string(&original).unwrap();
     let deserialized: ChatRequest = serde_json::from_str(&json).unwrap();
-    
+
     assert_eq!(original.messages.len(), deserialized.messages.len());
-    
+
     // Check content specifically
-    match (&original.messages[0].content, &deserialized.messages[0].content) {
+    match (
+        &original.messages[0].content,
+        &deserialized.messages[0].content,
+    ) {
         (StringOrContents::Contents(orig), StringOrContents::Contents(deser)) => {
             assert_eq!(orig.len(), deser.len());
             match (&orig[0], &deser[0]) {
                 (Content::Text(orig_text), Content::Text(deser_text)) => {
                     assert_eq!(orig_text.text, deser_text.text);
-                },
+                }
                 _ => panic!("Text content mismatch in roundtrip"),
             }
-        },
+        }
         _ => panic!("Content type mismatch in roundtrip"),
     }
 }
@@ -364,10 +404,14 @@ fn test_edge_case_empty_content_array() {
             }
         ]
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Should handle empty content array: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Should handle empty content array: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     let message = &request.messages[0];
     match &message.content {
@@ -397,10 +441,14 @@ fn test_failed_claude_code_request_with_system_array() {
         "metadata":{"user_id":"user_32c7d5469e4065450d5863d6df846e2ffab1f0e97f403d5ae7101b3e5c12337a_account_8d202d14-33f8-4e3d-a4b9-68273f8e9afa_session_1fabb14f-4fd9-4371-b901-ef0c8030f120"},
         "stream":true
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
     // This currently fails but should pass after we fix the system field handling
-    assert!(result.is_ok(), "Failed to deserialize real Claude Code request with system array: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Failed to deserialize real Claude Code request with system array: {:?}",
+        result.err()
+    );
 }
 
 #[test]
@@ -415,10 +463,14 @@ fn test_edge_case_empty_string_content() {
             }
         ]
     }"#;
-    
+
     let result: Result<ChatRequest, _> = serde_json::from_str(json);
-    assert!(result.is_ok(), "Should handle empty string content: {:?}", result.err());
-    
+    assert!(
+        result.is_ok(),
+        "Should handle empty string content: {:?}",
+        result.err()
+    );
+
     let request = result.unwrap();
     let message = &request.messages[0];
     match &message.content {

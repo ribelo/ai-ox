@@ -7,13 +7,9 @@ use std::collections::BTreeMap;
 #[serde(tag = "dataType", rename_all = "camelCase")]
 pub enum DataRef {
     /// External URI reference
-    Uri {
-        uri: String
-    },
+    Uri { uri: String },
     /// Inline base64-encoded data
-    Base64 {
-        data: String
-    },
+    Base64 { data: String },
 }
 
 impl DataRef {
@@ -182,23 +178,17 @@ impl Part {
     pub fn with_ext(mut self, namespace: &str, key: &str, value: Value) -> Self {
         let full_key = format!("{}.{}", namespace, key);
         match &mut self {
-            Self::Text { ext, .. } |
-            Self::Blob { ext, .. } |
-            Self::ToolUse { ext, .. } |
-            Self::ToolResult { ext, .. } |
-            Self::Opaque { ext, .. } => {
+            Self::Text { ext, .. }
+            | Self::Blob { ext, .. }
+            | Self::ToolUse { ext, .. }
+            | Self::ToolResult { ext, .. }
+            | Self::Opaque { ext, .. } => {
                 ext.insert(full_key, value);
             }
         }
         self
     }
-
-
 }
-
-
-
-
 
 #[cfg(test)]
 mod tests {
@@ -220,7 +210,7 @@ mod tests {
             vec![
                 Part::text("Found 3 results:"),
                 Part::blob_uri("https://example.com/result1.png", "image/png"),
-            ]
+            ],
         );
 
         if let Part::ToolResult { parts, .. } = result {
@@ -238,7 +228,10 @@ mod tests {
 
         if let Part::Text { ext, .. } = part {
             assert_eq!(ext.get("anthropic.thinking"), Some(&Value::Bool(true)));
-            assert_eq!(ext.get("openai.model"), Some(&Value::String("gpt-4".into())));
+            assert_eq!(
+                ext.get("openai.model"),
+                Some(&Value::String("gpt-4".into()))
+            );
         }
     }
 
@@ -251,4 +244,3 @@ mod tests {
         assert!(size < 100); // Reasonable size for small string
     }
 }
-

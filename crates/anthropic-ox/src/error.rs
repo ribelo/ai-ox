@@ -124,7 +124,9 @@ impl AnthropicRequestError {
     pub fn kind(&self) -> ErrorKind {
         match self {
             Self::RateLimit => ErrorKind::RateLimit,
-            Self::Authentication(_) | Self::AuthenticationMissing | Self::PermissionDenied(_) => ErrorKind::Auth,
+            Self::Authentication(_) | Self::AuthenticationMissing | Self::PermissionDenied(_) => {
+                ErrorKind::Auth
+            }
             Self::InvalidRequestError { .. } | Self::NotFound(_) => ErrorKind::InvalidRequest,
             Self::Overloaded(_) => ErrorKind::ServerOverloaded,
             Self::ReqwestError(e) => {
@@ -143,10 +145,16 @@ impl AnthropicRequestError {
             | Self::InvalidUtf8(_) => ErrorKind::Other,
         }
     }
-    
+
     /// Returns true if this error should be retried
     pub fn is_retryable(&self) -> bool {
-        matches!(self.kind(), ErrorKind::RateLimit | ErrorKind::ServerOverloaded | ErrorKind::Network | ErrorKind::ServiceUnavailable)
+        matches!(
+            self.kind(),
+            ErrorKind::RateLimit
+                | ErrorKind::ServerOverloaded
+                | ErrorKind::Network
+                | ErrorKind::ServiceUnavailable
+        )
     }
 }
 
@@ -164,14 +172,20 @@ impl From<ErrorInfo> for AnthropicRequestError {
             "rate_limit_error" => AnthropicRequestError::RateLimit,
             "api_error" => AnthropicRequestError::Generic(error.message),
             "overloaded_error" => AnthropicRequestError::Overloaded(error.message),
-            _ => AnthropicRequestError::UnexpectedResponse(format!("Unknown error type: {}", error.r#type)),
+            _ => AnthropicRequestError::UnexpectedResponse(format!(
+                "Unknown error type: {}",
+                error.r#type
+            )),
         }
     }
 }
 
 /// Parse an error response from the Anthropic API.
 /// This function handles both JSON format errors and plain text errors.
-pub fn parse_error_response(status: reqwest::StatusCode, bytes: bytes::Bytes) -> AnthropicRequestError {
+pub fn parse_error_response(
+    status: reqwest::StatusCode,
+    bytes: bytes::Bytes,
+) -> AnthropicRequestError {
     // Try to parse as a structured Anthropic API error first
     if let Ok(payload) = serde_json::from_slice::<ApiErrorResponse>(&bytes) {
         match payload.error.r#type.as_deref() {
@@ -180,8 +194,12 @@ pub fn parse_error_response(status: reqwest::StatusCode, bytes: bytes::Bytes) ->
                 param: payload.error.param,
                 code: payload.error.code,
             },
-            Some("authentication_error") => AnthropicRequestError::Authentication(payload.error.message),
-            Some("permission_error") => AnthropicRequestError::PermissionDenied(payload.error.message),
+            Some("authentication_error") => {
+                AnthropicRequestError::Authentication(payload.error.message)
+            }
+            Some("permission_error") => {
+                AnthropicRequestError::PermissionDenied(payload.error.message)
+            }
             Some("not_found_error") => AnthropicRequestError::NotFound(payload.error.message),
             Some("rate_limit_error") => AnthropicRequestError::RateLimit,
             Some("api_error") => AnthropicRequestError::Generic(payload.error.message),

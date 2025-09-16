@@ -1,15 +1,15 @@
-#[cfg(feature = "gemini")]
-pub mod gemini;
-#[cfg(feature = "openrouter")]
-pub mod openrouter;
-#[cfg(feature = "mistral")]
-pub mod mistral;
-#[cfg(feature = "groq")]
-pub mod groq;
-#[cfg(feature = "bedrock")]
-pub mod bedrock;
 #[cfg(feature = "anthropic")]
 pub mod anthropic;
+#[cfg(feature = "bedrock")]
+pub mod bedrock;
+#[cfg(feature = "gemini")]
+pub mod gemini;
+#[cfg(feature = "groq")]
+pub mod groq;
+#[cfg(feature = "mistral")]
+pub mod mistral;
+#[cfg(feature = "openrouter")]
+pub mod openrouter;
 pub mod request;
 pub mod response;
 

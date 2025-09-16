@@ -1,16 +1,17 @@
 pub mod agent;
 pub mod content;
+pub mod conversion;
 pub mod errors;
 pub mod model;
+pub mod provider;
 #[cfg(any(feature = "groq", feature = "mistral", feature = "gemini"))]
 pub mod stt;
 pub mod tool;
 pub mod usage;
 pub mod workflow;
-pub mod provider;
 
 // Re-export the toolbox and dangerous macros
-pub use ai_ox_macros::{toolbox, dangerous};
+pub use ai_ox_macros::{dangerous, toolbox};
 
 // Re-export commonly used types
 pub use errors::GenerateContentError;

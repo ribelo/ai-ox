@@ -18,7 +18,10 @@ async fn test_list_organization_users() {
             assert!(response.data.is_empty() || !response.data.is_empty());
         }
         Err(e) => {
-            println!("⚠️  API call failed (this might be expected for non-admin keys): {}", e);
+            println!(
+                "⚠️  API call failed (this might be expected for non-admin keys): {}",
+                e
+            );
         }
     }
 }
@@ -39,7 +42,10 @@ async fn test_list_organization_invites() {
             assert!(response.data.is_empty() || !response.data.is_empty());
         }
         Err(e) => {
-            println!("⚠️  API call failed (this might be expected for non-admin keys): {}", e);
+            println!(
+                "⚠️  API call failed (this might be expected for non-admin keys): {}",
+                e
+            );
         }
     }
 }
@@ -60,7 +66,10 @@ async fn test_list_workspaces() {
             assert!(response.data.is_empty() || !response.data.is_empty());
         }
         Err(e) => {
-            println!("⚠️  API call failed (this might be expected for non-admin keys): {}", e);
+            println!(
+                "⚠️  API call failed (this might be expected for non-admin keys): {}",
+                e
+            );
         }
     }
 }
@@ -81,7 +90,10 @@ async fn test_list_api_keys() {
             assert!(response.data.is_empty() || !response.data.is_empty());
         }
         Err(e) => {
-            println!("⚠️  API call failed (this might be expected for non-admin keys): {}", e);
+            println!(
+                "⚠️  API call failed (this might be expected for non-admin keys): {}",
+                e
+            );
         }
     }
 }

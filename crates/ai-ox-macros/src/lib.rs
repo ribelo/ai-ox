@@ -23,7 +23,7 @@ struct ToolMethodInfo<'a> {
     output_ty: Option<&'a Type>,    // The 'O' in Result<O, E> or just O, None for unit type
     error_ty: Option<&'a Type>,     // The 'E' in Result<O, E>, None for infallible tools
     is_async: bool,
-    is_dangerous: bool,             // True if method has #[dangerous] attribute
+    is_dangerous: bool, // True if method has #[dangerous] attribute
     span: Span,
 }
 
@@ -566,9 +566,7 @@ fn get_option_inner_type(ty: &Type) -> Option<&Type> {
 
 /// Helper: Check if a method has the #[dangerous] attribute.
 fn is_dangerous_method(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| {
-        attr.path().is_ident("dangerous")
-    })
+    attrs.iter().any(|attr| attr.path().is_ident("dangerous"))
 }
 
 /// Helper: Extracts and concatenates `///` doc comments from attributes.

@@ -1,11 +1,10 @@
 use gemini_ox::{
-    Gemini, 
-    Model,
+    Gemini, Model,
+    content::{Content, Part, Role, Text},
     request::GenerateContentRequest,
-    content::{Content, Part, Role, Text}
 };
-use std::fs;
 use serde_json;
+use std::fs;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -13,14 +12,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let oauth_creds = fs::read_to_string("/home/ribelo/.gemini/oauth_creds.json")?;
     let creds: serde_json::Value = serde_json::from_str(&oauth_creds)?;
     let access_token = creds["access_token"].as_str().unwrap();
-    
+
     println!("🔑 Using OAuth token with Cloud Code Assist API...");
-    
+
     // Create Gemini client with OAuth token - this will automatically use Cloud Code Assist API
     let gemini = Gemini::with_oauth_token(access_token);
-    
+
     println!("📝 Making a generate content request with OAuth (should use Cloud Code Assist)...");
-    
+
     // Create a simple request
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
@@ -31,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()
         ])
         .build();
-    
+
     // Make the request - should automatically route to Cloud Code Assist API
     match request.send(&gemini).await {
         Ok(response) => {
@@ -52,6 +51,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             return Err(e.into());
         }
     }
-    
+
     Ok(())
 }

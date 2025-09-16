@@ -9,10 +9,10 @@ fn test_tool_result_deserialize_string_content() {
     }"#;
 
     let result: ToolResult = serde_json::from_str(json_str).expect("Failed to deserialize");
-    
+
     assert_eq!(result.tool_use_id, "toolu_01A09q90qw90lkasdjl");
     assert_eq!(result.content.len(), 1);
-    
+
     match &result.content[0] {
         ToolResultContent::Text { text } => {
             assert_eq!(text, "Cargo.lock\nCargo.toml\nCLAUDE.md\nsrc/");
@@ -35,10 +35,10 @@ fn test_tool_result_deserialize_array_content() {
     }"#;
 
     let result: ToolResult = serde_json::from_str(json_str).expect("Failed to deserialize");
-    
+
     assert_eq!(result.tool_use_id, "toolu_01A09q90qw90lkasdjl");
     assert_eq!(result.content.len(), 1);
-    
+
     match &result.content[0] {
         ToolResultContent::Text { text } => {
             assert_eq!(text, "Here are the files:");
@@ -59,11 +59,11 @@ fn test_tool_result_deserialize_with_cache_control() {
     }"#;
 
     let result: ToolResult = serde_json::from_str(json_str).expect("Failed to deserialize");
-    
+
     assert_eq!(result.tool_use_id, "toolu_01A09q90qw90lkasdjl");
     assert_eq!(result.content.len(), 1);
     assert!(result.cache_control.is_some());
-    
+
     let cache_control = result.cache_control.unwrap();
     assert_eq!(cache_control.cache_type, "ephemeral");
 }
@@ -78,11 +78,11 @@ fn test_tool_result_deserialize_with_is_error() {
     }"#;
 
     let result: ToolResult = serde_json::from_str(json_str).expect("Failed to deserialize");
-    
+
     assert_eq!(result.tool_use_id, "toolu_01A09q90qw90lkasdjl");
     assert_eq!(result.content.len(), 1);
     assert_eq!(result.is_error, Some(true));
-    
+
     match &result.content[0] {
         ToolResultContent::Text { text } => {
             assert_eq!(text, "Error: File not found");

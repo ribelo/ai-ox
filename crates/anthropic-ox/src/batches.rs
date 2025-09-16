@@ -1,8 +1,8 @@
 // This file will contain the implementation for the Message Batches API.
-use serde::{Deserialize, Serialize};
+use crate::error::ErrorInfo;
 use crate::request::ChatRequest;
 use crate::response::ChatResponse;
-use crate::error::ErrorInfo;
+use serde::{Deserialize, Serialize};
 
 /// A request to create a new message batch.
 #[derive(Debug, Clone, Serialize, Deserialize)]

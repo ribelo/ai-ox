@@ -9,31 +9,31 @@ use super::response::{Segment, Word};
 pub struct StreamingTranscriptionRequest {
     /// Audio stream configuration
     pub audio_config: AudioStreamConfig,
-    
+
     /// Target language (ISO-639-1) - None for auto-detect
     #[builder(into)]
     pub language: Option<String>,
-    
+
     /// Prompt to guide transcription style
     #[builder(into)]
     pub prompt: Option<String>,
-    
+
     /// Temperature for transcription creativity (0.0 - 1.0)
     #[builder(default = 0.0)]
     pub temperature: f32,
-    
+
     /// How often to emit interim results
     #[builder(default = Duration::from_millis(500))]
     pub interim_results_interval: Duration,
-    
+
     /// Whether to enable speaker diarization (if supported)
     #[builder(default = false)]
     pub enable_speaker_diarization: bool,
-    
+
     /// Maximum number of speakers to detect
     #[builder(default = 2)]
     pub max_speakers: u8,
-    
+
     /// Provider-specific options
     #[builder(default)]
     pub vendor_options: std::collections::HashMap<String, serde_json::Value>,
@@ -132,7 +132,7 @@ pub enum TranscriptionEvent {
         /// Speaker ID (if diarization is enabled)
         speaker_id: Option<u8>,
     },
-    
+
     /// Final transcription result for a segment
     Final {
         /// Complete segment with timing information
@@ -144,24 +144,24 @@ pub enum TranscriptionEvent {
         /// Word-level details if available
         words: Vec<Word>,
     },
-    
+
     /// Speech activity detection
     SpeechStart {
         /// Timestamp when speech started
         #[serde(with = "super::response::duration_secs")]
         timestamp: Duration,
     },
-    
+
     /// End of speech segment detected
     SpeechEnd {
         /// Timestamp when speech ended
         #[serde(with = "super::response::duration_secs")]
         timestamp: Duration,
     },
-    
+
     /// End of entire audio stream
     EndOfStream,
-    
+
     /// Non-fatal warning during processing
     Warning {
         /// Warning message
@@ -169,7 +169,7 @@ pub enum TranscriptionEvent {
         /// Warning code (provider-specific)
         code: Option<String>,
     },
-    
+
     /// Error during streaming transcription
     Error {
         /// Error message

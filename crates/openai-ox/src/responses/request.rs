@@ -1,6 +1,6 @@
+use ai_ox_common::openai_format::Message;
 use bon::Builder;
 use serde::{Deserialize, Serialize};
-use ai_ox_common::openai_format::Message;
 use serde_json::Value;
 
 /// Tool definition for OpenAI Responses API - supports custom types
@@ -9,18 +9,18 @@ pub struct ResponsesTool {
     /// Type of tool (e.g., "custom", "function")
     #[serde(rename = "type")]
     pub tool_type: String,
-    
+
     /// Name of the tool
     pub name: String,
-    
+
     /// Optional description
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    
+
     /// Tool format configuration (for grammar-based tools)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub format: Option<ToolFormat>,
-    
+
     /// Parameters schema (for simple tools without grammar)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parameters: Option<Value>,
@@ -32,11 +32,11 @@ pub struct ToolFormat {
     /// Format type (e.g., "grammar")
     #[serde(rename = "type")]
     pub format_type: String,
-    
+
     /// Grammar syntax (e.g., "lark")
     #[serde(skip_serializing_if = "Option::is_none")]
     pub syntax: Option<String>,
-    
+
     /// Grammar definition
     #[serde(skip_serializing_if = "Option::is_none")]
     pub definition: Option<String>,
@@ -68,11 +68,11 @@ pub struct ResponsesRequest {
     /// Tools/functions available to the model
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<ResponsesTool>>,
-    
+
     /// Tool choice configuration (e.g., "auto", "none", or specific tool)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<String>,
-    
+
     /// Whether to allow parallel tool calls
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parallel_tool_calls: Option<bool>,
@@ -140,15 +140,15 @@ pub struct InputPart {
     /// Type of input part
     #[serde(rename = "type")]
     pub part_type: String,
-    
+
     /// Text content (for text parts)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
-    
+
     /// Image data (for image parts)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<ImageData>,
-    
+
     /// File reference (for file parts)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<FileReference>,
@@ -220,9 +220,7 @@ impl InputPart {
             part_type: "file".to_string(),
             text: None,
             image: None,
-            file: Some(FileReference {
-                id: file_id.into(),
-            }),
+            file: Some(FileReference { id: file_id.into() }),
         }
     }
 }
@@ -263,4 +261,3 @@ impl TextConfig {
         }
     }
 }
-

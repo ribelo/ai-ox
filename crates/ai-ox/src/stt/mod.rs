@@ -1,13 +1,15 @@
+pub mod builder;
 pub mod error;
+pub mod providers;
 pub mod request;
 pub mod response;
 pub mod streaming;
-pub mod builder;
-pub mod providers;
 
 pub use error::SttError;
-pub use request::{TranscriptionRequest, AudioSource, AudioFormat, OutputFormat, TimestampGranularity};
-pub use response::{TranscriptionResponse, Alternative, Segment, Word, SttUsage};
+pub use request::{
+    AudioFormat, AudioSource, OutputFormat, TimestampGranularity, TranscriptionRequest,
+};
+pub use response::{Alternative, Segment, SttUsage, TranscriptionResponse, Word};
 
 #[cfg(feature = "groq")]
 pub use builder::groq_stt;
@@ -93,7 +95,6 @@ pub trait SpeechToText: Send + Sync + 'static + std::fmt::Debug {
         request: TranscriptionRequest,
     ) -> BoxFuture<'_, Result<TranscriptionResponse, SttError>>;
 
-
     /// Lists available models/engines for this provider
     ///
     /// # Returns
@@ -104,9 +105,11 @@ pub trait SpeechToText: Send + Sync + 'static + std::fmt::Debug {
     /// Checks if this provider supports a given audio format
     fn supports_format(&self, format: AudioFormat) -> bool {
         // Default implementation - providers can override
-        matches!(format, AudioFormat::Mp3 | AudioFormat::Wav | AudioFormat::Flac)
+        matches!(
+            format,
+            AudioFormat::Mp3 | AudioFormat::Wav | AudioFormat::Flac
+        )
     }
-
 }
 
 impl<T: SpeechToText + ?Sized> SpeechToText for Arc<T> {
@@ -124,7 +127,6 @@ impl<T: SpeechToText + ?Sized> SpeechToText for Arc<T> {
     ) -> BoxFuture<'_, Result<TranscriptionResponse, SttError>> {
         self.as_ref().transcribe(request)
     }
-
 
     fn available_models(&self) -> BoxFuture<'_, Result<Vec<SttModel>, SttError>> {
         self.as_ref().available_models()

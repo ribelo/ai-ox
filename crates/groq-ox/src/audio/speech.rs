@@ -1,6 +1,6 @@
+use crate::GroqRequestError;
 use bon::Builder;
 use serde::{Deserialize, Serialize};
-use crate::GroqRequestError;
 
 /// Request for text-to-speech synthesis
 #[derive(Debug, Clone, Serialize, Builder)]
@@ -8,19 +8,19 @@ pub struct SpeechRequest {
     /// The model to use for speech synthesis
     #[builder(into)]
     pub model: String,
-    
+
     /// The text to convert to speech
     #[builder(into)]
     pub input: String,
-    
+
     /// The voice to use for synthesis
     #[builder(into)]
     pub voice: String,
-    
+
     /// The format of the output audio
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_format: Option<AudioFormat>,
-    
+
     /// The speed of the generated audio (0.25 to 4.0)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub speed: Option<f32>,
@@ -53,7 +53,7 @@ impl crate::Groq {
         request: &SpeechRequest,
     ) -> Result<SpeechResponse, GroqRequestError> {
         let url = format!("{}/openai/v1/audio/speech", self.base_url);
-        
+
         let res = self
             .client
             .post(&url)
@@ -61,7 +61,7 @@ impl crate::Groq {
             .json(request)
             .send()
             .await?;
-        
+
         if res.status().is_success() {
             let content_type = res
                 .headers()
@@ -69,9 +69,9 @@ impl crate::Groq {
                 .and_then(|ct| ct.to_str().ok())
                 .unwrap_or("audio/mpeg")
                 .to_string();
-                
+
             let audio = res.bytes().await?.to_vec();
-            
+
             Ok(SpeechResponse {
                 audio,
                 content_type,

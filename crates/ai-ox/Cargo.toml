@@ -6,6 +6,7 @@ edition = "2024"
 [features]
 default = []
 gemini = ["dep:gemini-ox"]
+openai = ["dep:openai-ox"]
 openrouter = ["dep:openrouter-ox"]
 mistral = ["dep:mistral-ox"]
 groq = ["dep:groq-ox"]
@@ -16,7 +17,7 @@ bedrock = [
     "dep:aws-smithy-types"
 ]
 
-test = ["gemini", "openrouter", "mistral", "groq", "anthropic", "bedrock"]
+test = ["gemini", "openai", "openrouter", "mistral", "groq", "anthropic", "bedrock"]
 
 [dependencies]
 serde = { workspace = true }
@@ -30,6 +31,7 @@ openrouter-ox = { path = "../openrouter-ox", optional = true }
 mistral-ox = { path = "../mistral-ox", optional = true }
 groq-ox = { path = "../groq-ox", optional = true }
 anthropic-ox = { path = "../anthropic-ox", optional = true }
+openai-ox = { path = "../openai-ox", optional = true }
 tokio = { workspace = true }
 chrono = { workspace = true }
 bon = { workspace = true }
@@ -50,7 +52,6 @@ async-trait = { workspace = true }
 ai-ox-macros = { path = "../ai-ox-macros" }
 conversion-ox = { path = "../conversion-ox", features = ["all"] }
 anthropic-ox = { path = "../anthropic-ox" }
-openai-ox = { path = "../openai-ox" }
 openrouter-ox = { path = "../openrouter-ox" }
 gemini-ox = { path = "../gemini-ox" }
 ai-ox-common = { path = "../ai-ox-common" }

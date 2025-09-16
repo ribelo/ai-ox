@@ -1,12 +1,11 @@
-use gemini_ox::{
-    Gemini, 
-    Model,
-    request::GenerateContentRequest,
-    content::{Content, Part, Role, Text}
-};
 use futures_util::StreamExt;
-use std::fs;
+use gemini_ox::{
+    Gemini, Model,
+    content::{Content, Part, Role, Text},
+    request::GenerateContentRequest,
+};
 use serde_json;
+use std::fs;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -14,14 +13,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let oauth_creds = fs::read_to_string("/home/ribelo/.gemini/oauth_creds.json")?;
     let creds: serde_json::Value = serde_json::from_str(&oauth_creds)?;
     let access_token = creds["access_token"].as_str().unwrap();
-    
+
     println!("🔑 Using OAuth token with Cloud Code Assist API (streaming)...");
-    
+
     // Create Gemini client with OAuth token and project ID we got from setup
     let gemini = Gemini::with_oauth_token_and_project(access_token, "pioneering-trilogy-xq6tl");
-    
+
     println!("📝 Making a STREAMING generate content request with OAuth...");
-    
+
     // Create a simple request
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
@@ -32,11 +31,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .build()
         ])
         .build();
-    
+
     // Make the streaming request - this should work better with Cloud Code Assist
     let mut stream = request.stream(&gemini);
     let mut full_response = String::new();
-    
+
     println!("📡 Streaming response:");
     while let Some(chunk) = stream.next().await {
         match chunk {
@@ -57,9 +56,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    
+
     println!("\n🎉 SUCCESS! OAuth streaming with Cloud Code Assist API worked!");
     println!("🤖 Full response: {}", full_response);
-    
+
     Ok(())
 }

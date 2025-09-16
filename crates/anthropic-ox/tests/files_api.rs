@@ -1,6 +1,6 @@
 #![cfg(feature = "files")]
 
-use anthropic_ox::{files::FileUploadRequest, Anthropic};
+use anthropic_ox::{Anthropic, files::FileUploadRequest};
 
 #[tokio::test]
 async fn test_files_api_lifecycle() {

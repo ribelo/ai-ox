@@ -29,11 +29,15 @@ mod tests {
     #[test]
     fn test_moderation_request_builder() {
         let request = ModerationRequest::builder()
-            .input(ModerationInput::Single("This is a test message".to_string()))
+            .input(ModerationInput::Single(
+                "This is a test message".to_string(),
+            ))
             .model("text-moderation-latest".to_string())
             .build();
 
-        assert!(matches!(request.input, ModerationInput::Single(ref s) if s == "This is a test message"));
+        assert!(
+            matches!(request.input, ModerationInput::Single(ref s) if s == "This is a test message")
+        );
         assert_eq!(request.model, Some("text-moderation-latest".to_string()));
     }
 
@@ -106,7 +110,13 @@ mod tests {
 
         assert_eq!(request.model, "gpt-4");
         assert_eq!(request.name, Some("Math Tutor".to_string()));
-        assert_eq!(request.description, Some("A helpful math tutor".to_string()));
-        assert_eq!(request.instructions, Some("You are a math tutor who helps students solve problems".to_string()));
+        assert_eq!(
+            request.description,
+            Some("A helpful math tutor".to_string())
+        );
+        assert_eq!(
+            request.instructions,
+            Some("You are a math tutor who helps students solve problems".to_string())
+        );
     }
 }

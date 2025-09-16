@@ -1,8 +1,4 @@
-use crate::{
-    ModelResponse,
-    content::delta::StreamEvent,
-    tool::ToolUse,
-};
+use crate::{ModelResponse, content::delta::StreamEvent, tool::ToolUse};
 
 /// Events that can occur during agent execution.
 ///

@@ -1,16 +1,16 @@
-use futures_util::{future::BoxFuture, FutureExt};
 use base64::Engine;
+use futures_util::{FutureExt, future::BoxFuture};
 use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use crate::stt::{
-    SpeechToText, SttInfo, SttModel, SttError,
-    TranscriptionRequest, TranscriptionResponse, 
-    AudioSource, AudioFormat, OutputFormat, TimestampGranularity,
-    Segment, Word, SttUsage,
+    AudioFormat, AudioSource, OutputFormat, Segment, SpeechToText, SttError, SttInfo, SttModel,
+    SttUsage, TimestampGranularity, TranscriptionRequest, TranscriptionResponse, Word,
 };
 
-use groq_ox::audio::transcription::{TranscriptionFormat, TimestampGranularity as GroqTimestampGranularity};
+use groq_ox::audio::transcription::{
+    TimestampGranularity as GroqTimestampGranularity, TranscriptionFormat,
+};
 
 /// Groq STT provider implementation
 #[derive(Debug, Clone)]
@@ -44,8 +44,7 @@ impl GroqSttBuilder {
     }
 
     pub fn api_key_from_env(mut self, env_var: &str) -> Result<Self, SttError> {
-        let key = std::env::var(env_var)
-            .map_err(|_| SttError::MissingApiKey)?;
+        let key = std::env::var(env_var).map_err(|_| SttError::MissingApiKey)?;
         self.api_key = Some(key);
         Ok(self)
     }
@@ -53,7 +52,7 @@ impl GroqSttBuilder {
     pub fn build(self) -> Result<Arc<dyn SpeechToText>, SttError> {
         let api_key = self.api_key.ok_or(SttError::MissingApiKey)?;
         let model = self.model.unwrap_or_else(|| "whisper-large-v3".to_string());
-        
+
         let client = groq_ox::Groq::new(&api_key);
         Ok(Arc::new(GroqStt::new(client, model)))
     }
@@ -80,28 +79,29 @@ impl GroqStt {
     fn convert_audio_source(&self, source: AudioSource) -> Result<Vec<u8>, SttError> {
         match source {
             AudioSource::Bytes { data, .. } => Ok(data),
-            AudioSource::File(path) => {
-                std::fs::read(&path).map_err(|e| {
-                    SttError::InvalidConfig(format!("Failed to read file {:?}: {}", path, e))
-                })
-            }
+            AudioSource::File(path) => std::fs::read(&path).map_err(|e| {
+                SttError::InvalidConfig(format!("Failed to read file {:?}: {}", path, e))
+            }),
             AudioSource::Base64 { data, .. } => {
                 use base64::Engine;
                 base64::engine::general_purpose::STANDARD
                     .decode(data)
                     .map_err(|e| SttError::InvalidAudioData(format!("Invalid base64: {}", e)))
             }
-            AudioSource::Url(_) => {
-                Err(SttError::InvalidConfig("URL audio sources not supported by Groq".to_string()))
-            }
-            AudioSource::RecordingId(_) => {
-                Err(SttError::InvalidConfig("Recording ID sources not supported by Groq".to_string()))
-            }
+            AudioSource::Url(_) => Err(SttError::InvalidConfig(
+                "URL audio sources not supported by Groq".to_string(),
+            )),
+            AudioSource::RecordingId(_) => Err(SttError::InvalidConfig(
+                "Recording ID sources not supported by Groq".to_string(),
+            )),
         }
     }
 
     /// Convert unified request to Groq format
-    fn convert_request(&self, request: TranscriptionRequest) -> Result<groq_ox::audio::TranscriptionRequest, SttError> {
+    fn convert_request(
+        &self,
+        request: TranscriptionRequest,
+    ) -> Result<groq_ox::audio::TranscriptionRequest, SttError> {
         let audio_data = self.convert_audio_source(request.audio)?;
 
         // Convert output format
@@ -128,7 +128,11 @@ impl GroqStt {
             language: request.language,
             prompt: request.prompt,
             response_format,
-            temperature: if request.temperature > 0.0 { Some(request.temperature) } else { None },
+            temperature: if request.temperature > 0.0 {
+                Some(request.temperature)
+            } else {
+                None
+            },
             timestamp_granularities,
         };
 
@@ -136,7 +140,10 @@ impl GroqStt {
     }
 
     /// Convert Groq response to unified format
-    fn convert_response(&self, groq_response: groq_ox::audio::TranscriptionResponse) -> TranscriptionResponse {
+    fn convert_response(
+        &self,
+        groq_response: groq_ox::audio::TranscriptionResponse,
+    ) -> TranscriptionResponse {
         let mut response = TranscriptionResponse::simple(
             groq_response.text,
             "groq".to_string(),
@@ -259,7 +266,6 @@ impl SpeechToText for GroqStt {
         .boxed()
     }
 
-
     fn available_models(&self) -> BoxFuture<'_, Result<Vec<SttModel>, SttError>> {
         async move {
             // Could potentially call the Groq models API here
@@ -279,7 +285,6 @@ impl SpeechToText for GroqStt {
                 | AudioFormat::WebM
         )
     }
-
 }
 
 #[cfg(test)]

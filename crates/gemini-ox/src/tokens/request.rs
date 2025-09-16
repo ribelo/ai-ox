@@ -50,7 +50,10 @@ struct ApiCreateAuthTokenPayload<'a> {
 impl CreateAuthTokenOperation {
     pub async fn send(&self) -> Result<AuthTokenResponse, GeminiRequestError> {
         // Auth tokens API only supports API key authentication, not OAuth
-        let api_key = self.gemini.api_key.as_ref()
+        let api_key = self
+            .gemini
+            .api_key
+            .as_ref()
             .ok_or(GeminiRequestError::AuthenticationMissing)?;
         let url = format!("{BASE_URL}/auth_tokens?key={api_key}");
 

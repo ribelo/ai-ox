@@ -85,7 +85,9 @@ fn test_structured_output_serialization() {
         .build();
 
     let json = serde_json::to_value(&request).unwrap();
-    let strict = json["response_format"]["json_schema"]["strict"].as_bool().unwrap();
+    let strict = json["response_format"]["json_schema"]["strict"]
+        .as_bool()
+        .unwrap();
 
     assert!(strict);
 }

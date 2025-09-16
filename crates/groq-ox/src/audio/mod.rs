@@ -1,5 +1,5 @@
-pub mod transcription;
 pub mod speech;
+pub mod transcription;
 
-pub use transcription::{TranscriptionRequest, TranscriptionResponse};
 pub use speech::{SpeechRequest, SpeechResponse};
+pub use transcription::{TranscriptionRequest, TranscriptionResponse};

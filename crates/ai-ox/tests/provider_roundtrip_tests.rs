@@ -8,8 +8,8 @@
 //! exhaustive: text-only, multi-part (text + image), nested tool results, and
 //! edge cases (empty content, Unicode, large payloads).
 
-use ai_ox::content::part::{DataRef, Part};
 use ai_ox::content::message::{Message, MessageRole};
+use ai_ox::content::part::{DataRef, Part};
 use ai_ox::tool::encoding::{decode_tool_result_parts, encode_tool_result_parts};
 use std::collections::BTreeMap;
 
@@ -33,8 +33,8 @@ fn sample_base64_png() -> &'static str {
 #[cfg(feature = "gemini")]
 mod gemini_roundtrip {
     use super::*;
-    use std::convert::{TryFrom, TryInto};
     use gemini_ox::content::Content as GeminiContent;
+    use std::convert::{TryFrom, TryInto};
 
     #[test]
     fn gemini_roundtrip_text_only_tool_result_preserves_everything() {
@@ -43,18 +43,29 @@ mod gemini_roundtrip {
             vec![Part::ToolResult {
                 id: "call_gemini_1".to_string(),
                 name: "compute_answer".to_string(),
-                parts: vec![Part::Text { text: "42".to_string(), ext: BTreeMap::new() }],
+                parts: vec![Part::Text {
+                    text: "42".to_string(),
+                    ext: BTreeMap::new(),
+                }],
                 ext: BTreeMap::new(),
             }],
         );
 
         // Convert to Gemini content
-        let gemini: GeminiContent = original.clone().try_into().expect("gemini conversion failed");
+        let gemini: GeminiContent = original
+            .clone()
+            .try_into()
+            .expect("gemini conversion failed");
 
         // Convert back to ai-ox Message
-        let roundtrip: Message = gemini.try_into().expect("gemini -> ai-ox conversion failed");
+        let roundtrip: Message = gemini
+            .try_into()
+            .expect("gemini -> ai-ox conversion failed");
 
-        assert_eq!(original.content, roundtrip.content, "Gemini roundtrip must preserve exact Parts (text-only)");
+        assert_eq!(
+            original.content, roundtrip.content,
+            "Gemini roundtrip must preserve exact Parts (text-only)"
+        );
     }
 
     #[test]
@@ -62,7 +73,10 @@ mod gemini_roundtrip {
         let nested = Part::ToolResult {
             id: "nested_call".to_string(),
             name: "nested_tool".to_string(),
-            parts: vec![Part::Text { text: "inner".to_string(), ext: BTreeMap::new() }],
+            parts: vec![Part::Text {
+                text: "inner".to_string(),
+                ext: BTreeMap::new(),
+            }],
             ext: BTreeMap::new(),
         };
 
@@ -72,24 +86,37 @@ mod gemini_roundtrip {
                 id: "call_gemini_2".to_string(),
                 name: "complex_tool".to_string(),
                 parts: vec![
-                    Part::Text { text: "Result with image:".to_string(), ext: BTreeMap::new() },
-                     Part::Blob {
-                         data_ref: DataRef::Base64 { data: sample_base64_png().to_string() },
-                         mime_type: "image/png".to_string(),
-                         name: None,
-                         description: None,
-                         ext: BTreeMap::new(),
-                     },
+                    Part::Text {
+                        text: "Result with image:".to_string(),
+                        ext: BTreeMap::new(),
+                    },
+                    Part::Blob {
+                        data_ref: DataRef::Base64 {
+                            data: sample_base64_png().to_string(),
+                        },
+                        mime_type: "image/png".to_string(),
+                        name: None,
+                        description: None,
+                        ext: BTreeMap::new(),
+                    },
                     nested.clone(),
                 ],
                 ext: BTreeMap::new(),
             }],
         );
 
-        let gemini: GeminiContent = original.clone().try_into().expect("gemini conversion failed");
-        let roundtrip: Message = gemini.try_into().expect("gemini -> ai-ox conversion failed");
+        let gemini: GeminiContent = original
+            .clone()
+            .try_into()
+            .expect("gemini conversion failed");
+        let roundtrip: Message = gemini
+            .try_into()
+            .expect("gemini -> ai-ox conversion failed");
 
-        assert_eq!(original.content, roundtrip.content, "Gemini roundtrip must preserve multipart and nested tool results exactly");
+        assert_eq!(
+            original.content, roundtrip.content,
+            "Gemini roundtrip must preserve multipart and nested tool results exactly"
+        );
     }
 
     #[test]
@@ -97,26 +124,78 @@ mod gemini_roundtrip {
         // empty content
         let empty = Message::new(
             MessageRole::Assistant,
-            vec![Part::ToolResult { id: "empty_call".to_string(), name: "empty_tool".to_string(), parts: vec![], ext: BTreeMap::new() }],
+            vec![Part::ToolResult {
+                id: "empty_call".to_string(),
+                name: "empty_tool".to_string(),
+                parts: vec![],
+                ext: BTreeMap::new(),
+            }],
         );
 
-        let gemini_empty: GeminiContent = empty.clone().try_into().expect("gemini empty conversion failed");
-        let roundtrip_empty: Message = gemini_empty.try_into().expect("gemini empty -> ai-ox failed");
-        assert_eq!(empty.content, roundtrip_empty.content, "Empty ToolResult must roundtrip without loss");
+        let gemini_empty: GeminiContent = empty
+            .clone()
+            .try_into()
+            .expect("gemini empty conversion failed");
+        let roundtrip_empty: Message = gemini_empty
+            .try_into()
+            .expect("gemini empty -> ai-ox failed");
+        assert_eq!(
+            empty.content, roundtrip_empty.content,
+            "Empty ToolResult must roundtrip without loss"
+        );
 
         // unicode
-        let unicode_text = "Emoji: 🧪 — RTL: \u{05D0}\u{05D1}\u{05D2} — Combining: a\u{0301}".to_string();
-        let unicode = Message::new(MessageRole::Assistant, vec![Part::ToolResult { id: "u1".to_string(), name: "u_tool".to_string(), parts: vec![Part::Text { text: unicode_text.clone(), ext: BTreeMap::new() }], ext: BTreeMap::new() }]);
-        let gemini_unicode: GeminiContent = unicode.clone().try_into().expect("gemini unicode conversion failed");
-        let roundtrip_unicode: Message = gemini_unicode.try_into().expect("gemini unicode -> ai-ox failed");
-        assert_eq!(unicode.content, roundtrip_unicode.content, "Unicode must survive roundtrip intact");
+        let unicode_text =
+            "Emoji: 🧪 — RTL: \u{05D0}\u{05D1}\u{05D2} — Combining: a\u{0301}".to_string();
+        let unicode = Message::new(
+            MessageRole::Assistant,
+            vec![Part::ToolResult {
+                id: "u1".to_string(),
+                name: "u_tool".to_string(),
+                parts: vec![Part::Text {
+                    text: unicode_text.clone(),
+                    ext: BTreeMap::new(),
+                }],
+                ext: BTreeMap::new(),
+            }],
+        );
+        let gemini_unicode: GeminiContent = unicode
+            .clone()
+            .try_into()
+            .expect("gemini unicode conversion failed");
+        let roundtrip_unicode: Message = gemini_unicode
+            .try_into()
+            .expect("gemini unicode -> ai-ox failed");
+        assert_eq!(
+            unicode.content, roundtrip_unicode.content,
+            "Unicode must survive roundtrip intact"
+        );
 
         // large data (moderate size to keep test reasonable)
         let large = "X".repeat(20_000);
-        let large_msg = Message::new(MessageRole::Assistant, vec![Part::ToolResult { id: "big".to_string(), name: "big_tool".to_string(), parts: vec![Part::Text { text: large.clone(), ext: BTreeMap::new() }], ext: BTreeMap::new() }]);
-        let gemini_large: GeminiContent = large_msg.clone().try_into().expect("gemini large conversion failed");
-        let roundtrip_large: Message = gemini_large.try_into().expect("gemini large -> ai-ox failed");
-        assert_eq!(large_msg.content, roundtrip_large.content, "Large payload must be preserved exactly");
+        let large_msg = Message::new(
+            MessageRole::Assistant,
+            vec![Part::ToolResult {
+                id: "big".to_string(),
+                name: "big_tool".to_string(),
+                parts: vec![Part::Text {
+                    text: large.clone(),
+                    ext: BTreeMap::new(),
+                }],
+                ext: BTreeMap::new(),
+            }],
+        );
+        let gemini_large: GeminiContent = large_msg
+            .clone()
+            .try_into()
+            .expect("gemini large conversion failed");
+        let roundtrip_large: Message = gemini_large
+            .try_into()
+            .expect("gemini large -> ai-ox failed");
+        assert_eq!(
+            large_msg.content, roundtrip_large.content,
+            "Large payload must be preserved exactly"
+        );
     }
 }
 
@@ -125,7 +204,9 @@ mod gemini_roundtrip {
 #[cfg(feature = "openrouter")]
 mod openrouter_roundtrip {
     use super::*;
-    use openrouter_ox::message::{Message as ORMessage, ToolMessage, UserMessage, AssistantMessage};
+    use openrouter_ox::message::{
+        AssistantMessage, Message as ORMessage, ToolMessage, UserMessage,
+    };
 
     fn simulate_openrouter_messages_from_ai(original: &Message) -> Vec<ORMessage> {
         let mut msgs = Vec::new();
@@ -136,15 +217,22 @@ mod openrouter_roundtrip {
                     // user/assistant text maps to a user message for roundtrip testing
                     msgs.push(ORMessage::User(UserMessage::text(text.clone())));
                 }
-                Part::ToolResult { id, name, parts, .. } => {
+                Part::ToolResult {
+                    id, name, parts, ..
+                } => {
                     // encode the tool result parts into the standardized JSON string
                     let encoded = encode_tool_result_parts(name, parts).expect("encoding failed");
                     // OpenRouter Tool messages carry name -> use with_name so conversion back can retrieve it
-                    msgs.push(ORMessage::Tool(ToolMessage::with_name(id.clone(), encoded, name.clone())));
+                    msgs.push(ORMessage::Tool(ToolMessage::with_name(
+                        id.clone(),
+                        encoded,
+                        name.clone(),
+                    )));
                 }
                 other => {
                     // Fallback: serialize unknown parts to text and send as user message
-                    let serialized = serde_json::to_string(&other).unwrap_or_else(|_| "<serialization error>".to_string());
+                    let serialized = serde_json::to_string(&other)
+                        .unwrap_or_else(|_| "<serialization error>".to_string());
                     msgs.push(ORMessage::User(UserMessage::text(serialized)));
                 }
             }
@@ -157,7 +245,21 @@ mod openrouter_roundtrip {
     fn openrouter_roundtrip_text_only_tool_result() {
         let original = Message::new(
             MessageRole::User,
-            vec![Part::Text { text: "Here is a result:".to_string(), ext: BTreeMap::new() }, Part::ToolResult { id: "call_or_1".to_string(), name: "search".to_string(), parts: vec![Part::Text { text: "found".to_string(), ext: BTreeMap::new() }], ext: BTreeMap::new() }],
+            vec![
+                Part::Text {
+                    text: "Here is a result:".to_string(),
+                    ext: BTreeMap::new(),
+                },
+                Part::ToolResult {
+                    id: "call_or_1".to_string(),
+                    name: "search".to_string(),
+                    parts: vec![Part::Text {
+                        text: "found".to_string(),
+                        ext: BTreeMap::new(),
+                    }],
+                    ext: BTreeMap::new(),
+                },
+            ],
         );
 
         let or_msgs = simulate_openrouter_messages_from_ai(&original);
@@ -166,7 +268,10 @@ mod openrouter_roundtrip {
         let ai_msgs: Vec<Message> = or_msgs.into_iter().map(|m| m.into()).collect();
         let final_parts = flatten_messages_parts(ai_msgs);
 
-        assert_eq!(original.content, final_parts, "OpenRouter roundtrip (simulated) must preserve exact Parts");
+        assert_eq!(
+            original.content, final_parts,
+            "OpenRouter roundtrip (simulated) must preserve exact Parts"
+        );
     }
 
     #[test]
@@ -177,9 +282,23 @@ mod openrouter_roundtrip {
                 id: "call_or_2".to_string(),
                 name: "complex_tool".to_string(),
                 parts: vec![
-                    Part::Text { text: "Line 1".to_string(), ext: BTreeMap::new() },
-                    Part::Blob { data_ref: DataRef::Base64 { data: sample_base64_png().to_string() }, mime_type: "image/png".to_string(), name: None, description: None, ext: BTreeMap::new() },
-                    Part::Text { text: "Unicode: ✅ Ω こんにちは".to_string(), ext: BTreeMap::new() },
+                    Part::Text {
+                        text: "Line 1".to_string(),
+                        ext: BTreeMap::new(),
+                    },
+                    Part::Blob {
+                        data_ref: DataRef::Base64 {
+                            data: sample_base64_png().to_string(),
+                        },
+                        mime_type: "image/png".to_string(),
+                        name: None,
+                        description: None,
+                        ext: BTreeMap::new(),
+                    },
+                    Part::Text {
+                        text: "Unicode: ✅ Ω こんにちは".to_string(),
+                        ext: BTreeMap::new(),
+                    },
                 ],
                 ext: BTreeMap::new(),
             }],
@@ -189,14 +308,28 @@ mod openrouter_roundtrip {
         let ai_msgs: Vec<Message> = or_msgs.into_iter().map(|m| m.into()).collect();
         let final_parts = flatten_messages_parts(ai_msgs);
 
-        assert_eq!(original.content, final_parts, "OpenRouter multipart & unicode must roundtrip exactly");
+        assert_eq!(
+            original.content, final_parts,
+            "OpenRouter multipart & unicode must roundtrip exactly"
+        );
 
         // empty content case
-        let empty = Message::new(MessageRole::User, vec![Part::ToolResult { id: "empty_or".to_string(), name: "empty".to_string(), parts: vec![], ext: BTreeMap::new() }]);
+        let empty = Message::new(
+            MessageRole::User,
+            vec![Part::ToolResult {
+                id: "empty_or".to_string(),
+                name: "empty".to_string(),
+                parts: vec![],
+                ext: BTreeMap::new(),
+            }],
+        );
         let or_empty = simulate_openrouter_messages_from_ai(&empty);
         let ai_empty: Vec<Message> = or_empty.into_iter().map(|m| m.into()).collect();
         let final_empty = flatten_messages_parts(ai_empty);
-        assert_eq!(empty.content, final_empty, "OpenRouter empty ToolResult must roundtrip");
+        assert_eq!(
+            empty.content, final_empty,
+            "OpenRouter empty ToolResult must roundtrip"
+        );
     }
 }
 
@@ -209,22 +342,33 @@ mod openrouter_roundtrip {
 fn encode_decode_roundtrip_text_and_image() {
     let name = "test_tool";
     let parts = vec![
-        Part::Text { text: "Leading text".to_string(), ext: BTreeMap::new() },
+        Part::Text {
+            text: "Leading text".to_string(),
+            ext: BTreeMap::new(),
+        },
         Part::Blob {
-            data_ref: DataRef::Base64 { data: sample_base64_png().to_string() },
+            data_ref: DataRef::Base64 {
+                data: sample_base64_png().to_string(),
+            },
             mime_type: "image/png".to_string(),
             name: None,
             description: None,
             ext: BTreeMap::new(),
         },
-        Part::Text { text: "Trailing text".to_string(), ext: BTreeMap::new() },
+        Part::Text {
+            text: "Trailing text".to_string(),
+            ext: BTreeMap::new(),
+        },
     ];
 
     let encoded = encode_tool_result_parts(name, &parts).expect("encode failed");
     let (decoded_name, decoded_parts) = decode_tool_result_parts(&encoded).expect("decode failed");
 
     assert_eq!(name, decoded_name, "tool name should roundtrip");
-    assert_eq!(parts, decoded_parts, "encode/decode should be a perfect roundtrip for mixed text+image parts");
+    assert_eq!(
+        parts, decoded_parts,
+        "encode/decode should be a perfect roundtrip for mixed text+image parts"
+    );
 }
 
 #[test]
@@ -233,16 +377,28 @@ fn encode_decode_roundtrip_complex_nested() {
     let nested = Part::ToolResult {
         id: "nested_call".to_string(),
         name: "nested".to_string(),
-        parts: vec![Part::Text { text: "inner".to_string(), ext: BTreeMap::new() }],
+        parts: vec![Part::Text {
+            text: "inner".to_string(),
+            ext: BTreeMap::new(),
+        }],
         ext: BTreeMap::new(),
     };
-        let parts = vec![Part::Text { text: "outer".to_string(), ext: BTreeMap::new() }, nested];
+    let parts = vec![
+        Part::Text {
+            text: "outer".to_string(),
+            ext: BTreeMap::new(),
+        },
+        nested,
+    ];
 
     let encoded = encode_tool_result_parts(name, &parts).expect("encode failed");
     let (decoded_name, decoded_parts) = decode_tool_result_parts(&encoded).expect("decode failed");
 
     assert_eq!(name, decoded_name, "tool name should roundtrip");
-    assert_eq!(parts, decoded_parts, "encode/decode must preserve nested tool result structure exactly");
+    assert_eq!(
+        parts, decoded_parts,
+        "encode/decode must preserve nested tool result structure exactly"
+    );
 }
 
 #[test]
@@ -252,25 +408,46 @@ fn encode_decode_edge_cases_empty_unicode_large() {
     // empty
     let parts_empty: Vec<Part> = vec![];
     let encoded_empty = encode_tool_result_parts(name, &parts_empty).expect("encode empty failed");
-    let (decoded_name_empty, decoded_empty) = decode_tool_result_parts(&encoded_empty).expect("decode empty failed");
-    assert_eq!(name, decoded_name_empty, "tool name should roundtrip for empty parts");
+    let (decoded_name_empty, decoded_empty) =
+        decode_tool_result_parts(&encoded_empty).expect("decode empty failed");
+    assert_eq!(
+        name, decoded_name_empty,
+        "tool name should roundtrip for empty parts"
+    );
     assert_eq!(parts_empty, decoded_empty, "empty parts must roundtrip");
 
     // unicode
     let u = "Δλ😊📚 — combining: a\u{0301}".to_string();
-    let parts_uni = vec![Part::Text { text: u.clone(), ext: BTreeMap::new() }];
+    let parts_uni = vec![Part::Text {
+        text: u.clone(),
+        ext: BTreeMap::new(),
+    }];
     let encoded_uni = encode_tool_result_parts(name, &parts_uni).expect("encode unicode failed");
-    let (decoded_name_uni, decoded_uni) = decode_tool_result_parts(&encoded_uni).expect("decode unicode failed");
-    assert_eq!(name, decoded_name_uni, "tool name should roundtrip for unicode");
+    let (decoded_name_uni, decoded_uni) =
+        decode_tool_result_parts(&encoded_uni).expect("decode unicode failed");
+    assert_eq!(
+        name, decoded_name_uni,
+        "tool name should roundtrip for unicode"
+    );
     assert_eq!(parts_uni, decoded_uni, "unicode must roundtrip intact");
 
     // large payload
     let large_text = "L".repeat(50_000);
-    let parts_large = vec![Part::Text { text: large_text.clone(), ext: BTreeMap::new() }];
+    let parts_large = vec![Part::Text {
+        text: large_text.clone(),
+        ext: BTreeMap::new(),
+    }];
     let encoded_large = encode_tool_result_parts(name, &parts_large).expect("encode large failed");
-    let (decoded_name_large, decoded_large) = decode_tool_result_parts(&encoded_large).expect("decode large failed");
-    assert_eq!(name, decoded_name_large, "tool name should roundtrip for large payload");
-    assert_eq!(parts_large, decoded_large, "large payload must roundtrip exactly");
+    let (decoded_name_large, decoded_large) =
+        decode_tool_result_parts(&encoded_large).expect("decode large failed");
+    assert_eq!(
+        name, decoded_name_large,
+        "tool name should roundtrip for large payload"
+    );
+    assert_eq!(
+        parts_large, decoded_large,
+        "large payload must roundtrip exactly"
+    );
 }
 
 // ------------------------- Mistral / Bedrock (encoding-based) -------------
@@ -280,15 +457,22 @@ fn encode_decode_edge_cases_empty_unicode_large() {
 #[cfg(feature = "mistral")]
 mod mistral_encoding_roundtrip {
     use super::*;
-    use mistral_ox::message::{ToolMessage as MToolMessage, Message as MMessage, UserMessage as MUserMessage};
+    use mistral_ox::message::{
+        Message as MMessage, ToolMessage as MToolMessage, UserMessage as MUserMessage,
+    };
 
     #[test]
     fn mistral_tool_message_preserves_encoded_content() {
         let tool_name = "mistral_tool";
         let original_content = vec![
-            Part::Text { text: "Hello from tool".to_string(), ext: BTreeMap::new() },
+            Part::Text {
+                text: "Hello from tool".to_string(),
+                ext: BTreeMap::new(),
+            },
             Part::Blob {
-                data_ref: DataRef::Base64 { data: sample_base64_png().to_string() },
+                data_ref: DataRef::Base64 {
+                    data: sample_base64_png().to_string(),
+                },
                 mime_type: "image/png".to_string(),
                 name: None,
                 description: None,
@@ -296,35 +480,55 @@ mod mistral_encoding_roundtrip {
             },
         ];
 
-        let encoded = encode_tool_result_parts(tool_name, &original_content).expect("encode failed");
+        let encoded =
+            encode_tool_result_parts(tool_name, &original_content).expect("encode failed");
         let tool_msg = MToolMessage::new("call_m1", encoded.clone());
 
         // Simulate provider -> ai-ox: decode the tool content
-        let (decoded_name, decoded_content) = decode_tool_result_parts(tool_msg.content()).expect("decode failed");
+        let (decoded_name, decoded_content) =
+            decode_tool_result_parts(tool_msg.content()).expect("decode failed");
 
         assert_eq!(tool_name, decoded_name, "tool name must be preserved");
-        assert_eq!(original_content, decoded_content, "Mistral ToolMessage content must decode to original Parts");
+        assert_eq!(
+            original_content, decoded_content,
+            "Mistral ToolMessage content must decode to original Parts"
+        );
 
         // also test empty tool message
-        let empty_tool = MToolMessage::new("call_empty", encode_tool_result_parts(tool_name, &Vec::<Part>::new()).unwrap());
-        let (decoded_empty_name, decoded_empty) = decode_tool_result_parts(empty_tool.content()).expect("decode empty failed");
-        assert_eq!(tool_name, decoded_empty_name, "tool name must be preserved for empty content");
-        assert!(decoded_empty.is_empty(), "Decoded empty tool message must be empty parts");
+        let empty_tool = MToolMessage::new(
+            "call_empty",
+            encode_tool_result_parts(tool_name, &Vec::<Part>::new()).unwrap(),
+        );
+        let (decoded_empty_name, decoded_empty) =
+            decode_tool_result_parts(empty_tool.content()).expect("decode empty failed");
+        assert_eq!(
+            tool_name, decoded_empty_name,
+            "tool name must be preserved for empty content"
+        );
+        assert!(
+            decoded_empty.is_empty(),
+            "Decoded empty tool message must be empty parts"
+        );
     }
 }
 
 #[cfg(feature = "bedrock")]
 mod bedrock_encoding_roundtrip {
     use super::*;
-    use aws_sdk_bedrockruntime::types::{ToolResultContentBlock, ToolResultBlock};
+    use aws_sdk_bedrockruntime::types::{ToolResultBlock, ToolResultContentBlock};
 
     #[test]
     fn bedrock_toolresult_block_preserves_encoded_content() {
         let tool_name = "bedrock_tool";
         let original_content = vec![
-            Part::Text { text: "Bedrock text".to_string(), ext: BTreeMap::new() },
+            Part::Text {
+                text: "Bedrock text".to_string(),
+                ext: BTreeMap::new(),
+            },
             Part::Blob {
-                data_ref: DataRef::Base64 { data: sample_base64_png().to_string() },
+                data_ref: DataRef::Base64 {
+                    data: sample_base64_png().to_string(),
+                },
                 mime_type: "image/png".to_string(),
                 name: None,
                 description: None,
@@ -332,7 +536,8 @@ mod bedrock_encoding_roundtrip {
             },
         ];
 
-        let encoded = encode_tool_result_parts(tool_name, &original_content).expect("encode failed");
+        let encoded =
+            encode_tool_result_parts(tool_name, &original_content).expect("encode failed");
 
         // Simulate a ToolResultBlock containing a single Text content entry (what the converter uses)
         let tool_block = ToolResultBlock::builder()
@@ -347,9 +552,13 @@ mod bedrock_encoding_roundtrip {
             _ => panic!("unexpected tool result content structure"),
         };
 
-        let (decoded_name, decoded_content) = decode_tool_result_parts(&content_text).expect("decode failed");
+        let (decoded_name, decoded_content) =
+            decode_tool_result_parts(&content_text).expect("decode failed");
         assert_eq!(tool_name, decoded_name, "tool name must be preserved");
-        assert_eq!(original_content, decoded_content, "Bedrock ToolResultBlock text must decode to original Parts");
+        assert_eq!(
+            original_content, decoded_content,
+            "Bedrock ToolResultBlock text must decode to original Parts"
+        );
     }
 }
 

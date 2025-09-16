@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::{SttError, SpeechToText};
+use super::{SpeechToText, SttError};
 
 /// Convenience function to create a Groq STT provider
 #[cfg(feature = "groq")]

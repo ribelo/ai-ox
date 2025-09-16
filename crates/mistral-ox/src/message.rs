@@ -120,7 +120,7 @@ impl ContentPart {
             _ => None,
         }
     }
-    
+
     pub fn as_audio(&self) -> Option<&AudioContent> {
         match self {
             ContentPart::Audio(audio) => Some(audio),
@@ -176,7 +176,7 @@ impl From<&str> for Content {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub struct SystemMessage {
-    #[serde(deserialize_with = "deserialize_content")]
+    #[serde(serialize_with = "serialize_content", deserialize_with = "deserialize_content")]
     content: Content,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -224,7 +224,7 @@ impl SystemMessage {
             name: None,
         }
     }
-    
+
     /// Create a system message with a single audio part
     pub fn audio(audio: AudioContent) -> Self {
         Self {
@@ -232,7 +232,7 @@ impl SystemMessage {
             name: None,
         }
     }
-    
+
     /// Create a system message with a single audio URL part
     pub fn audio_url(url: impl Into<String>) -> Self {
         Self {
@@ -281,7 +281,7 @@ impl From<String> for SystemMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserMessage {
-    #[serde(deserialize_with = "deserialize_content")]
+    #[serde(serialize_with = "serialize_content", deserialize_with = "deserialize_content")]
     pub content: Content,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
@@ -336,7 +336,7 @@ impl UserMessage {
             name: None,
         }
     }
-    
+
     /// Create a user message with a single audio part.
     #[must_use]
     pub fn audio(audio: AudioContent) -> Self {
@@ -345,7 +345,7 @@ impl UserMessage {
             name: None,
         }
     }
-    
+
     /// Create a user message with a single audio URL part.
     #[must_use]
     pub fn audio_url(url: impl Into<String>) -> Self {
@@ -399,50 +399,57 @@ impl From<String> for UserMessage {
     }
 }
 
+fn serialize_content<S>(content: &Content, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    content.0.serialize(serializer)
+}
+
 /// Custom deserializer for content field that can handle string, null, or array
 fn deserialize_content<'de, D>(deserializer: D) -> Result<Content, D::Error>
 where
     D: Deserializer<'de>,
 {
     use serde::de::{self, Visitor};
-    
+
     struct ContentVisitor;
-    
+
     impl<'de> Visitor<'de> for ContentVisitor {
         type Value = Content;
-        
+
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             formatter.write_str("a string, null, or an array of content parts")
         }
-        
+
         fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
             Ok(Content::from(value))
         }
-        
+
         fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
             Ok(Content::from(value))
         }
-        
+
         fn visit_none<E>(self) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
             Ok(Content(Vec::new()))
         }
-        
+
         fn visit_unit<E>(self) -> Result<Self::Value, E>
         where
             E: de::Error,
         {
             Ok(Content(Vec::new()))
         }
-        
+
         fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
         where
             A: de::SeqAccess<'de>,
@@ -454,13 +461,17 @@ where
             Ok(Content(parts))
         }
     }
-    
+
     deserializer.deserialize_any(ContentVisitor)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AssistantMessage {
-    #[serde(skip_serializing_if = "Vec::is_empty", deserialize_with = "deserialize_content")]
+    #[serde(
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_content",
+        deserialize_with = "deserialize_content"
+    )]
     pub content: Content,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
@@ -528,7 +539,7 @@ impl AssistantMessage {
             refusal: None,
         }
     }
-    
+
     /// Create an assistant message with a single audio part.
     #[must_use]
     pub fn audio(audio: AudioContent) -> Self {
@@ -539,7 +550,7 @@ impl AssistantMessage {
             refusal: None,
         }
     }
-    
+
     /// Create an assistant message with a single audio URL part.
     #[must_use]
     pub fn audio_url(url: impl Into<String>) -> Self {

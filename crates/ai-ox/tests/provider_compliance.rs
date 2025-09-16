@@ -29,9 +29,11 @@ async fn test_all_providers_simple_request() {
     for model in models {
         println!("Testing simple request with model: {}", model.name());
 
-        let message = Message { ext: Some(BTreeMap::new()),
+        let message = Message {
+            ext: Some(BTreeMap::new()),
             role: MessageRole::User,
-            content: vec![Part::Text { ext: BTreeMap::new(),
+            content: vec![Part::Text {
+                ext: BTreeMap::new(),
                 text: "Why is the sky blue? Please respond in exactly one sentence.".to_string(),
             }],
             timestamp: Some(chrono::Utc::now()),
@@ -45,21 +47,44 @@ async fn test_all_providers_simple_request() {
 
         let result = model.request(request).await;
 
-        assert!(result.is_ok(), "Model {} failed simple request: {:?}", model.name(), result.err());
+        assert!(
+            result.is_ok(),
+            "Model {} failed simple request: {:?}",
+            model.name(),
+            result.err()
+        );
 
         let response = result.unwrap();
         assert_eq!(response.message.role, MessageRole::Assistant);
-        assert!(!response.message.content.is_empty(), "Model {} returned empty content", model.name());
+        assert!(
+            !response.message.content.is_empty(),
+            "Model {} returned empty content",
+            model.name()
+        );
 
         // Verify we got text content
-        let has_text = response.message.content.iter().any(|part| {
-            matches!(part, Part::Text { text, .. } if !text.is_empty())
-        });
-        assert!(has_text, "Model {} did not return any text content", model.name());
+        let has_text = response
+            .message
+            .content
+            .iter()
+            .any(|part| matches!(part, Part::Text { text, .. } if !text.is_empty()));
+        assert!(
+            has_text,
+            "Model {} did not return any text content",
+            model.name()
+        );
 
         // Verify usage data is reported
-        assert!(response.usage.input_tokens() > 0, "Model {} reported zero input tokens", model.name());
-        assert!(response.usage.output_tokens() > 0, "Model {} reported zero output tokens", model.name());
+        assert!(
+            response.usage.input_tokens() > 0,
+            "Model {} reported zero input tokens",
+            model.name()
+        );
+        assert!(
+            response.usage.output_tokens() > 0,
+            "Model {} reported zero output tokens",
+            model.name()
+        );
 
         println!("✅ Model {} passed simple request test", model.name());
     }
@@ -81,9 +106,11 @@ async fn test_all_providers_simple_streaming() {
     for model in models {
         println!("Testing streaming with model: {}", model.name());
 
-        let message = Message { ext: Some(BTreeMap::new()),
+        let message = Message {
+            ext: Some(BTreeMap::new()),
             role: MessageRole::User,
-            content: vec![Part::Text { ext: BTreeMap::new(),
+            content: vec![Part::Text {
+                ext: BTreeMap::new(),
                 text: "Count from 1 to 5, one number per line.".to_string(),
             }],
             timestamp: Some(chrono::Utc::now()),
@@ -105,7 +132,11 @@ async fn test_all_providers_simple_streaming() {
 
             match &event {
                 StreamEvent::TextDelta(text) => {
-                    assert!(!text.is_empty(), "Model {} yielded empty text delta", model.name());
+                    assert!(
+                        !text.is_empty(),
+                        "Model {} yielded empty text delta",
+                        model.name()
+                    );
                     received_text_delta = true;
                 }
                 StreamEvent::StreamStop(_) => {
@@ -119,8 +150,16 @@ async fn test_all_providers_simple_streaming() {
             events.push(event);
         }
 
-        assert!(received_text_delta, "Model {} did not yield any TextDelta events", model.name());
-        assert!(received_stream_stop, "Model {} did not yield StreamStop event", model.name());
+        assert!(
+            received_text_delta,
+            "Model {} did not yield any TextDelta events",
+            model.name()
+        );
+        assert!(
+            received_stream_stop,
+            "Model {} did not yield StreamStop event",
+            model.name()
+        );
 
         // Verify last event is StreamStop
         assert!(
@@ -170,9 +209,11 @@ async fn test_all_providers_tool_use() {
     for model in models {
         println!("Testing tool use with model: {}", model.name());
 
-        let message = Message { ext: Some(BTreeMap::new()),
+        let message = Message {
+            ext: Some(BTreeMap::new()),
             role: MessageRole::User,
-            content: vec![Part::Text { ext: BTreeMap::new(),
+            content: vec![Part::Text {
+                ext: BTreeMap::new(),
                 text: "What's the weather like in Tokyo? Use the weather tool.".to_string(),
             }],
             timestamp: Some(chrono::Utc::now()),
@@ -186,17 +227,27 @@ async fn test_all_providers_tool_use() {
 
         let result = model.request(request).await;
 
-        assert!(result.is_ok(), "Model {} failed tool use request: {:?}", model.name(), result.err());
+        assert!(
+            result.is_ok(),
+            "Model {} failed tool use request: {:?}",
+            model.name(),
+            result.err()
+        );
 
         let response = result.unwrap();
 
-
         // Check if the response contains a tool call. This must not be lenient.
-        let has_tool_call = response.message.content.iter().any(|part| {
-            matches!(part, Part::ToolUse { name, .. } if name == "get_weather")
-        });
+        let has_tool_call = response
+            .message
+            .content
+            .iter()
+            .any(|part| matches!(part, Part::ToolUse { name, .. } if name == "get_weather"));
 
-        assert!(has_tool_call, "Model {} failed to call the 'get_weather' tool when explicitly instructed.", model.name());
+        assert!(
+            has_tool_call,
+            "Model {} failed to call the 'get_weather' tool when explicitly instructed.",
+            model.name()
+        );
 
         println!("✅ Model {} passed tool use test", model.name());
     }

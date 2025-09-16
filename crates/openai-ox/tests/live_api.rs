@@ -5,11 +5,11 @@
 
 #[cfg(test)]
 mod tests {
-use openai_ox::{OpenAI, OpenAIRequestError, Message};
     use futures_util::StreamExt;
+    use openai_ox::{Message, OpenAI, OpenAIRequestError};
 
-async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
-    OpenAI::from_env()
+    async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
+        OpenAI::from_env()
     }
 
     #[tokio::test]
@@ -62,7 +62,11 @@ async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
 
         assert!(!responses.is_empty());
         // At least some responses should have content
-        assert!(responses.iter().any(|r: &openai_ox::ChatResponse| r.content().is_some()));
+        assert!(
+            responses
+                .iter()
+                .any(|r: &openai_ox::ChatResponse| r.content().is_some())
+        );
     }
 
     #[tokio::test]
@@ -75,7 +79,7 @@ async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
             .model("gpt-3.5-turbo")
             .messages(vec![
                 Message::system("You are a helpful math tutor. Be concise."),
-                Message::user("What is 2 + 2?")
+                Message::user("What is 2 + 2?"),
             ])
             .build();
 
@@ -92,11 +96,14 @@ async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
                 Message::system("You are a helpful math tutor. Be concise."),
                 Message::user("What is 2 + 2?"),
                 Message::assistant(first_response),
-                Message::user("Now what is 3 + 3?")
+                Message::user("Now what is 3 + 3?"),
             ])
             .build();
 
-        let response2 = client.send(&request2).await.expect("Failed to send second request");
+        let response2 = client
+            .send(&request2)
+            .await
+            .expect("Failed to send second request");
         assert!(response2.content().is_some());
     }
 
@@ -114,8 +121,14 @@ async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
             .max_tokens(10)
             .build();
 
-        let response1 = client.send(&request_deterministic).await.expect("Failed to send first request");
-        let response2 = client.send(&request_deterministic).await.expect("Failed to send second request");
+        let response1 = client
+            .send(&request_deterministic)
+            .await
+            .expect("Failed to send first request");
+        let response2 = client
+            .send(&request_deterministic)
+            .await
+            .expect("Failed to send second request");
 
         // Responses should be identical or very similar with temperature 0
         assert!(response1.content().is_some());
@@ -130,7 +143,9 @@ async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
         let request = client
             .chat()
             .model("gpt-3.5-turbo")
-            .messages(vec![Message::user("Write a very long story about a dragon")])
+            .messages(vec![Message::user(
+                "Write a very long story about a dragon",
+            )])
             .max_tokens(5) // Very small limit
             .build();
 
@@ -158,7 +173,10 @@ async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
 
         // Should get an invalid request error
         if let Err(OpenAIRequestError::InvalidRequest { message, .. }) = result {
-            assert!(message.to_lowercase().contains("model") || message.to_lowercase().contains("invalid"));
+            assert!(
+                message.to_lowercase().contains("model")
+                    || message.to_lowercase().contains("invalid")
+            );
         } else {
             panic!("Expected InvalidRequest for invalid model");
         }
@@ -169,10 +187,7 @@ async fn create_client() -> Result<OpenAI, OpenAIRequestError> {
     async fn test_empty_message_error() {
         let client = create_client().await.expect("Failed to create client");
 
-        let request = client
-            .chat()
-            .model("gpt-3.5-turbo")
-            .build(); // No messages
+        let request = client.chat().model("gpt-3.5-turbo").build(); // No messages
 
         let result = client.send(&request).await;
         assert!(result.is_err());

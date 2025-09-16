@@ -258,9 +258,7 @@ impl ActiveLiveSession {
                 }
                 Some(Err(e)) => {
                     // More detailed logging for WebSocket errors
-                    println!(
-                        "❌ ActiveLiveSession::receive encountered WebSocket error: {e:#?}"
-                    );
+                    println!("❌ ActiveLiveSession::receive encountered WebSocket error: {e:#?}");
 
                     // Handle specific tungstenite errors
                     if matches!(e, WsError::ConnectionClosed | WsError::AlreadyClosed) {

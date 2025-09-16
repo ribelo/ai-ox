@@ -41,7 +41,9 @@ pub enum ToolChoice {
     Auto,
     Any,
     #[serde(rename = "function")]
-    Function { name: String },
+    Function {
+        name: String,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

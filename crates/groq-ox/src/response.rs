@@ -1,9 +1,6 @@
-use serde::{Deserialize, Serialize};
-use ai_ox_common::openai_format::{
-    ChatCompletionResponse, CompletionChoice, TokenUsage, 
-    ToolCall
-};
 use crate::error::GroqRequestError;
+use ai_ox_common::openai_format::{ChatCompletionResponse, CompletionChoice, TokenUsage, ToolCall};
+use serde::{Deserialize, Serialize};
 
 // Use shared response types from ai-ox-common
 pub type ChatResponse = ChatCompletionResponse;
@@ -65,30 +62,32 @@ impl ChatCompletionChunk {
     /// Parse streaming data and return a vector of parsed chunks
     pub fn from_streaming_data(data: &str) -> Vec<Result<Self, GroqRequestError>> {
         let mut chunks = Vec::new();
-        
+
         for line in data.lines() {
             let line = line.trim();
-            
+
             // Skip empty lines and comments
             if line.is_empty() || line.starts_with(':') {
                 continue;
             }
-            
+
             // Handle data lines
             if let Some(data_content) = line.strip_prefix("data: ") {
                 // Check for end of stream
                 if data_content.trim() == "[DONE]" {
                     break;
                 }
-                
+
                 // Try to parse the JSON
                 match serde_json::from_str::<ChatCompletionChunk>(data_content) {
                     Ok(chunk) => chunks.push(Ok(chunk)),
-                    Err(e) => chunks.push(Err(GroqRequestError::JsonDeserializationError(e.to_string()))),
+                    Err(e) => chunks.push(Err(GroqRequestError::JsonDeserializationError(
+                        e.to_string(),
+                    ))),
                 }
             }
         }
-        
+
         chunks
     }
 }
