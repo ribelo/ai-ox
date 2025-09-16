@@ -69,7 +69,7 @@ async fn test_anthropic_openrouter_roundtrip() {
 /// Test full multi-provider roundtrip with multiple conversions
 #[tokio::test]
 async fn test_full_multi_provider_roundtrip() {
-    let original_request = create_complex_anthropic_request();
+    let original_request = create_roundtrip_focus_anthropic_request();
     
     println!("Testing: Anthropic -> OpenAI -> Anthropic -> OpenRouter -> Anthropic");
     
@@ -156,44 +156,10 @@ async fn test_anthropic_ai_ox_multi_provider_roundtrip() {
     let final_anthropic =
         convert_ai_ox_request_to_anthropic(&ai_ox_after_gemini, &original_request);
 
-    // Compare essential fields that should be preserved through the roundtrip
-    assert_eq!(original_request.messages.len(), final_anthropic.messages.len(), "Message count should be preserved");
-    assert_eq!(original_request.model, final_anthropic.model, "Model should be preserved");
-
-    // Compare system messages
-    match (&original_request.system, &final_anthropic.system) {
-        (Some(orig), Some(final_sys)) => {
-            // Both have system messages, compare their content
-            match (orig, final_sys) {
-                (anthropic_ox::message::StringOrContents::String(orig_str), anthropic_ox::message::StringOrContents::String(final_str)) => {
-                    assert_eq!(orig_str, final_str, "System message content should be preserved");
-                }
-                _ => panic!("System message format mismatch"),
-            }
-        }
-        (None, None) => {} // Both have no system message
-        _ => panic!("System message presence mismatch"),
-    }
-
-    // Compare tools
-    let orig_tools_count = original_request.tools.as_ref().map_or(0, |t| t.len());
-    let final_tools_count = final_anthropic.tools.as_ref().map_or(0, |t| t.len());
-    assert_eq!(orig_tools_count, final_tools_count, "Tool count should be preserved");
-
-    // If both have tools, compare their names and descriptions
-    if let (Some(orig_tools), Some(final_tools)) = (&original_request.tools, &final_anthropic.tools) {
-        for (orig_tool, final_tool) in orig_tools.iter().zip(final_tools.iter()) {
-            match (orig_tool, final_tool) {
-                (anthropic_ox::tool::Tool::Custom(orig_custom), anthropic_ox::tool::Tool::Custom(final_custom)) => {
-                    assert_eq!(orig_custom.name, final_custom.name, "Tool name should be preserved");
-                    assert_eq!(orig_custom.description, final_custom.description, "Tool description should be preserved");
-                }
-                _ => panic!("Tool type mismatch"),
-            }
-        }
-    }
-
-    println!("✅ Multi-provider roundtrip test passed! All essential data preserved.");
+    assert_eq!(
+        original_request, final_anthropic,
+        "Anthropic request should survive the multi-provider roundtrip without mutation"
+    );
 }
 
 fn create_test_anthropic_request() -> AnthropicRequest {
@@ -269,6 +235,94 @@ fn create_complex_anthropic_request() -> AnthropicRequest {
             }))),
         ])
         .system("You are a helpful assistant.".into())
+        .build()
+}
+
+fn create_roundtrip_focus_anthropic_request() -> AnthropicRequest {
+    AnthropicRequest::builder()
+        .model("claude-3-sonnet-20240229")
+        .messages(vec![
+            AnthropicMessage {
+                role: AnthropicRole::User,
+                content: vec![AnthropicContent::Text(Text {
+                    text: "Provide calculation and weather updates.".to_string(),
+                    cache_control: None,
+                })].into(),
+            },
+            AnthropicMessage {
+                role: AnthropicRole::Assistant,
+                content: vec![
+                    AnthropicContent::Text(Text {
+                        text: "Calling tools now.".to_string(),
+                        cache_control: None,
+                    }),
+                    AnthropicContent::ToolUse(ToolUse {
+                        id: "call_weather".to_string(),
+                        name: "get_weather".to_string(),
+                        input: json!({"location": "Paris", "unit": "celsius"}),
+                        cache_control: None,
+                    }),
+                    AnthropicContent::ToolUse(ToolUse {
+                        id: "call_math".to_string(),
+                        name: "calculate".to_string(),
+                        input: json!({"expression": "21*2"}),
+                        cache_control: None,
+                    }),
+                ].into(),
+            },
+            AnthropicMessage {
+                role: AnthropicRole::User,
+                content: vec![AnthropicContent::ToolResult(ToolResult {
+                    tool_use_id: "call_weather".to_string(),
+                    content: vec![AnthropicContent::Text(Text {
+                        text: "18°C and sunny".to_string(),
+                        cache_control: None,
+                    })],
+                    is_error: None,
+                    cache_control: None,
+                })].into(),
+            },
+            AnthropicMessage {
+                role: AnthropicRole::User,
+                content: vec![AnthropicContent::ToolResult(ToolResult {
+                    tool_use_id: "call_math".to_string(),
+                    content: vec![AnthropicContent::Text(Text {
+                        text: "42".to_string(),
+                        cache_control: None,
+                    })],
+                    is_error: Some(false),
+                    cache_control: None,
+                })].into(),
+            },
+        ])
+        .tools(vec![
+            AnthropicTool::Function {
+                name: "get_weather".to_string(),
+                description: "Obtain latest weather report".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "location": {"type": "string"},
+                        "unit": {"type": "string", "enum": ["celsius", "fahrenheit"]}
+                    },
+                    "required": ["location"]
+                }),
+                cache_control: None,
+            },
+            AnthropicTool::Function {
+                name: "calculate".to_string(),
+                description: "Evaluate simple math".to_string(),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "expression": {"type": "string"}
+                    },
+                    "required": ["expression"]
+                }),
+                cache_control: None,
+            },
+        ])
+        .system("You are a multi-tool assistant.".into())
         .build()
 }
 
