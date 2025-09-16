@@ -116,12 +116,17 @@ pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Resu
             for part in message.content {
                 match part {
                     Part::Text { text, .. } => text_parts.push(text),
-                     Part::ToolResult { id, name, parts, .. } => {
-                          // Collect tool results to create separate Tool messages
-                          // Use standardized encoding for lossless conversion
-                          let content_str = encode_tool_result_parts(&name, &parts).unwrap_or_else(|_| "null".to_string());
-                          tool_results.push((id, name, content_str));
-                      }
+                      Part::ToolResult { id, name, parts, .. } => {
+                           // Extract text content from tool result parts for OpenRouter
+                           let content_str = parts.iter()
+                               .filter_map(|part| match part {
+                                   Part::Text { text, .. } => Some(text.clone()),
+                                   _ => None,
+                               })
+                               .collect::<Vec<_>>()
+                               .join("\n");
+                           tool_results.push((id, name, content_str));
+                       }
                       Part::Opaque { provider, kind, .. } => {
                           return Err(OpenRouterError::MessageConversion(
                               format!("OpenRouter does not support Opaque content from provider: {}, kind: {}", provider, kind)
@@ -185,12 +190,17 @@ pub fn convert_message_to_openrouter(message: Message, model_name: &str) -> Resu
                          };
                          tool_calls.push(tool_call);
                      }
-                      Part::ToolResult { id, name, parts, .. } => {
-                          // Convert tool results to separate Tool messages
-                          // Use standardized encoding for lossless conversion
-                          let content_str = encode_tool_result_parts(&name, &parts).unwrap_or_else(|_| "null".to_string());
-                          tool_results.push((id, name, content_str));
-                      }
+                       Part::ToolResult { id, name, parts, .. } => {
+                           // Extract text content from tool result parts for OpenRouter
+                           let content_str = parts.iter()
+                               .filter_map(|part| match part {
+                                   Part::Text { text, .. } => Some(text.clone()),
+                                   _ => None,
+                               })
+                               .collect::<Vec<_>>()
+                               .join("\n");
+                           tool_results.push((id, name, content_str));
+                       }
                       Part::Opaque { provider, kind, .. } => {
                           return Err(OpenRouterError::MessageConversion(
                               format!("OpenRouter does not support Opaque content from provider: {}, kind: {}", provider, kind)

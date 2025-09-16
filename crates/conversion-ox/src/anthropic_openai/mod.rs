@@ -39,6 +39,7 @@ use anthropic_ox::{
     },
     request::{ChatRequest as AnthropicRequest, ThinkingConfig},
     response::{ChatResponse as AnthropicResponse, Usage as AnthropicUsage, StopReason},
+    tool::{Tool as AnthropicTool, ToolUse, ToolResult as AnthropicToolResult, ToolResultContent},
 };
 
 use openai_ox::{
@@ -69,6 +70,15 @@ fn extract_text_from_contents(contents: Vec<AnthropicContent>) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// Helper function to extract text from a single Anthropic content block
+fn extract_text_from_single_content(content: AnthropicContent) -> Option<String> {
+    match content {
+        AnthropicContent::Text(text) => Some(text.text),
+        AnthropicContent::Thinking(thinking) => Some(thinking.text),
+        _ => None,
+    }
 }
 
 /// Helper function to decode a tool result from encoded text format
@@ -177,17 +187,79 @@ pub fn anthropic_to_openai_request(
             AnthropicRole::Assistant => OpenAIRole::Assistant,
         };
 
-        let content_text = match message.content {
-            StringOrContents::String(s) => s,
-            StringOrContents::Contents(contents) => extract_text_from_contents(contents),
-        };
+        let mut content_parts = Vec::new();
+        let mut tool_calls = Vec::new();
 
-        if !content_text.is_empty() {
+        match message.content {
+            StringOrContents::String(s) => {
+                if !s.is_empty() {
+                    content_parts.push(s);
+                }
+            }
+            StringOrContents::Contents(contents) => {
+                for content in contents {
+                    match content {
+                        AnthropicContent::Text(text) => {
+                            content_parts.push(text.text);
+                        }
+                        AnthropicContent::ToolUse(tool_use) => {
+                            tool_calls.push(ai_ox_common::openai_format::ToolCall {
+                                id: tool_use.id,
+                                r#type: "function".to_string(),
+                                function: ai_ox_common::openai_format::FunctionCall {
+                                    name: tool_use.name,
+                                    arguments: serde_json::to_string(&tool_use.input).unwrap_or_default(),
+                                },
+                            });
+                        }
+                        AnthropicContent::ToolResult(tool_result) => {
+                            // Tool results become separate tool messages
+                            let result_content = tool_result.content.iter()
+                                .filter_map(|c| match c {
+                                    anthropic_ox::tool::ToolResultContent::Text { text } => Some(text.clone()),
+                                    _ => None,
+                                })
+                                .collect::<Vec<_>>()
+                                .join(" ");
+
+                            openai_messages.push(OpenAIMessage {
+                                role: OpenAIRole::Tool,
+                                content: Some(result_content),
+                                name: None,
+                                tool_calls: None,
+                                tool_call_id: Some(tool_result.tool_use_id),
+                            });
+                        }
+                        _ => {
+                            // For other content types, extract text if possible
+                            if let Some(text) = extract_text_from_single_content(content) {
+                                content_parts.push(text);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Only add the message if it has content or tool calls
+        if !content_parts.is_empty() || !tool_calls.is_empty() {
+            let content = if content_parts.is_empty() {
+                None
+            } else {
+                Some(content_parts.join(" "))
+            };
+
+            let tool_calls = if tool_calls.is_empty() {
+                None
+            } else {
+                Some(tool_calls)
+            };
+
             openai_messages.push(OpenAIMessage {
                 role: openai_role,
-                content: Some(content_text),
+                content,
                 name: None,
-                tool_calls: None,
+                tool_calls,
                 tool_call_id: None,
             });
         }
@@ -200,8 +272,28 @@ pub fn anthropic_to_openai_request(
         ));
     }
 
+    // Convert tools from Anthropic to OpenAI format
+    let tools = anthropic_request.tools.map(|anthropic_tools| {
+        anthropic_tools.into_iter().filter_map(|tool| {
+            match tool {
+                anthropic_ox::tool::Tool::Custom(custom_tool) => {
+                    Some(ai_ox_common::openai_format::Tool {
+                        r#type: "function".to_string(),
+                        function: ai_ox_common::openai_format::Function {
+                            name: custom_tool.name,
+                            description: Some(custom_tool.description),
+                            parameters: Some(custom_tool.input_schema),
+                        },
+                    })
+                },
+                // Skip other tool types for now
+                _ => None,
+            }
+        }).collect::<Vec<ai_ox_common::openai_format::Tool>>()
+    });
+
     // Build OpenAI request - need to handle optional parameters in a single chain due to type-state builder
-    let request = match anthropic_request.temperature {
+    let mut request = match anthropic_request.temperature {
         Some(temp) => {
             OpenAIRequest::builder()
                 .model(anthropic_request.model)
@@ -218,6 +310,11 @@ pub fn anthropic_to_openai_request(
                 .build()
         }
     };
+
+    // Set tools if present
+    if let Some(tools_list) = tools {
+        request.tools = Some(tools_list);
+    }
 
     Ok(request)
 }
@@ -777,6 +874,141 @@ pub fn openai_responses_to_anthropic_request(
         request.thinking = Some(config);
     }
     
+    Ok(request)
+}
+
+/// Convert OpenAI ChatRequest to Anthropic ChatRequest
+///
+/// This converts the OpenAI request format to Anthropic format, handling:
+/// - System message extraction (first system message becomes dedicated system field)
+/// - Message role and content mapping
+/// - Basic parameters (model, temperature, max_tokens)
+/// - Tool conversion (OpenAI functions to Anthropic tools)
+pub fn openai_to_anthropic_request(
+    openai_request: OpenAIRequest,
+) -> Result<AnthropicRequest, ConversionError> {
+    // Validate input parameters
+    validate_request_params(&openai_request.model, openai_request.max_tokens)?;
+
+    let mut anthropic_messages = Vec::new();
+    let mut system_message = None;
+
+    // Process messages, extracting system message
+    for message in &openai_request.messages {
+        match message.role {
+            OpenAIRole::System => {
+                // Store system message separately for Anthropic
+                if system_message.is_none() {
+                    system_message = message.content.clone();
+                } else {
+                    // Multiple system messages - concatenate
+                    system_message = Some(format!(
+                        "{}\n{}",
+                        system_message.unwrap(),
+                        message.content.clone().unwrap_or_default()
+                    ));
+                }
+            }
+            OpenAIRole::User => {
+                let content = vec![AnthropicContent::Text(AnthropicText {
+                    text: message.content.as_ref().unwrap_or(&String::new()).clone(),
+                    cache_control: None,
+                })];
+                anthropic_messages.push(AnthropicMessage {
+                    role: AnthropicRole::User,
+                    content: content.into(),
+                });
+            }
+            OpenAIRole::Assistant => {
+                let mut content = Vec::new();
+
+                // Add text content
+                if let Some(text) = message.content.as_ref() {
+                    content.push(AnthropicContent::Text(AnthropicText {
+                        text: text.clone(),
+                        cache_control: None,
+                    }));
+                }
+
+                // Add tool calls
+                if let Some(tool_calls) = &message.tool_calls {
+                    for tool_call in tool_calls {
+                        content.push(AnthropicContent::ToolUse(ToolUse {
+                            id: tool_call.id.clone(),
+                            name: tool_call.function.name.clone(),
+                            input: serde_json::from_str(&tool_call.function.arguments).unwrap_or(serde_json::Value::Null),
+                            cache_control: None,
+                        }));
+                    }
+                }
+
+                anthropic_messages.push(AnthropicMessage {
+                    role: AnthropicRole::Assistant,
+                    content: content.into(),
+                });
+            }
+            OpenAIRole::Tool => {
+                // Tool results become user messages with tool results
+                let content = vec![AnthropicContent::ToolResult(anthropic_ox::tool::ToolResult {
+                    tool_use_id: message.tool_call_id.clone().unwrap_or_default(),
+                    content: vec![anthropic_ox::tool::ToolResultContent::Text {
+                        text: message.content.as_ref().unwrap_or(&String::new()).clone(),
+                    }],
+                    is_error: Some(false),
+                    cache_control: None,
+                })];
+                anthropic_messages.push(AnthropicMessage {
+                    role: AnthropicRole::User,
+                    content: content.into(),
+                });
+            }
+        }
+    }
+
+    if anthropic_messages.is_empty() {
+        return Err(ConversionError::MissingData(
+            format!("No messages found after conversion from {} OpenAI messages",
+                    openai_request.messages.len())
+        ));
+    }
+
+    // Convert tools from OpenAI format to Anthropic format
+    let tools = openai_request.tools.as_ref().map(|openai_tools| {
+        openai_tools.iter().filter_map(|tool| {
+            Some(anthropic_ox::tool::Tool::Custom(anthropic_ox::tool::CustomTool::new(
+                tool.function.name.clone(),
+                tool.function.description.clone().unwrap_or_default(),
+            ).with_schema(tool.function.parameters.clone().unwrap_or(serde_json::json!({})))))
+        }).collect::<Vec<anthropic_ox::tool::Tool>>()
+    });
+
+    // Build Anthropic request - need to handle optional parameters in a single chain due to type-state builder
+    let mut request = match openai_request.temperature {
+        Some(temp) => {
+            AnthropicRequest::builder()
+                .model(openai_request.model)
+                .messages(anthropic_messages)
+                .max_tokens(openai_request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS))
+                .temperature(temp as f32)
+                .build()
+        },
+        None => {
+            AnthropicRequest::builder()
+                .model(openai_request.model)
+                .messages(anthropic_messages)
+                .max_tokens(openai_request.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS))
+                .build()
+        }
+    };
+
+    // Set optional fields manually on the built request
+    if let Some(system) = system_message {
+        request.system = Some(StringOrContents::String(system));
+    }
+    if let Some(tools) = tools {
+        request.tools = Some(tools);
+    }
+
     Ok(request)
 }
 

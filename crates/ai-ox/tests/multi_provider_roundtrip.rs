@@ -1199,6 +1199,8 @@ fn anthropic_to_openai_request(request: AnthropicRequest) -> OpenAIChatRequest {
 
 
 
+
+
 fn anthropic_to_openrouter_request(request: AnthropicRequest) -> openrouter_ox::request::ChatRequest {
     conversion_ox::anthropic_openrouter::anthropic_to_openrouter_request(request).unwrap_or_else(|_| {
         openrouter_ox::request::ChatRequest::builder()

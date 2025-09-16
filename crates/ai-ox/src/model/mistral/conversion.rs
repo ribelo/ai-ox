@@ -70,24 +70,28 @@ fn convert_message_to_mistral(message: Message) -> Result<Vec<MistralMessage>, G
                     Part::Text { text, .. } => {
                         text_parts.push(MistralContentPart::Text(MistralTextContent::new(text)));
                     }
-                      Part::Blob { data_ref, mime_type, .. } => {
-                          if mime_type.starts_with("audio/") {
-                              match data_ref {
-                                  DataRef::Uri { uri } => {
-                                      text_parts.push(MistralContentPart::Audio(MistralAudioContent::new(uri)));
-                                  }
-                                  DataRef::Base64 { .. } => {
-                                      return Err(GenerateContentError::message_conversion(
-                                          format!("Mistral does not support base64-encoded audio. Upload the audio and provide a URI instead. (MIME type: {})", mime_type)
-                                      ));
-                                  }
-                              }
-                          } else {
-                              return Err(GenerateContentError::message_conversion(
-                                  format!("Mistral does not support {} content in messages. Only audio content is supported.", mime_type)
-                              ));
-                          }
-                      }
+                       Part::Blob { data_ref, mime_type, .. } => {
+                           if mime_type.starts_with("audio/") {
+                               match data_ref {
+                                   DataRef::Uri { uri } => {
+                                       text_parts.push(MistralContentPart::Audio(MistralAudioContent::new(uri)));
+                                   }
+                                   DataRef::Base64 { .. } => {
+                                       return Err(GenerateContentError::message_conversion(
+                                           format!("Mistral does not support base64-encoded audio. Upload the audio and provide a URI instead. (MIME type: {})", mime_type)
+                                       ));
+                                   }
+                               }
+                           } else if mime_type.starts_with("image/") {
+                               return Err(GenerateContentError::message_conversion(
+                                   "Mistral does not currently support images".to_string()
+                               ));
+                           } else {
+                               return Err(GenerateContentError::message_conversion(
+                                   format!("Mistral does not support {} content in messages. Only audio content is supported.", mime_type)
+                               ));
+                           }
+                       }
                      Part::ToolUse { .. } => {
                          return Err(GenerateContentError::message_conversion(
                              "Tool calls should not appear in user messages",
@@ -147,11 +151,17 @@ fn convert_message_to_mistral(message: Message) -> Result<Vec<MistralMessage>, G
                               index: Some(tool_calls.len() as u32),
                           });
                       }
-                        Part::Blob { mime_type, .. } => {
-                            return Err(GenerateContentError::message_conversion(
-                                format!("Mistral does not support {} content in assistant messages", mime_type)
-                            ));
-                        }
+                         Part::Blob { mime_type, .. } => {
+                             if mime_type.starts_with("image/") {
+                                 return Err(GenerateContentError::message_conversion(
+                                     "Mistral does not support images in assistant messages".to_string()
+                                 ));
+                             } else {
+                                 return Err(GenerateContentError::message_conversion(
+                                     format!("Mistral does not support {} content in assistant messages", mime_type)
+                                 ));
+                             }
+                         }
                       Part::ToolResult { .. } => {
                           return Err(GenerateContentError::message_conversion(
                               "ToolResult should not appear in assistant messages - use a separate message".to_string()
