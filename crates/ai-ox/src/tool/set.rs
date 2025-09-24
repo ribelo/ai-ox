@@ -1,4 +1,4 @@
-use super::{Tool, ToolBox, ToolError, ToolHooks, ToolUse};
+use super::{Tool, ToolBox, ToolError, ToolUse};
 use futures_util::future::BoxFuture;
 use std::sync::Arc;
 
@@ -73,37 +73,6 @@ impl ToolSet {
 
         toolbox.invoke(call).await
     }
-
-    /// Invokes a tool function with hooks for dangerous operations.
-    pub async fn invoke_with_hooks(
-        &self,
-        call: ToolUse,
-        hooks: ToolHooks,
-    ) -> Result<crate::content::Part, ToolError> {
-        let toolbox = self
-            .find_toolbox_for_function(&call.name)
-            .ok_or_else(|| ToolError::not_found(&call.name))?;
-
-        toolbox.invoke_with_hooks(call, hooks).await
-    }
-
-    /// Checks if the given function name is considered dangerous by any toolbox.
-    pub fn is_dangerous_function(&self, name: &str) -> bool {
-        self.toolboxes
-            .iter()
-            .any(|toolbox| toolbox.dangerous_functions().contains(&name))
-    }
-
-    /// Returns all dangerous function names from all toolboxes.
-    ///
-    /// This aggregates dangerous functions across all toolboxes in this set,
-    /// which can be useful for UI, logging, or batch approval scenarios.
-    pub fn get_all_dangerous_functions(&self) -> Vec<&str> {
-        self.toolboxes
-            .iter()
-            .flat_map(|toolbox| toolbox.dangerous_functions().iter().copied())
-            .collect()
-    }
 }
 
 impl ToolBox for ToolSet {
@@ -113,20 +82,6 @@ impl ToolBox for ToolSet {
 
     fn invoke(&self, call: ToolUse) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
         Box::pin(async move { ToolSet::invoke(self, call).await })
-    }
-
-    fn invoke_with_hooks(
-        &self,
-        call: ToolUse,
-        hooks: ToolHooks,
-    ) -> BoxFuture<'_, Result<crate::content::Part, ToolError>> {
-        Box::pin(async move { ToolSet::invoke_with_hooks(self, call, hooks).await })
-    }
-
-    fn dangerous_functions(&self) -> &[&str] {
-        // ToolSet doesn't have its own dangerous functions -
-        // it delegates to individual toolboxes
-        &[]
     }
 
     fn has_function(&self, name: &str) -> bool {

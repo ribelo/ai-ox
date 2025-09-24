@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -15,7 +15,7 @@ use crate::{
         request::ModelRequest,
         response::{ModelResponse, StructuredResponse},
     },
-    tool::{ApprovalRequest, ToolBox, ToolError, ToolHooks, ToolSet, ToolUse},
+    tool::{ToolBox, ToolError, ToolSet, ToolUse},
     usage::Usage,
 };
 
@@ -39,9 +39,6 @@ pub struct Agent {
     /// Maximum number of iterations for tool execution loops.
     #[builder(default = 12)]
     max_iterations: u32,
-    /// Pre-approved dangerous tools that won't require individual approval.
-    #[builder(default)]
-    approved_dangerous_tools: HashSet<String>,
 }
 
 impl Agent {
@@ -83,94 +80,6 @@ impl Agent {
         self.system_instruction = None;
     }
 
-    /// Pre-approve specific dangerous tools for this agent.
-    ///
-    /// These tools will execute without requesting approval through hooks.
-    /// Use this for session-based approval where the user has already
-    /// granted permission for certain operations.
-    pub fn approve_dangerous_tools(&mut self, tool_names: &[&str]) {
-        self.approved_dangerous_tools
-            .extend(tool_names.iter().map(|s| s.to_string()));
-    }
-
-    /// Remove approval for specific dangerous tools.
-    ///
-    /// These tools will once again require approval through hooks.
-    pub fn revoke_dangerous_tools(&mut self, tool_names: &[&str]) {
-        for name in tool_names {
-            self.approved_dangerous_tools.remove(*name);
-        }
-    }
-
-    /// Pre-approve ALL dangerous tools for this agent (trust mode).
-    ///
-    /// This allows the agent to execute any dangerous operation without
-    /// requesting approval. Use with caution.
-    pub fn approve_all_dangerous_tools(&mut self) {
-        self.approved_dangerous_tools.extend(
-            self.tools
-                .get_all_dangerous_functions()
-                .iter()
-                .map(|s| s.to_string()),
-        );
-    }
-
-    /// Clear all pre-approved dangerous tools.
-    ///
-    /// All dangerous tools will once again require approval through hooks.
-    pub fn clear_approved_dangerous_tools(&mut self) {
-        self.approved_dangerous_tools.clear();
-    }
-
-    /// Get the list of currently approved dangerous tools.
-    pub fn get_approved_dangerous_tools(&self) -> &HashSet<String> {
-        &self.approved_dangerous_tools
-    }
-
-    /// Check if a specific dangerous tool is pre-approved.
-    pub fn is_dangerous_tool_approved(&self, tool_name: &str) -> bool {
-        self.approved_dangerous_tools.contains(tool_name)
-    }
-
-    /// Execute a tool call with dangerous tool approval logic.
-    async fn execute_tool_call(
-        tools: &ToolSet,
-        approved_dangerous_tools: &HashSet<String>,
-        call: ToolUse,
-        hooks: Option<&ToolHooks>,
-    ) -> Result<Part, ToolError> {
-        let call_name = &call.name;
-        if tools.is_dangerous_function(call_name) {
-            if approved_dangerous_tools.contains(call_name) {
-                return tools.invoke(call).await;
-            }
-            if let Some(h) = hooks {
-                let req = ApprovalRequest {
-                    tool_name: call_name.clone(),
-                    args: call.args.clone(),
-                };
-                if h.request_approval(req).await {
-                    return tools.invoke(call).await;
-                }
-                return Err(ToolError::execution(
-                    call_name,
-                    std::io::Error::new(
-                        std::io::ErrorKind::PermissionDenied,
-                        "User denied execution of dangerous operation",
-                    ),
-                ));
-            }
-            return Err(ToolError::execution(
-                call_name,
-                std::io::Error::new(
-                    std::io::ErrorKind::PermissionDenied,
-                    "Dangerous operation requires approval but no hooks provided",
-                ),
-            ));
-        }
-        tools.invoke(call).await
-    }
-
     /// Generates a response without tool execution.
     ///
     /// This method sends the messages to the model and returns the response
@@ -195,18 +104,6 @@ impl Agent {
         &self,
         messages: impl IntoIterator<Item = impl Into<Message>> + Send,
     ) -> Result<ModelResponse, AgentError> {
-        self.run_with_hooks(messages, None).await
-    }
-
-    /// Executes a conversation with automatic tool handling and optional hooks.
-    ///
-    /// This method is like `run()` but allows passing ToolHooks for dangerous
-    /// operations that need approval or progress reporting.
-    pub async fn run_with_hooks(
-        &self,
-        messages: impl IntoIterator<Item = impl Into<Message>> + Send,
-        hooks: Option<ToolHooks>,
-    ) -> Result<ModelResponse, AgentError> {
         let mut conversation = self.build_messages(messages)?;
         let mut iteration = 0;
 
@@ -215,104 +112,42 @@ impl Agent {
                 return Err(AgentError::max_iterations_reached(self.max_iterations));
             }
 
-            // Create a request with the current conversation history.
             let request = self.build_request(conversation.clone());
-
-            // Generate a response from the model.
             let response = self.model.request(request).await?;
 
-            // Add the assistant's response (which may contain tool calls) to the conversation.
-            // This is crucial for maintaining the context of the conversation.
             conversation.push(response.message.clone());
 
-            // Check if the response contains any tool calls.
             if let Some(tool_calls) = response.to_tool_calls() {
                 if self.tools.get_all_tools().is_empty() {
-                    // Model generated tool calls but we have no tools available.
-                    // This is an error condition that should not occur.
                     return Err(AgentError::ToolCallsWithoutTools);
                 }
 
-                // Execute all tool calls in parallel
                 let mut join_set = tokio::task::JoinSet::new();
 
-                // Clone hooks once outside the loop for better performance
-                let hooks_clone = hooks.clone();
-                let approved_tools = self.approved_dangerous_tools.clone();
-
-                // Start all tool calls concurrently
                 for call in tool_calls {
                     let tools = self.tools.clone();
                     let call_clone = call.clone();
-                    let hooks_for_task = hooks_clone.clone();
-                    let approved_tools_for_task = approved_tools.clone();
 
                     join_set.spawn(async move {
-                        let call_name = call_clone.name.clone();
-                        let result = if tools.is_dangerous_function(&call_name) {
-                            // Check if pre-approved first
-                            if approved_tools_for_task.contains(&call_name) {
-                                // Pre-approved dangerous tool - execute without asking
-                                tools.invoke(call_clone.clone()).await
-                            } else if let Some(hooks) = hooks_for_task {
-                                // Not pre-approved - ask for approval via hooks
-                                let approval_request = ApprovalRequest {
-                                    tool_name: call_name.clone(),
-                                    args: call_clone.args.clone(),
-                                };
-
-                                if hooks.request_approval(approval_request).await {
-                                    // Approved this time - execute the tool
-                                    tools.invoke(call_clone.clone()).await
-                                } else {
-                                    // Denied - return error
-                                    Err(crate::tool::ToolError::execution(
-                                        &call_name,
-                                        std::io::Error::new(
-                                            std::io::ErrorKind::PermissionDenied,
-                                            "User denied execution of dangerous operation"
-                                        )
-                                    ))
-                                }
-                            } else {
-                                // Dangerous tool, not pre-approved, no hooks - deny
-                                Err(crate::tool::ToolError::execution(
-                                    &call_name,
-                                    std::io::Error::new(
-                                        std::io::ErrorKind::PermissionDenied,
-                                        "Dangerous operation requires approval but no hooks provided"
-                                    )
-                                ))
-                            }
-                        } else {
-                            // Safe function - execute normally
-                            tools.invoke(call_clone.clone()).await
-                        };
+                        let result = tools.invoke(call_clone.clone()).await;
                         (call_clone, result)
                     });
                 }
 
-                // Collect all results
                 while let Some(join_result) = join_set.join_next().await {
-                    let (_call, tool_result) = join_result.map_err(|e| {
-                        AgentError::Tool(crate::tool::ToolError::internal("Task join error", e))
-                    })?;
+                    let (_call, tool_result) = join_result
+                        .map_err(|e| AgentError::Tool(ToolError::internal("Task join error", e)))?;
+
                     match tool_result {
                         Ok(result) => {
-                            // The tool result is a Part that should be added to the conversation history.
-                            conversation.push(crate::content::Message::new(
-                                crate::content::MessageRole::Assistant,
-                                vec![result],
-                            ));
+                            conversation.push(Message::new(MessageRole::Assistant, vec![result]));
                         }
                         Err(e) => {
-                            // If any tool fails, abort the execution.
                             return Err(AgentError::Tool(e));
                         }
                     }
                 }
             } else {
-                // No tool calls in the response, so the conversation is complete.
                 return Ok(response);
             }
 
@@ -407,21 +242,10 @@ impl Agent {
     /// This method provides a stream of `AgentEvent`s that implements the full
     /// multi-turn conversation loop with tool execution, streaming each step
     /// of the agentic process in real-time.
+
     pub fn stream(
         &self,
         messages: impl IntoIterator<Item = impl Into<Message>> + Send,
-    ) -> futures_util::stream::BoxStream<'_, Result<events::AgentEvent, AgentError>> {
-        self.stream_with_hooks(messages, None)
-    }
-
-    /// Streams agent execution events with optional hooks for dangerous operations.
-    ///
-    /// This method is like `stream()` but allows passing ToolHooks for dangerous
-    /// operations that need approval or progress reporting.
-    pub fn stream_with_hooks(
-        &self,
-        messages: impl IntoIterator<Item = impl Into<Message>> + Send,
-        hooks: Option<ToolHooks>,
     ) -> futures_util::stream::BoxStream<'_, Result<events::AgentEvent, AgentError>> {
         use async_stream::try_stream;
         use futures_util::StreamExt;
@@ -443,19 +267,14 @@ impl Agent {
                     break;
                 }
 
-                // Create a request with the current conversation history
                 let request = self.build_request(conversation.clone());
-
-                // Stream the model response
                 let mut model_stream = self.model.request_stream(request);
                 let mut accumulator = StreamAccumulator::new();
                 let mut response_complete = false;
 
-                // Process the model's streaming response
                 while let Some(stream_event_result) = model_stream.next().await {
                     let stream_event = stream_event_result.map_err(AgentError::Api)?;
 
-                    // First, yield the raw event for real-time streaming
                     match &stream_event {
                         StreamEvent::TextDelta(_) => {
                             yield events::AgentEvent::StreamEvent(stream_event.clone());
@@ -465,12 +284,10 @@ impl Agent {
                             break;
                         }
                         _ => {
-                            // Forward other events as deltas
                             yield events::AgentEvent::StreamEvent(stream_event.clone());
                         }
                     }
 
-                    // Second, accumulate the event for message construction
                     accumulator.accumulate(&stream_event);
                 }
 
@@ -479,86 +296,35 @@ impl Agent {
                     break;
                 }
 
-                // Build the assistant's response message
-                let _final_usage = accumulator.get_usage();
+                let final_usage = accumulator.get_usage();
                 let (assistant_message, tool_calls) = accumulator.finalize();
                 conversation.push(assistant_message.clone());
 
                 if !tool_calls.is_empty() {
                     if self.tools.get_all_tools().is_empty() {
-                        // Model generated tool calls but we have no tools available
-                        let _final_response = ModelResponse {
+                        yield events::AgentEvent::Completed(ModelResponse {
                             message: assistant_message,
                             model_name: self.model.name().to_string(),
-                            vendor_name: format!("{}", self.model.info().0),
-                            usage: _final_usage.clone(),
-                        };
-                        yield events::AgentEvent::Completed(_final_response);
+                            vendor_name: self.model.info().to_string(),
+                            usage: final_usage.clone(),
+                        });
                         yield events::AgentEvent::Failed("Model generated tool calls but no tools are available".to_string());
                         break;
                     }
 
-                    // Execute all tool calls in parallel
                     let mut join_set = tokio::task::JoinSet::new();
 
-                    // Clone hooks once outside the loop for better performance
-                    let hooks_clone = hooks.clone();
-                    let approved_tools = self.approved_dangerous_tools.clone();
-
-                    // Emit tool execution events and start all tool calls concurrently
                     for tool_call in &tool_calls {
                         yield events::AgentEvent::ToolExecution(tool_call.clone());
 
                         let tools = self.tools.clone();
                         let call_clone = tool_call.clone();
-                        let hooks_for_task = hooks_clone.clone();
-                        let approved_tools_for_task = approved_tools.clone();
-                        join_set.spawn(async move {
-                            let call_name = call_clone.name.clone();
-                            let result = if tools.is_dangerous_function(&call_name) {
-                                // Check if pre-approved first
-                                if approved_tools_for_task.contains(&call_name) {
-                                    // Pre-approved dangerous tool - execute without asking
-                                    tools.invoke(call_clone.clone()).await
-                                } else if let Some(hooks) = hooks_for_task {
-                                    // Not pre-approved - ask for approval via hooks
-                                    let approval_request = ApprovalRequest {
-                                        tool_name: call_name.clone(),
-                                        args: call_clone.args.clone(),
-                                    };
 
-                                    if hooks.request_approval(approval_request).await {
-                                        // Approved this time - execute the tool
-                                        tools.invoke(call_clone.clone()).await
-                                    } else {
-                                        // Denied - return error
-                                        Err(crate::tool::ToolError::execution(
-                                            &call_name,
-                                            std::io::Error::new(
-                                                std::io::ErrorKind::PermissionDenied,
-                                                "User denied execution of dangerous operation"
-                                            )
-                                        ))
-                                    }
-                                } else {
-                                    // Dangerous tool, not pre-approved, no hooks - deny
-                                    Err(crate::tool::ToolError::execution(
-                                        &call_name,
-                                        std::io::Error::new(
-                                            std::io::ErrorKind::PermissionDenied,
-                                            "Dangerous operation requires approval but no hooks provided"
-                                        )
-                                    ))
-                                }
-                            } else {
-                                // Safe function - execute normally
-                                tools.invoke(call_clone.clone()).await
-                            };
-                            result
+                        join_set.spawn(async move {
+                            tools.invoke(call_clone).await
                         });
                     }
 
-                    // Collect all results as they complete
                     while let Some(join_result) = join_set.join_next().await {
                         let tool_result = match join_result {
                             Ok(result) => result,
@@ -569,10 +335,8 @@ impl Agent {
                         };
 
                         match tool_result {
-                            Ok(tool_result) => {
-                                // Extract messages from Part::ToolResult
-                                if let crate::content::Part::ToolResult { parts, .. } = &tool_result {
-                                    // Try to extract messages from parts
+                            Ok(tool_part) => {
+                                if let crate::content::Part::ToolResult { parts, .. } = &tool_part {
                                     let messages: Vec<crate::content::Message> = parts.iter()
                                         .filter_map(|part| {
                                             if let crate::content::Part::Text { .. } = part {
@@ -587,7 +351,6 @@ impl Agent {
                                         .collect();
 
                                     if messages.is_empty() {
-                                        // If no text parts found, create a single message with all parts
                                         let messages = vec![crate::content::Message::new(
                                             crate::content::MessageRole::Assistant,
                                             parts.clone()
@@ -599,7 +362,6 @@ impl Agent {
                                         conversation.extend(messages);
                                     }
                                 } else {
-                                    // This shouldn't happen, but handle it gracefully
                                     yield events::AgentEvent::Failed("Invalid tool result format".to_string());
                                     return;
                                 }
@@ -611,18 +373,15 @@ impl Agent {
                         }
                     }
 
-                    // Continue to next iteration for the model to respond to tool results
                     iteration += 1;
                     continue;
                 } else {
-                    // No tool calls, conversation is complete
-                    let _final_response = ModelResponse {
+                    yield events::AgentEvent::Completed(ModelResponse {
                         message: assistant_message,
                         model_name: self.model.name().to_string(),
-                        vendor_name: format!("{}", self.model.info().0),
-                        usage: _final_usage,
-                    };
-                    yield events::AgentEvent::Completed(_final_response);
+                        vendor_name: self.model.info().to_string(),
+                        usage: final_usage,
+                    });
                     break;
                 }
             }

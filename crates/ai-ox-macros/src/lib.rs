@@ -23,17 +23,7 @@ struct ToolMethodInfo<'a> {
     output_ty: Option<&'a Type>,    // The 'O' in Result<O, E> or just O, None for unit type
     error_ty: Option<&'a Type>,     // The 'E' in Result<O, E>, None for infallible tools
     is_async: bool,
-    is_dangerous: bool, // True if method has #[dangerous] attribute
     span: Span,
-}
-
-/// Attribute to mark a tool function as dangerous (requiring approval).
-/// This is used by the #[toolbox] macro to automatically populate dangerous_functions().
-#[proc_macro_attribute]
-pub fn dangerous(_attr: TokenStream, item: TokenStream) -> TokenStream {
-    // This attribute does nothing on its own - it's just a marker
-    // The toolbox macro looks for it and processes it
-    item
 }
 
 #[proc_macro_attribute]
@@ -129,12 +119,6 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
             }
         }
     });
-
-    // --- Generate list of dangerous function names ---
-    let dangerous_function_names = tool_methods
-        .iter()
-        .filter(|info| info.is_dangerous)
-        .map(|info| &info.name_str);
 
     // --- Generate `invoke` method match arms ---
     let invoke_match_arms = tool_methods.iter().map(|info| {
@@ -384,16 +368,6 @@ fn impl_toolbox(impl_block: &ItemImpl) -> syn::Result<proc_macro2::TokenStream> 
                  }) // Close Box::pin(async move { ... })
             } // Close fn invoke
 
-            /// Returns the names of functions that require approval before execution.
-            /// Functions marked with #[dangerous] are automatically included.
-            fn dangerous_functions(&self) -> &[&str] {
-                // Generate a static array of dangerous function names
-                static DANGEROUS_FUNCTIONS: &[&str] = &[
-                    #(#dangerous_function_names),*
-                ];
-                DANGEROUS_FUNCTIONS
-            }
-
             // has_function uses the default implementation provided in the trait,
             // which relies on the tools() method generated above.
         }
@@ -480,8 +454,6 @@ fn process_method(method: &ImplItemFn) -> syn::Result<Option<ToolMethodInfo<'_>>
     // --- Other Info ---
     let is_async = method_sig.asyncness.is_some();
     let doc_comment = extract_doc_comment(&method.attrs);
-    let is_dangerous = is_dangerous_method(&method.attrs);
-
     // If all checks passed, return the extracted info
     Ok(Some(ToolMethodInfo {
         name: method_name,
@@ -492,7 +464,6 @@ fn process_method(method: &ImplItemFn) -> syn::Result<Option<ToolMethodInfo<'_>>
         output_ty, // Type O
         error_ty,  // Type E
         is_async,
-        is_dangerous,
         span: method_span,
     }))
 }
@@ -562,11 +533,6 @@ fn get_option_inner_type(ty: &Type) -> Option<&Type> {
     }
     // If any check failed, it's not Option<T> in the expected form.
     None
-}
-
-/// Helper: Check if a method has the #[dangerous] attribute.
-fn is_dangerous_method(attrs: &[Attribute]) -> bool {
-    attrs.iter().any(|attr| attr.path().is_ident("dangerous"))
 }
 
 /// Helper: Extracts and concatenates `///` doc comments from attributes.

@@ -1,12 +1,11 @@
 //! Example of a BashTool with argument-based danger detection.
 //!
 //! This example shows how to implement fine-grained control over
-//! which bash commands require approval based on their content,
-//! not just the function being called.
+//! which bash commands are allowed based on their content.
 
 use ai_ox::{
     content::part::Part,
-    tool::{ApprovalRequest, FunctionMetadata, Tool, ToolBox, ToolError, ToolHooks, ToolUse},
+    tool::{FunctionMetadata, Tool, ToolBox, ToolError, ToolUse},
 };
 use futures_util::future::BoxFuture;
 use serde_json::json;
@@ -15,7 +14,7 @@ use std::process::Command;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
-enum BashError {
+pub enum BashError {
     #[error("Command execution failed: {0}")]
     ExecutionFailed(String),
 }
@@ -82,6 +81,34 @@ impl ToolBox for SmartBashTool {
                     )
                 })?;
 
+            let danger_level = analyze_command_danger(command);
+
+            match danger_level {
+                DangerLevel::Safe => {
+                    println!("✅ Executing safe command: {}", command);
+                }
+                DangerLevel::Suspicious(reason) => {
+                    println!("⚠️  Suspicious command blocked ({}): {}", reason, command);
+                    return Err(ToolError::execution(
+                        "execute",
+                        std::io::Error::new(
+                            std::io::ErrorKind::PermissionDenied,
+                            format!("Command denied ({}): {}", reason, command),
+                        ),
+                    ));
+                }
+                DangerLevel::Dangerous(reason) => {
+                    println!("🚨 Dangerous command blocked ({}): {}", reason, command);
+                    return Err(ToolError::execution(
+                        "execute",
+                        std::io::Error::new(
+                            std::io::ErrorKind::PermissionDenied,
+                            format!("Dangerous command denied: {}", command),
+                        ),
+                    ));
+                }
+            }
+
             // Execute the command
             match self.execute(command.to_string()).await {
                 Ok(output) => Ok(Part::ToolResult {
@@ -96,75 +123,6 @@ impl ToolBox for SmartBashTool {
                 Err(e) => Err(ToolError::execution("execute", e)),
             }
         })
-    }
-
-    fn invoke_with_hooks(
-        &self,
-        call: ToolUse,
-        hooks: ToolHooks,
-    ) -> BoxFuture<'_, Result<Part, ToolError>> {
-        Box::pin(async move {
-            // Extract command for analysis
-            if let Some(command) = call.args.get("command").and_then(|v| v.as_str()) {
-                let danger_level = analyze_command_danger(command);
-
-                match danger_level {
-                    DangerLevel::Safe => {
-                        // Safe commands execute without approval
-                        println!("✅ Executing safe command: {}", command);
-                    }
-                    DangerLevel::Suspicious(reason) => {
-                        // Suspicious commands need approval
-                        println!("⚠️  Suspicious command ({}): {}", reason, command);
-
-                        let request = ApprovalRequest {
-                            tool_name: format!("bash: {}", command),
-                            args: call.args.clone(),
-                        };
-
-                        if !hooks.request_approval(request).await {
-                            return Err(ToolError::execution(
-                                "execute",
-                                std::io::Error::new(
-                                    std::io::ErrorKind::PermissionDenied,
-                                    format!("Command denied ({}): {}", reason, command),
-                                ),
-                            ));
-                        }
-                        println!("✅ Approved: {}", command);
-                    }
-                    DangerLevel::Dangerous(reason) => {
-                        // Always request approval for dangerous commands
-                        println!("🚨 DANGEROUS command ({}): {}", reason, command);
-
-                        let request = ApprovalRequest {
-                            tool_name: format!("DANGEROUS bash: {}", command),
-                            args: call.args.clone(),
-                        };
-
-                        if !hooks.request_approval(request).await {
-                            return Err(ToolError::execution(
-                                "execute",
-                                std::io::Error::new(
-                                    std::io::ErrorKind::PermissionDenied,
-                                    format!("Dangerous command denied: {}", command),
-                                ),
-                            ));
-                        }
-                        println!("⚠️  User approved dangerous command: {}", command);
-                    }
-                }
-            }
-
-            // Execute the command
-            self.invoke(call).await
-        })
-    }
-
-    fn dangerous_functions(&self) -> &[&str] {
-        // We don't mark the function as globally dangerous
-        // because we handle danger per-invocation
-        &[]
     }
 }
 
