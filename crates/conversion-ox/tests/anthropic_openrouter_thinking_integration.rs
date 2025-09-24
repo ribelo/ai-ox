@@ -6,6 +6,7 @@ use anthropic_ox::{
         StringOrContents, ThinkingContent,
     },
     request::ChatRequest as AnthropicRequest,
+    tool::{CustomTool, Tool, ToolChoice as AnthropicToolChoice, ToolResult, ToolUse},
 };
 
 use openrouter_ox::{
@@ -20,6 +21,10 @@ use openrouter_ox::{
 use conversion_ox::anthropic_openrouter::{
     anthropic_to_openrouter_request, openrouter_to_anthropic_response,
 };
+
+use ai_ox_common::{openai_format::ToolChoice as OpenAiToolChoice, timestamp::Timestamp};
+
+use serde_json::json;
 
 #[test]
 fn test_anthropic_to_openrouter_thinking_conversion() {
@@ -75,6 +80,79 @@ fn test_anthropic_to_openrouter_thinking_conversion() {
 }
 
 #[test]
+fn test_tool_choice_is_preserved_when_converting_to_openrouter() {
+    let tool = Tool::Custom(CustomTool {
+        object_type: "custom".to_string(),
+        name: "weather_tool".to_string(),
+        description: "Weather lookup".to_string(),
+        input_schema: json!({"type":"object"}),
+    });
+
+    let anthropic_request = AnthropicRequest::builder()
+        .model("anthropic/claude-3-sonnet")
+        .messages(vec![AnthropicMessage {
+            role: AnthropicRole::User,
+            content: StringOrContents::String("Call the tool".to_string()),
+        }])
+        .tools(vec![tool])
+        .tool_choice(AnthropicToolChoice::Tool {
+            name: "weather_tool".to_string(),
+        })
+        .build();
+
+    let openrouter_request = anthropic_to_openrouter_request(anthropic_request).unwrap();
+
+    let tool_choice = openrouter_request
+        .tool_choice
+        .expect("tool_choice should be propagated");
+
+    match tool_choice {
+        OpenAiToolChoice::Specific { function, .. } => {
+            assert_eq!(function.name, "weather_tool");
+        }
+        other => panic!("expected function tool choice, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_empty_tool_result_does_not_panic() {
+    let tool_use = ToolUse {
+        id: "call_weather".to_string(),
+        name: "weather_tool".to_string(),
+        input: json!({ "location": "Boston" }),
+        cache_control: None,
+    };
+
+    let tool_result = ToolResult {
+        tool_use_id: "call_weather".to_string(),
+        content: Vec::new(),
+        is_error: None,
+        cache_control: None,
+    };
+
+    let anthropic_request = AnthropicRequest::builder()
+        .model("anthropic/claude-3-5-sonnet")
+        .messages(vec![AnthropicMessage {
+            role: AnthropicRole::User,
+            content: StringOrContents::Contents(vec![
+                AnthropicContent::ToolUse(tool_use),
+                AnthropicContent::ToolResult(tool_result),
+            ]),
+        }])
+        .build();
+
+    let openrouter_request = anthropic_to_openrouter_request(anthropic_request).unwrap();
+
+    // No tool messages should be produced when content is empty
+    assert!(
+        openrouter_request
+            .messages
+            .iter()
+            .all(|msg| !matches!(msg, openrouter_ox::message::Message::Tool(_)))
+    );
+}
+
+#[test]
 fn test_openrouter_to_anthropic_thinking_conversion() {
     // Create OpenRouter response with reasoning
     let reasoning_detail = ReasoningDetail {
@@ -102,15 +180,11 @@ fn test_openrouter_to_anthropic_thinking_conversion() {
     let openrouter_response = OpenRouterResponse {
         id: "gen-test-123".to_string(),
         object: "chat.completion".to_string(),
-        created: 1234567890,
+        created: Timestamp::from_unix_timestamp(1_234_567_890),
         model: "deepseek/deepseek-chat-v3.1".to_string(),
         choices: vec![choice],
         system_fingerprint: None,
-        usage: OpenRouterUsage {
-            prompt_tokens: 20,
-            completion_tokens: 150,
-            total_tokens: 170,
-        },
+        usage: OpenRouterUsage::with_prompt_completion(20, 150),
     };
 
     // Convert to Anthropic
@@ -176,7 +250,7 @@ fn test_anthropic_to_openrouter_to_anthropic_round_trip() {
         .build();
 
     // Round trip: Anthropic -> OpenRouter -> simulated response -> back to Anthropic
-    let openrouter_request = anthropic_to_openrouter_request(original_request).unwrap();
+    let _openrouter_request = anthropic_to_openrouter_request(original_request).unwrap();
 
     // Simulate OpenRouter response with reasoning
     let reasoning_detail = ReasoningDetail {
@@ -208,15 +282,11 @@ fn test_anthropic_to_openrouter_to_anthropic_round_trip() {
     let openrouter_response = OpenRouterResponse {
         id: "gen-round-trip-test".to_string(),
         object: "chat.completion".to_string(),
-        created: 1234567890,
+        created: Timestamp::from_unix_timestamp(1_234_567_890),
         model: "deepseek/deepseek-chat-v3.1".to_string(),
         choices: vec![choice],
         system_fingerprint: None,
-        usage: OpenRouterUsage {
-            prompt_tokens: 25,
-            completion_tokens: 100,
-            total_tokens: 125,
-        },
+        usage: OpenRouterUsage::with_prompt_completion(25, 100),
     };
 
     // Convert back to Anthropic
@@ -274,15 +344,11 @@ fn test_openrouter_to_anthropic_to_openrouter_round_trip() {
     let original_response = OpenRouterResponse {
         id: "gen-original-123".to_string(),
         object: "chat.completion".to_string(),
-        created: 1234567890,
+        created: Timestamp::from_unix_timestamp(1_234_567_890),
         model: "google/gemini-2.5-flash".to_string(),
         choices: vec![original_choice],
         system_fingerprint: None,
-        usage: OpenRouterUsage {
-            prompt_tokens: 30,
-            completion_tokens: 80,
-            total_tokens: 110,
-        },
+        usage: OpenRouterUsage::with_prompt_completion(30, 80),
     };
 
     // Round trip: OpenRouter -> Anthropic -> back to OpenRouter
@@ -398,15 +464,11 @@ fn test_full_round_trip_thinking_preservation() {
     let openrouter_response = OpenRouterResponse {
         id: "gen-full-round-trip".to_string(),
         object: "chat.completion".to_string(),
-        created: 1234567890,
+        created: Timestamp::from_unix_timestamp(1_234_567_890),
         model: "deepseek/deepseek-chat-v3.1".to_string(),
         choices: vec![choice],
         system_fingerprint: None,
-        usage: OpenRouterUsage {
-            prompt_tokens: 15,
-            completion_tokens: 120,
-            total_tokens: 135,
-        },
+        usage: OpenRouterUsage::with_prompt_completion(15, 120),
     };
 
     // Convert back to Anthropic

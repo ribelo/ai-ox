@@ -121,10 +121,10 @@ pub fn convert_groq_response_to_ai_ox(
             usage.requests = 1;
             usage
                 .input_tokens_by_modality
-                .insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
+                .insert(crate::usage::Modality::Text, u.prompt_tokens() as u64);
             usage
                 .output_tokens_by_modality
-                .insert(crate::usage::Modality::Text, u.completion_tokens as u64);
+                .insert(crate::usage::Modality::Text, u.completion_tokens() as u64);
             usage
         })
         .unwrap_or_else(Usage::new);
@@ -168,10 +168,10 @@ pub fn convert_response_to_stream_events(
                     usage.requests = 1;
                     usage
                         .input_tokens_by_modality
-                        .insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
+                        .insert(crate::usage::Modality::Text, u.prompt_tokens() as u64);
                     usage
                         .output_tokens_by_modality
-                        .insert(crate::usage::Modality::Text, u.completion_tokens as u64);
+                        .insert(crate::usage::Modality::Text, u.completion_tokens() as u64);
                     usage
                 })
                 .unwrap_or_else(Usage::new);

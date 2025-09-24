@@ -39,7 +39,7 @@ mod tests {
         assert_eq!(embeddings.model, "text-embedding-3-small");
         assert_eq!(embeddings.data.len(), 1);
         assert!(!embeddings.data[0].embedding.is_empty());
-        assert!(embeddings.usage.prompt_tokens > 0);
+        assert!(embeddings.usage.prompt_tokens() > 0);
     }
 
     #[tokio::test]

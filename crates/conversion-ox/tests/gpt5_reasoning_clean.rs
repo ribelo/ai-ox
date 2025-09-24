@@ -11,7 +11,7 @@ const GPT5_REASONING_RESPONSE: &str = r#"
   "provider": "OpenAI",
   "model": "openai/gpt-5",
   "object": "chat.completion",
-  "created": 1756645138,
+  "created": "2025-08-31T12:58:58Z",
   "choices": [
     {
       "logprobs": null,

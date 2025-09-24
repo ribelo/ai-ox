@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use ai_ox_common::timestamp::Timestamp;
+use ai_ox_common::usage::TokenUsage;
+
 use crate::{
     OpenRouterRequestError,
     message::{AssistantMessage, Content, ContentPart, Message},
@@ -23,11 +26,11 @@ pub enum FinishReason {
 pub struct ChatCompletionResponse {
     pub id: String,
     pub object: String,
-    pub created: i64,
+    pub created: Timestamp,
     pub model: String,
     pub choices: Vec<Choice>,
     pub system_fingerprint: Option<String>,
-    pub usage: Usage,
+    pub usage: TokenUsage,
 }
 
 impl From<ChatCompletionResponse> for Message {
@@ -174,26 +177,20 @@ pub struct FunctionCall {
     pub arguments: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub struct Usage {
-    pub prompt_tokens: u32,
-    pub completion_tokens: u32,
-    pub total_tokens: u32,
-}
+pub type Usage = TokenUsage;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct PromptTokensDetails {
-    pub cached_tokens: u32,
+    pub cached_tokens: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub struct CompletionTokensDetails {
-    pub reasoning_tokens: u32,
-    pub accepted_prediction_tokens: u32,
-    pub rejected_prediction_tokens: u32,
+    pub reasoning_tokens: u64,
+    pub accepted_prediction_tokens: u64,
+    pub rejected_prediction_tokens: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -384,9 +381,9 @@ pub struct ChatCompletionChunk {
     pub provider: String,
     pub model: String,
     pub object: String,
-    pub created: i64,
+    pub created: Timestamp,
     pub choices: Vec<ChunkChoice>,
-    pub usage: Option<Usage>,
+    pub usage: Option<TokenUsage>,
 }
 
 impl ChatCompletionChunk {

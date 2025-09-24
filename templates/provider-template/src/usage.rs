@@ -56,6 +56,18 @@ impl Usage {
             completion_tokens_details: None,
         }
     }
+
+    pub fn prompt_tokens(&self) -> u32 {
+        self.prompt_tokens
+    }
+
+    pub fn completion_tokens(&self) -> u32 {
+        self.completion_tokens
+    }
+
+    pub fn total_tokens(&self) -> u32 {
+        self.total_tokens
+    }
     
     /// Calculate the total cost based on token pricing
     pub fn calculate_cost(&self, prompt_price_per_1k: f64, completion_price_per_1k: f64) -> f64 {

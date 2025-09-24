@@ -137,6 +137,7 @@ impl fmt::Debug for OpenRouter {
     }
 }
 
+pub use ai_ox_common::response_format::ResponseFormat;
 pub use conversion::ConversionError;
 pub use error::OpenRouterRequestError;
 pub use request::{ChatRequest, ReasoningConfig};

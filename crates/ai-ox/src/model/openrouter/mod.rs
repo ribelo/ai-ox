@@ -7,7 +7,9 @@ use async_stream::try_stream;
 use bon::Builder;
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
 use openrouter_ox::{OpenRouter, request::ChatRequest as OpenRouterRequest};
-use serde_json::Value;
+use serde_json::{Value, json};
+
+use ai_ox_common::response_format::ResponseFormat;
 
 // Import the correct OpenAI format types
 use ai_ox_common::openai_format::{
@@ -224,7 +226,7 @@ impl OpenRouterModel {
         request: ModelRequest,
         model: &str,
         tool_choice: &OaiToolChoice,
-        response_format: Option<Value>,
+        response_format: Option<ResponseFormat>,
     ) -> Result<OpenRouterRequest, OpenRouterError> {
         // Convert messages using the conversion module
         let messages = conversion::build_openrouter_messages(&request, model)?;
@@ -363,13 +365,10 @@ impl Model for OpenRouterModel {
                 .map_err(|e| OpenRouterError::InvalidSchema(e.to_string()))?;
 
             // Format the schema in the expected OpenRouter format
-            let response_format = serde_json::json!({
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "Response",
-                    "schema": schema_value
-                }
-            });
+            let response_format = ResponseFormat::json_schema(json!({
+                "name": "Response",
+                "schema": schema_value
+            }));
 
             // Build the request using the helper function
             let chat_request = Self::build_openrouter_request(

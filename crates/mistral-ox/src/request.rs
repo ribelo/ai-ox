@@ -2,19 +2,15 @@ use bon::Builder;
 #[cfg(feature = "schema")]
 use schemars::{JsonSchema, generate::SchemaSettings};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::message::{Message, Messages};
 
-// Import base OpenAI format types for tools
-use ai_ox_common::openai_format::{Tool, ToolChoice};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ResponseFormat {
-    Text,
-    JsonObject,
-}
+// Import base OpenAI format types for tools and shared helpers
+use ai_ox_common::{
+    openai_format::{Tool, ToolChoice},
+    response_format::ResponseFormat,
+};
 
 #[derive(Debug, Clone, Serialize, Builder)]
 #[builder(builder_type(vis = "pub"), state_mod(vis = "pub"))]
@@ -23,7 +19,7 @@ pub struct ChatRequest {
     pub messages: Vec<Message>,
     #[builder(field)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub response_format: Option<Value>,
+    pub response_format: Option<ResponseFormat>,
     #[builder(into)]
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -77,10 +73,7 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
         schema_settings.inline_subschemas = true;
         let schema_generator = schema_settings.into_generator();
         let _json_schema = schema_generator.into_root_schema_for::<T>();
-        let response_format = json!({
-            "type": "json_object"
-        });
-        self.response_format = Some(response_format);
+        self.response_format = Some(ResponseFormat::JsonObject);
         self
     }
 }
@@ -170,7 +163,7 @@ pub struct FineTuningRequest {
 
     /// Integrations
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub integrations: Option<Vec<serde_json::Value>>,
+    pub integrations: Option<Vec<Value>>,
 
     /// Whether to auto-start the job
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -215,7 +208,7 @@ pub struct BatchJobRequest {
 
     /// Optional metadata
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<Value>,
 }
 
 /// Request for fill-in-the-middle completion

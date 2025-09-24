@@ -1,5 +1,7 @@
 use crate::error::GroqRequestError;
-use ai_ox_common::openai_format::{ChatCompletionResponse, CompletionChoice, TokenUsage, ToolCall};
+use ai_ox_common::openai_format::{ChatCompletionResponse, CompletionChoice, ToolCall};
+use ai_ox_common::timestamp::Timestamp;
+use ai_ox_common::usage::TokenUsage;
 use serde::{Deserialize, Serialize};
 
 // Use shared response types from ai-ox-common
@@ -12,7 +14,7 @@ pub type Usage = TokenUsage;
 pub struct ChatCompletionChunk {
     pub id: String,
     pub object: String,
-    pub created: u64,
+    pub created: Timestamp,
     pub model: String,
     pub choices: Vec<ChunkChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -20,6 +20,8 @@ use conversion_ox::anthropic_openrouter::{
     anthropic_to_openrouter_request, openrouter_to_anthropic_response,
 };
 
+use ai_ox_common::timestamp::Timestamp;
+
 #[test]
 fn test_openrouter_openai_reasoning_conversion() {
     // Real OpenRouter → OpenAI GPT-5-mini response format with reasoning
@@ -61,15 +63,11 @@ fn test_openrouter_openai_reasoning_conversion() {
     let openrouter_response = OpenRouterResponse {
         id: "gen-1756559753-7bsZW2jzW4PtoIYjLa3W".to_string(),
         object: "chat.completion".to_string(),
-        created: 1756559753,
+        created: Timestamp::from_unix_timestamp(1_756_559_753),
         model: "openai/gpt-5-mini".to_string(),
         choices: vec![choice],
         system_fingerprint: None,
-        usage: OpenRouterUsage {
-            prompt_tokens: 32,
-            completion_tokens: 338,
-            total_tokens: 370,
-        },
+        usage: OpenRouterUsage::with_prompt_completion(32, 338),
     };
 
     // Convert OpenRouter→OpenAI response to Anthropic format
@@ -214,15 +212,11 @@ fn test_openrouter_openai_encrypted_reasoning_handling() {
     let openrouter_response = OpenRouterResponse {
         id: "test-openai-encrypted".to_string(),
         object: "chat.completion".to_string(),
-        created: 1756559753,
+        created: Timestamp::from_unix_timestamp(1_756_559_753),
         model: "openai/gpt-5-mini".to_string(),
         choices: vec![choice],
         system_fingerprint: None,
-        usage: OpenRouterUsage {
-            prompt_tokens: 10,
-            completion_tokens: 50,
-            total_tokens: 60,
-        },
+        usage: OpenRouterUsage::with_prompt_completion(10, 50),
     };
 
     let anthropic_response = openrouter_to_anthropic_response(openrouter_response).unwrap();

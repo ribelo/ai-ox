@@ -1,5 +1,6 @@
 //! Test OpenAI o1 model reasoning token handling
 
+use ai_ox_common::usage::TokenUsage;
 use openai_ox::{ChatResponse, Usage};
 use serde_json::json;
 
@@ -67,9 +68,9 @@ fn test_o1_reasoning_response_deserialization() {
 
     // Validate usage statistics
     let usage = response.usage.expect("Usage should be present");
-    assert_eq!(usage.prompt_tokens, 33);
-    assert_eq!(usage.completion_tokens, 388);
-    assert_eq!(usage.total_tokens, 421);
+    assert_eq!(usage.prompt_tokens(), 33);
+    assert_eq!(usage.completion_tokens(), 388);
+    assert_eq!(usage.total_tokens(), 421);
 
     // Validate reasoning token details - this is the key test
     let completion_details = usage
@@ -115,9 +116,9 @@ fn test_o1_response_without_reasoning() {
         serde_json::from_value(response_json).expect("Failed to deserialize response");
 
     let usage = response.usage.expect("Usage should be present");
-    assert_eq!(usage.prompt_tokens, 10);
-    assert_eq!(usage.completion_tokens, 9);
-    assert_eq!(usage.total_tokens, 19);
+    assert_eq!(usage.prompt_tokens(), 10);
+    assert_eq!(usage.completion_tokens(), 9);
+    assert_eq!(usage.total_tokens(), 19);
 
     // Details should be None for regular models
     assert!(usage.completion_tokens_details.is_none());
@@ -127,9 +128,12 @@ fn test_o1_response_without_reasoning() {
 #[test]
 fn test_usage_helper_methods() {
     let usage_with_reasoning = Usage {
-        prompt_tokens: 33,
-        completion_tokens: 388,
-        total_tokens: 421,
+        tokens: TokenUsage {
+            prompt_tokens: Some(33),
+            completion_tokens: Some(388),
+            total_tokens: Some(421),
+            ..TokenUsage::new()
+        },
         prompt_tokens_details: Some(openai_ox::usage::PromptTokensDetails {
             cached_tokens: Some(10),
             audio_tokens: Some(0),
@@ -176,9 +180,12 @@ fn test_reasoning_token_access() {
 #[test]
 fn test_usage_arithmetic() {
     let usage1 = Usage {
-        prompt_tokens: 10,
-        completion_tokens: 20,
-        total_tokens: 30,
+        tokens: TokenUsage {
+            prompt_tokens: Some(10),
+            completion_tokens: Some(20),
+            total_tokens: Some(30),
+            ..TokenUsage::new()
+        },
         prompt_tokens_details: Some(openai_ox::usage::PromptTokensDetails {
             cached_tokens: Some(5),
             audio_tokens: None,
@@ -190,17 +197,20 @@ fn test_usage_arithmetic() {
     };
 
     let usage2 = Usage {
-        prompt_tokens: 5,
-        completion_tokens: 10,
-        total_tokens: 15,
+        tokens: TokenUsage {
+            prompt_tokens: Some(5),
+            completion_tokens: Some(10),
+            total_tokens: Some(15),
+            ..TokenUsage::new()
+        },
         prompt_tokens_details: None,
         completion_tokens_details: None,
     };
 
     let combined = usage1 + usage2;
-    assert_eq!(combined.prompt_tokens, 15);
-    assert_eq!(combined.completion_tokens, 30);
-    assert_eq!(combined.total_tokens, 45);
+    assert_eq!(combined.prompt_tokens(), 15);
+    assert_eq!(combined.completion_tokens(), 30);
+    assert_eq!(combined.total_tokens(), 45);
 
     // Details are lost in arithmetic operations (as documented)
     assert!(combined.prompt_tokens_details.is_none());

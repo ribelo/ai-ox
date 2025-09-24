@@ -22,7 +22,7 @@ use anthropic_ox::{
     message::{Content as AnthropicContent, Message as AnthropicMessage, Role as AnthropicRole},
     request::ChatRequest as AnthropicRequest,
     response::{ChatResponse as AnthropicResponse, StopReason as AnthropicStopReason},
-    tool::Tool as AnthropicTool,
+    tool::{Tool as AnthropicTool, ToolChoice as AnthropicToolChoice},
 };
 
 use openrouter_ox::{
@@ -36,6 +36,8 @@ use openrouter_ox::{
     },
     tool::{FunctionMetadata, Tool as OpenRouterTool},
 };
+
+use ai_ox_common::openai_format::{Function as OpenAiFunction, ToolChoice as OpenAiToolChoice};
 
 use crate::ConversionError;
 
@@ -144,19 +146,21 @@ pub fn anthropic_to_openrouter_request(
         .maybe_tools(tools)
         .maybe_stop(anthropic_request.stop_sequences);
 
+    let mut final_request = request_builder.build();
+
+    if let Some(choice) = anthropic_request.tool_choice.as_ref() {
+        final_request.tool_choice = Some(map_tool_choice(choice));
+    }
+
     // Enable reasoning if thinking content is present
-    let final_request = if has_thinking {
-        let mut req = request_builder.build();
-        req.reasoning = Some(openrouter_ox::ReasoningConfig {
+    if has_thinking {
+        final_request.reasoning = Some(openrouter_ox::ReasoningConfig {
             enabled: Some(true),
             effort: None,
             max_tokens: None,
             exclude: None,
         });
-        req
-    } else {
-        request_builder.build()
-    };
+    }
 
     Ok(final_request)
 }
@@ -256,9 +260,12 @@ pub fn openrouter_to_anthropic_response(
         stop_reason,
         stop_sequence: None, // OpenRouter doesn't provide this
         usage: anthropic_ox::response::Usage {
-            input_tokens: Some(openrouter_response.usage.prompt_tokens),
-            output_tokens: Some(openrouter_response.usage.completion_tokens),
-            thinking_tokens: None, // OpenRouter doesn't provide thinking tokens
+            input_tokens: openrouter_response.usage.prompt_tokens.map(|t| t as u32),
+            output_tokens: openrouter_response
+                .usage
+                .completion_tokens
+                .map(|t| t as u32),
+            thinking_tokens: openrouter_response.usage.reasoning_tokens.map(|t| t as u32),
         },
     })
 }
@@ -290,6 +297,13 @@ fn convert_anthropic_messages_to_openrouter(
                             }
                         },
                         AnthropicContent::ToolResult(tool_result) => {
+                            if tool_result.content.is_empty() {
+                                log::warn!(
+                                    "ToolResult {} had no content; skipping conversion",
+                                    tool_result.tool_use_id
+                                );
+                                continue;
+                            }
                             // Tool results become separate ToolMessage
                             let content_str = match &tool_result.content[0] {
                                 anthropic_ox::tool::ToolResultContent::Text { text } => {
@@ -431,5 +445,20 @@ mod helpers {
         .with_schema(tool.function.parameters);
 
         Ok(AnthropicTool::Custom(custom_tool))
+    }
+}
+
+fn map_tool_choice(choice: &AnthropicToolChoice) -> OpenAiToolChoice {
+    match choice {
+        AnthropicToolChoice::Auto => OpenAiToolChoice::Auto,
+        AnthropicToolChoice::Any => OpenAiToolChoice::Required,
+        AnthropicToolChoice::Tool { name } => OpenAiToolChoice::Specific {
+            r#type: "function".to_string(),
+            function: OpenAiFunction {
+                name: name.clone(),
+                description: None,
+                parameters: None,
+            },
+        },
     }
 }

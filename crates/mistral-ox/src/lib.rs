@@ -19,6 +19,7 @@ pub mod tool;
 pub mod usage;
 
 // Re-export main types
+pub use ai_ox_common::response_format::ResponseFormat;
 pub use client::Mistral;
 pub use error::MistralRequestError;
 pub use model::Model;

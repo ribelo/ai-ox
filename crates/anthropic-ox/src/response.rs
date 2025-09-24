@@ -21,6 +21,24 @@ pub struct Usage {
     pub thinking_tokens: Option<u32>,
 }
 
+impl From<Usage> for ai_ox_common::usage::TokenUsage {
+    fn from(usage: Usage) -> ai_ox_common::usage::TokenUsage {
+        ai_ox_common::usage::TokenUsage {
+            prompt_tokens: usage.input_tokens.map(|t| t as u64),
+            completion_tokens: usage.output_tokens.map(|t| t as u64),
+            total_tokens: match (usage.input_tokens, usage.output_tokens) {
+                (Some(i), Some(o)) => Some((i + o) as u64),
+                _ => None,
+            },
+            cache_creation_tokens: None,
+            cache_read_tokens: None,
+            reasoning_tokens: usage.thinking_tokens.map(|t| t as u64),
+            tool_prompt_tokens: None,
+            thoughts_tokens: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ChatResponse {
     pub id: String,

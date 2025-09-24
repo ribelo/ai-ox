@@ -48,7 +48,7 @@ mod tests {
 
         let chat_response = response.unwrap();
         assert!(!chat_response.choices.is_empty());
-        if chat_response.usage.prompt_tokens > 0 {
+        if chat_response.usage.prompt_tokens() > 0 {
             // Usage is present - good
         }
     }
@@ -276,9 +276,9 @@ async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check usage if present
     let usage = &response.usage;
-    assert!(usage.prompt_tokens > 0);
-    assert!(usage.completion_tokens > 0);
-    assert!(usage.total_tokens > 0);
+    assert!(usage.prompt_tokens() > 0);
+    assert!(usage.completion_tokens() > 0);
+    assert!(usage.total_tokens() > 0);
 
     println!("Basic chat test passed");
     Ok(())

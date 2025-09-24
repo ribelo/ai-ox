@@ -38,19 +38,25 @@ use anthropic_ox::{
     },
     request::{ChatRequest as AnthropicRequest, ThinkingConfig},
     response::{ChatResponse as AnthropicResponse, StopReason, Usage as AnthropicUsage},
-    tool::{Tool as AnthropicTool, ToolResult as AnthropicToolResult, ToolResultContent, ToolUse},
+    tool::{Tool as AnthropicTool, ToolChoice as AnthropicToolChoice, ToolResultContent, ToolUse},
 };
 
 use openai_ox::{
     request::ChatRequest as OpenAIRequest,
-    response::{ChatResponse as OpenAIResponse, Choice as OpenAIChoice},
+    response::ChatResponse as OpenAIResponse,
     responses::{
-        ReasoningConfig, ReasoningItem, ResponseMessage, ResponseOutputContent, ResponseOutputItem,
-        ResponsesInput, ResponsesRequest, ResponsesResponse, ResponsesTool, ResponsesUsage,
+        ReasoningConfig, ResponseOutputContent, ResponseOutputItem, ResponsesInput,
+        ResponsesRequest, ResponsesResponse, ResponsesTool, ResponsesUsage,
     },
 };
 
-use ai_ox_common::openai_format::{Message as OpenAIMessage, MessageRole as OpenAIRole};
+use ai_ox_common::openai_format::{
+    Function as OpenAIFunction, Message as OpenAIMessage, MessageRole as OpenAIRole,
+    ToolChoice as OpenAIToolChoice,
+};
+use ai_ox_common::usage::TokenUsage;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use self::constants::*;
 use crate::ConversionError;
@@ -91,44 +97,154 @@ fn extract_text_from_single_content(content: AnthropicContent) -> Option<String>
     }
 }
 
-/// Helper function to decode a tool result from encoded text format
-fn decode_tool_result_from_text(text: &str) -> Option<anthropic_ox::tool::ToolResult> {
-    // Check if the text starts with our encoded tool result format
-    if let Some(rest) = text.strip_prefix("[TOOL_RESULT:") {
-        if let Some(end_pos) = rest.find("]") {
-            let tool_use_id = rest[..end_pos].to_string();
-            let encoded_content = &rest[end_pos + 1..];
+fn sanitize_tool_function_name(name: &str) -> String {
+    let mut sanitized = String::new();
+    let mut last_was_separator = false;
 
-            let mut content_parts = Vec::new();
+    for ch in name.chars() {
+        if ch.is_ascii_alphanumeric() {
+            sanitized.push(ch.to_ascii_lowercase());
+            last_was_separator = false;
+        } else if !sanitized.is_empty() && !last_was_separator {
+            sanitized.push('_');
+            last_was_separator = true;
+        }
+    }
 
-            for part in encoded_content.split('|') {
-                if let Some(text_part) = part.strip_prefix("text:") {
-                    content_parts.push(anthropic_ox::tool::ToolResultContent::Text {
-                        text: text_part.to_string(),
-                    });
-                } else if let Some(image_part) = part.strip_prefix("image:") {
-                    if let Some(colon_pos) = image_part.find(':') {
-                        let media_type = image_part[..colon_pos].to_string();
-                        let data = image_part[colon_pos + 1..].to_string();
-                        content_parts.push(anthropic_ox::tool::ToolResultContent::Image {
-                            source: anthropic_ox::message::ImageSource::Base64 { media_type, data },
-                        });
-                    }
-                }
-            }
+    let sanitized = sanitized.trim_matches('_').to_string();
+    if sanitized.is_empty() {
+        "function".to_string()
+    } else {
+        sanitized
+    }
+}
 
-            if !content_parts.is_empty() {
-                return Some(anthropic_ox::tool::ToolResult {
-                    tool_use_id,
-                    content: content_parts,
-                    is_error: None,
-                    cache_control: None,
+const TOOL_RESULT_KIND: &str = "anthropic_tool_result_v1";
+const ORIGINAL_TOOL_NAME_KEY: &str = "__anthropic_original_tool_name";
+const ORIGINAL_SCHEMA_KEY: &str = "__anthropic_wrapped_schema";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ToolResultEnvelope {
+    kind: String,
+    tool_use_id: String,
+    content: Vec<ToolResultContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    is_error: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cache_control: Option<anthropic_ox::message::CacheControl>,
+}
+
+fn encode_tool_result_to_text(tool_result: &anthropic_ox::tool::ToolResult) -> Option<String> {
+    let envelope = ToolResultEnvelope {
+        kind: TOOL_RESULT_KIND.to_string(),
+        tool_use_id: tool_result.tool_use_id.clone(),
+        content: tool_result.content.clone(),
+        is_error: tool_result.is_error,
+        cache_control: tool_result.cache_control.clone(),
+    };
+
+    serde_json::to_string(&envelope).ok()
+}
+
+fn decode_legacy_tool_result(text: &str) -> Option<anthropic_ox::tool::ToolResult> {
+    let rest = text.strip_prefix("[TOOL_RESULT:")?;
+    let end_pos = rest.find(']')?;
+    let tool_use_id = rest[..end_pos].to_string();
+    let encoded_content = &rest[end_pos + 1..];
+
+    let mut content_parts = Vec::new();
+
+    for part in encoded_content.split('|') {
+        if let Some(text_part) = part.strip_prefix("text:") {
+            content_parts.push(ToolResultContent::Text {
+                text: text_part.to_string(),
+            });
+        } else if let Some(image_part) = part.strip_prefix("image:") {
+            if let Some(colon_pos) = image_part.find(':') {
+                let media_type = image_part[..colon_pos].to_string();
+                let data = image_part[colon_pos + 1..].to_string();
+                content_parts.push(ToolResultContent::Image {
+                    source: anthropic_ox::message::ImageSource::Base64 { media_type, data },
                 });
             }
         }
     }
 
-    None
+    if content_parts.is_empty() {
+        return None;
+    }
+
+    Some(anthropic_ox::tool::ToolResult {
+        tool_use_id,
+        content: content_parts,
+        is_error: None,
+        cache_control: None,
+    })
+}
+
+/// Helper function to decode a tool result from encoded text format
+fn decode_tool_result_from_text(text: &str) -> Option<anthropic_ox::tool::ToolResult> {
+    if let Ok(envelope) = serde_json::from_str::<ToolResultEnvelope>(text) {
+        if envelope.kind == TOOL_RESULT_KIND {
+            return Some(anthropic_ox::tool::ToolResult {
+                tool_use_id: envelope.tool_use_id,
+                content: envelope.content,
+                is_error: envelope.is_error,
+                cache_control: envelope.cache_control,
+            });
+        }
+    }
+
+    decode_legacy_tool_result(text)
+}
+
+fn attach_original_tool_name(
+    parameters: Option<serde_json::Value>,
+    original: &str,
+) -> Option<serde_json::Value> {
+    match parameters {
+        Some(serde_json::Value::Object(mut map)) => {
+            map.insert(
+                ORIGINAL_TOOL_NAME_KEY.to_string(),
+                serde_json::Value::String(original.to_string()),
+            );
+            Some(serde_json::Value::Object(map))
+        }
+        Some(other) => Some(serde_json::Value::Object(
+            [
+                (
+                    ORIGINAL_TOOL_NAME_KEY.to_string(),
+                    serde_json::Value::String(original.to_string()),
+                ),
+                (ORIGINAL_SCHEMA_KEY.to_string(), other),
+            ]
+            .into_iter()
+            .collect(),
+        )),
+        None => Some(serde_json::json!({ ORIGINAL_TOOL_NAME_KEY: original })),
+    }
+}
+
+fn detach_original_tool_name(
+    parameters: Option<serde_json::Value>,
+) -> (Option<serde_json::Value>, Option<String>) {
+    match parameters {
+        Some(serde_json::Value::Object(mut map)) => {
+            let original = map
+                .remove(ORIGINAL_TOOL_NAME_KEY)
+                .and_then(|v| v.as_str().map(|s| s.to_string()));
+            let wrapped = map.remove(ORIGINAL_SCHEMA_KEY);
+            let restored = if let Some(inner) = wrapped {
+                Some(inner)
+            } else if map.is_empty() {
+                None
+            } else {
+                Some(serde_json::Value::Object(map))
+            };
+            (restored, original)
+        }
+        other => (other, None),
+    }
 }
 
 /// Validate common request parameters
@@ -156,6 +272,37 @@ fn validate_request_params(model: &str, max_tokens: Option<u32>) -> Result<(), C
     Ok(())
 }
 
+fn map_anthropic_tool_choice_to_openai(
+    choice: &AnthropicToolChoice,
+) -> (OpenAIToolChoice, Option<bool>) {
+    match choice {
+        AnthropicToolChoice::Auto => (OpenAIToolChoice::Auto, None),
+        AnthropicToolChoice::Any => (OpenAIToolChoice::Required, Some(false)),
+        AnthropicToolChoice::Tool { name } => {
+            let function_name = sanitize_tool_function_name(name);
+            (
+                OpenAIToolChoice::Specific {
+                    r#type: "function".to_string(),
+                    function: OpenAIFunction {
+                        name: function_name,
+                        description: None,
+                        parameters: None,
+                    },
+                },
+                Some(false),
+            )
+        }
+    }
+}
+
+fn map_anthropic_tool_choice_to_responses(choice: &AnthropicToolChoice) -> (String, Option<bool>) {
+    match choice {
+        AnthropicToolChoice::Auto => ("auto".to_string(), None),
+        AnthropicToolChoice::Any => ("any".to_string(), Some(false)),
+        AnthropicToolChoice::Tool { name } => (sanitize_tool_function_name(name), Some(false)),
+    }
+}
+
 /// Convert Anthropic ChatRequest to OpenAI ChatRequest
 ///
 /// This converts the Anthropic request format to OpenAI format, handling:
@@ -167,6 +314,9 @@ pub fn anthropic_to_openai_request(
 ) -> Result<OpenAIRequest, ConversionError> {
     // Validate input parameters
     validate_request_params(&anthropic_request.model, Some(anthropic_request.max_tokens))?;
+
+    let stop_sequences = anthropic_request.stop_sequences.clone();
+    let tool_choice = anthropic_request.tool_choice.clone();
 
     let mut openai_messages = Vec::new();
 
@@ -214,11 +364,12 @@ pub fn anthropic_to_openai_request(
                             content_parts.push(text.text);
                         }
                         AnthropicContent::ToolUse(tool_use) => {
+                            let function_name = sanitize_tool_function_name(&tool_use.name);
                             tool_calls.push(ai_ox_common::openai_format::ToolCall {
                                 id: tool_use.id,
                                 r#type: "function".to_string(),
                                 function: ai_ox_common::openai_format::FunctionCall {
-                                    name: tool_use.name,
+                                    name: function_name,
                                     arguments: serde_json::to_string(&tool_use.input)
                                         .unwrap_or_default(),
                                 },
@@ -230,9 +381,7 @@ pub fn anthropic_to_openai_request(
                                 .content
                                 .iter()
                                 .filter_map(|c| match c {
-                                    anthropic_ox::tool::ToolResultContent::Text { text } => {
-                                        Some(text.clone())
-                                    }
+                                    ToolResultContent::Text { text } => Some(text.clone()),
                                     _ => None,
                                 })
                                 .collect::<Vec<_>>()
@@ -294,13 +443,17 @@ pub fn anthropic_to_openai_request(
             .into_iter()
             .filter_map(|tool| {
                 match tool {
-                    anthropic_ox::tool::Tool::Custom(custom_tool) => {
+                    AnthropicTool::Custom(custom_tool) => {
+                        let function_name = sanitize_tool_function_name(&custom_tool.name);
                         Some(ai_ox_common::openai_format::Tool {
                             r#type: "function".to_string(),
                             function: ai_ox_common::openai_format::Function {
-                                name: custom_tool.name,
+                                name: function_name,
                                 description: Some(custom_tool.description),
-                                parameters: Some(custom_tool.input_schema),
+                                parameters: attach_original_tool_name(
+                                    Some(custom_tool.input_schema),
+                                    &custom_tool.name,
+                                ),
                             },
                         })
                     }
@@ -329,6 +482,16 @@ pub fn anthropic_to_openai_request(
     // Set tools if present
     if let Some(tools_list) = tools {
         request.tools = Some(tools_list);
+    }
+
+    if let Some(stops) = stop_sequences {
+        request.stop = Some(stops);
+    }
+
+    if let Some(choice) = tool_choice {
+        let (openai_choice, parallel_calls) = map_anthropic_tool_choice_to_openai(&choice);
+        request.tool_choice = Some(openai_choice);
+        request.parallel_tool_calls = parallel_calls;
     }
 
     Ok(request)
@@ -411,6 +574,8 @@ pub fn anthropic_to_openai_responses_request(
         ));
     }
 
+    let tool_choice = anthropic_request.tool_choice.clone();
+
     // Extract instructions from system prompt - pass through raw content
     let instructions = if let Some(system) = anthropic_request.system {
         let raw = match system {
@@ -466,17 +631,18 @@ pub fn anthropic_to_openai_responses_request(
             .filter_map(|tool| {
                 // Convert Anthropic tool to OpenAI Responses API tool format
                 match tool {
-                    anthropic_ox::tool::Tool::Custom(custom_tool) => {
+                    AnthropicTool::Custom(custom_tool) => {
+                        let function_name = sanitize_tool_function_name(&custom_tool.name);
                         Some(ResponsesTool {
                             tool_type: "custom".to_string(),
-                            name: custom_tool.name,
+                            name: function_name,
                             description: Some(custom_tool.description),
                             format: None,     // No grammar format for now
                             parameters: None, // Responses API doesn't support parameters field
                         })
                     }
                     // Skip computer tools as they don't map to OpenAI
-                    anthropic_ox::tool::Tool::Computer(_) => None,
+                    AnthropicTool::Computer(_) => None,
                 }
             })
             .collect()
@@ -508,8 +674,12 @@ pub fn anthropic_to_openai_responses_request(
     if let Some(tool_list) = tools {
         if !tool_list.is_empty() {
             request.tools = Some(tool_list);
-            request.tool_choice = Some("auto".to_string());
-            request.parallel_tool_calls = Some(false);
+            let (choice_value, parallel_calls) = match tool_choice.as_ref() {
+                Some(choice) => map_anthropic_tool_choice_to_responses(choice),
+                None => ("auto".to_string(), None),
+            };
+            request.tool_choice = Some(choice_value);
+            request.parallel_tool_calls = parallel_calls;
         }
         // If tools list is empty, don't set tools field at all
     }
@@ -685,32 +855,12 @@ pub fn anthropic_to_openai_responses_response(
                 all_text.push(text.text);
             }
             AnthropicContent::ToolResult(tool_result) => {
-                // Convert tool result to a message output item with structured encoding
-                let mut result_parts = Vec::new();
-
-                for content in &tool_result.content {
-                    match content {
-                        anthropic_ox::tool::ToolResultContent::Text { text } => {
-                            result_parts.push(format!("text:{}", text));
-                        }
-                        anthropic_ox::tool::ToolResultContent::Image { source } => match source {
-                            anthropic_ox::message::ImageSource::Base64 { media_type, data } => {
-                                result_parts.push(format!("image:{}:{}", media_type, data));
-                            }
-                        },
-                    }
-                }
-
-                if !result_parts.is_empty() {
-                    let encoded_content = result_parts.join("|");
+                if let Some(encoded_content) = encode_tool_result_to_text(&tool_result) {
                     output_items.push(ResponseOutputItem::Message {
                         id: format!("tool_result_{}", uuid::Uuid::new_v4()),
                         status: "completed".to_string(),
                         content: vec![ResponseOutputContent::Text {
-                            text: format!(
-                                "[TOOL_RESULT:{}]{}",
-                                tool_result.tool_use_id, encoded_content
-                            ),
+                            text: encoded_content,
                             annotations: vec![],
                         }],
                         role: ROLE_ASSISTANT.to_string(),
@@ -784,16 +934,18 @@ pub fn anthropic_to_openai_responses_response(
         },
         text: None,
         truncation: None,
-        usage: Some(ResponsesUsage {
-            input_tokens: anthropic_response.usage.input_tokens.unwrap_or(0),
-            output_tokens: anthropic_response.usage.output_tokens.unwrap_or(0),
-            total_tokens: anthropic_response.usage.input_tokens.unwrap_or(0)
-                + anthropic_response.usage.output_tokens.unwrap_or(0),
-            input_tokens_details: None,
-            output_tokens_details: None,
-            reasoning_tokens: None,
-            cache: None,
-        }),
+        usage: {
+            let token_usage: TokenUsage = anthropic_response.usage.into();
+            Some(ResponsesUsage {
+                input_tokens: token_usage.prompt_tokens.unwrap_or(0) as u32,
+                output_tokens: token_usage.completion_tokens.unwrap_or(0) as u32,
+                total_tokens: token_usage.total_tokens() as u32,
+                input_tokens_details: None,
+                output_tokens_details: None,
+                reasoning_tokens: token_usage.reasoning_tokens.map(|t| t as u32),
+                cache: None,
+            })
+        },
         user: None,
     };
 
@@ -928,6 +1080,31 @@ pub fn openai_to_anthropic_request(
     let mut anthropic_messages = Vec::new();
     let mut system_message = None;
 
+    let mut tool_name_map = HashMap::new();
+    let converted_tools = openai_request.tools.as_ref().map(|openai_tools| {
+        openai_tools
+            .iter()
+            .map(|tool| {
+                let (clean_parameters, original_name_opt) =
+                    detach_original_tool_name(tool.function.parameters.clone());
+                let original_name = original_name_opt
+                    .clone()
+                    .unwrap_or_else(|| tool.function.name.clone());
+                if let Some(original) = original_name_opt {
+                    tool_name_map.insert(tool.function.name.clone(), original);
+                }
+
+                anthropic_ox::tool::Tool::Custom(
+                    anthropic_ox::tool::CustomTool::new(
+                        original_name,
+                        tool.function.description.clone().unwrap_or_default(),
+                    )
+                    .with_schema(clean_parameters.unwrap_or_else(|| serde_json::json!({}))),
+                )
+            })
+            .collect::<Vec<anthropic_ox::tool::Tool>>()
+    });
+
     // Process messages, extracting system message
     for message in &openai_request.messages {
         match message.role {
@@ -968,9 +1145,13 @@ pub fn openai_to_anthropic_request(
                 // Add tool calls
                 if let Some(tool_calls) = &message.tool_calls {
                     for tool_call in tool_calls {
+                        let original_name = tool_name_map
+                            .get(&tool_call.function.name)
+                            .cloned()
+                            .unwrap_or_else(|| tool_call.function.name.clone());
                         content.push(AnthropicContent::ToolUse(ToolUse {
                             id: tool_call.id.clone(),
-                            name: tool_call.function.name.clone(),
+                            name: original_name,
                             input: serde_json::from_str(&tool_call.function.arguments)
                                 .unwrap_or(serde_json::Value::Null),
                             cache_control: None,
@@ -985,16 +1166,20 @@ pub fn openai_to_anthropic_request(
             }
             OpenAIRole::Tool => {
                 // Tool results become user messages with tool results
-                let content = vec![AnthropicContent::ToolResult(
-                    anthropic_ox::tool::ToolResult {
+                let tool_result = message
+                    .content
+                    .as_ref()
+                    .and_then(|text| decode_tool_result_from_text(text))
+                    .unwrap_or_else(|| anthropic_ox::tool::ToolResult {
                         tool_use_id: message.tool_call_id.clone().unwrap_or_default(),
-                        content: vec![anthropic_ox::tool::ToolResultContent::Text {
+                        content: vec![ToolResultContent::Text {
                             text: message.content.as_ref().unwrap_or(&String::new()).clone(),
                         }],
                         is_error: Some(false),
                         cache_control: None,
-                    },
-                )];
+                    });
+
+                let content = vec![AnthropicContent::ToolResult(tool_result)];
                 anthropic_messages.push(AnthropicMessage {
                     role: AnthropicRole::User,
                     content: content.into(),
@@ -1011,26 +1196,6 @@ pub fn openai_to_anthropic_request(
     }
 
     // Convert tools from OpenAI format to Anthropic format
-    let tools = openai_request.tools.as_ref().map(|openai_tools| {
-        openai_tools
-            .iter()
-            .filter_map(|tool| {
-                Some(anthropic_ox::tool::Tool::Custom(
-                    anthropic_ox::tool::CustomTool::new(
-                        tool.function.name.clone(),
-                        tool.function.description.clone().unwrap_or_default(),
-                    )
-                    .with_schema(
-                        tool.function
-                            .parameters
-                            .clone()
-                            .unwrap_or(serde_json::json!({})),
-                    ),
-                ))
-            })
-            .collect::<Vec<anthropic_ox::tool::Tool>>()
-    });
-
     // Build Anthropic request - need to handle optional parameters in a single chain due to type-state builder
     let mut request = match openai_request.temperature {
         Some(temp) => AnthropicRequest::builder()
@@ -1050,7 +1215,7 @@ pub fn openai_to_anthropic_request(
     if let Some(system) = system_message {
         request.system = Some(StringOrContents::String(system));
     }
-    if let Some(tools) = tools {
+    if let Some(tools) = converted_tools {
         request.tools = Some(tools);
     }
 
@@ -1114,7 +1279,7 @@ mod tests {
         let openai_response = OpenAIResponse {
             id: "response-123".to_string(),
             object: "chat.completion".to_string(),
-            created: 1234567890,
+            created: 1_234_567_890,
             model: "gpt-3.5-turbo".to_string(),
             choices: vec![openai_choice],
             usage: None,

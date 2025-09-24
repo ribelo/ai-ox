@@ -1,13 +1,11 @@
 use crate::error::{self, AnthropicRequestError};
 use ai_ox_common::{
-    request_builder::{
-        AuthMethod, Endpoint as CommonEndpoint, RequestBuilder, RequestConfig,
-    },
     CommonRequestError,
+    request_builder::{AuthMethod, Endpoint as CommonEndpoint, RequestBuilder, RequestConfig},
 };
 use async_stream::try_stream;
-use futures_util::{stream::BoxStream, StreamExt};
-use serde::{de::DeserializeOwned, Serialize};
+use futures_util::{StreamExt, stream::BoxStream};
+use serde::{Serialize, de::DeserializeOwned};
 use std::collections::HashMap;
 
 pub use ai_ox_common::request_builder::HttpMethod;

@@ -29,11 +29,11 @@ mod tests {
         assert!(!response.choices.is_empty());
         assert!(response.content().is_some());
         assert!(response.usage.is_some());
-        
+
         let usage = response.usage.unwrap();
-        assert!(usage.total_tokens > 0);
-        assert!(usage.prompt_tokens > 0);
-        assert!(usage.completion_tokens > 0);
+        assert!(usage.total_tokens() > 0);
+        assert!(usage.prompt_tokens() > 0);
+        assert!(usage.completion_tokens() > 0);
     }
 
     #[tokio::test]
@@ -134,7 +134,7 @@ mod tests {
         
         assert!(response.content().is_some());
         if let Some(usage) = response.usage {
-            assert!(usage.completion_tokens <= 5);
+            assert!(usage.completion_tokens() <= 5);
         }
     }
 

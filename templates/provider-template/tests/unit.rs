@@ -64,9 +64,9 @@ mod tests {
     #[test]
     fn test_usage_calculation() {
         let usage = Usage::new(100, 50);
-        assert_eq!(usage.prompt_tokens, 100);
-        assert_eq!(usage.completion_tokens, 50);
-        assert_eq!(usage.total_tokens, 150);
+        assert_eq!(usage.prompt_tokens(), 100);
+        assert_eq!(usage.completion_tokens(), 50);
+        assert_eq!(usage.total_tokens(), 150);
         
         let cost = usage.calculate_cost(0.001, 0.002);
         assert!((cost - 0.2).abs() < f64::EPSILON); // 0.1 + 0.1 = 0.2
@@ -78,9 +78,9 @@ mod tests {
         let usage2 = Usage::new(200, 75);
         let combined = usage1 + usage2;
         
-        assert_eq!(combined.prompt_tokens, 300);
-        assert_eq!(combined.completion_tokens, 125);
-        assert_eq!(combined.total_tokens, 425);
+        assert_eq!(combined.prompt_tokens(), 300);
+        assert_eq!(combined.completion_tokens(), 125);
+        assert_eq!(combined.total_tokens(), 425);
     }
 
     #[test]

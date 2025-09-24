@@ -104,10 +104,11 @@ pub fn extract_usage_from_response(usage_data: Option<&openrouter_ox::response::
             let mut result = Usage::default();
             result
                 .input_tokens_by_modality
-                .insert(crate::usage::Modality::Text, usage.prompt_tokens as u64);
-            result
-                .output_tokens_by_modality
-                .insert(crate::usage::Modality::Text, usage.completion_tokens as u64);
+                .insert(crate::usage::Modality::Text, usage.prompt_tokens() as u64);
+            result.output_tokens_by_modality.insert(
+                crate::usage::Modality::Text,
+                usage.completion_tokens() as u64,
+            );
             result.requests = 1;
             result
         }

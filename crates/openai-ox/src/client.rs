@@ -1,6 +1,8 @@
 use bon::Builder;
-use std::sync::Arc;
 use std::time::Duration;
+
+#[cfg(feature = "leaky-bucket")]
+use std::sync::Arc;
 
 use crate::{
     ChatRequest, ChatResponse, OpenAIRequestError, ResponsesRequest, ResponsesResponse,

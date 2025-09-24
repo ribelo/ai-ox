@@ -146,6 +146,16 @@ pub struct EmbeddingsUsage {
     pub total_tokens: u32,
 }
 
+impl EmbeddingsUsage {
+    pub fn prompt_tokens(&self) -> u32 {
+        self.prompt_tokens
+    }
+
+    pub fn total_tokens(&self) -> u32 {
+        self.total_tokens
+    }
+}
+
 /// Response from moderation endpoint
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModerationResponse {

@@ -6,17 +6,13 @@ use schemars::{JsonSchema, generate::SchemaSettings};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
-// Import base OpenAI format types for tools only
-use ai_ox_common::openai_format::{Tool, ToolChoice};
+// Import base OpenAI format types for tools only and shared response-format wrapper
+use ai_ox_common::{
+    openai_format::{Tool, ToolChoice},
+    response_format::ResponseFormat,
+};
 
 use crate::{message::Message, provider_preference::ProviderPreferences};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ResponseFormat {
-    Text,
-    JsonObject,
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Prediction {
@@ -48,7 +44,7 @@ pub struct ChatRequest {
     pub messages: Vec<Message>,
     #[builder(field)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub response_format: Option<Value>,
+    pub response_format: Option<ResponseFormat>,
     #[builder(into)]
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -135,10 +131,11 @@ impl<S: chat_request_builder::State> ChatRequestBuilder<S> {
         schema_settings.inline_subschemas = true;
         let schema_generator = schema_settings.into_generator();
         let json_schema = schema_generator.into_root_schema_for::<T>();
-        let response_format = json!({
-            "type": "json_schema",
-            "json_schema": {"name": type_name, "schema": json_schema, "strict": true},
-        });
+        let response_format = ResponseFormat::json_schema(json!({
+            "name": type_name,
+            "schema": json_schema,
+            "strict": true,
+        }));
         self.response_format = Some(response_format);
         self
     }

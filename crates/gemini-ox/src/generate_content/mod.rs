@@ -1,7 +1,7 @@
 use crate::{
+    Gemini,
     content::{Content, Part, Role},
     internal::GeminiRequestHelper,
-    Gemini,
 };
 use bon::Builder;
 use futures_util::stream::{self, BoxStream};

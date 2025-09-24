@@ -3,10 +3,13 @@
 use anthropic_ox::{
     message::{CacheControl, Content, Message, Messages, Role, StringOrContents},
     request::ChatRequest,
-    tool::{Tool, ToolResult, ToolResultContent, ToolUse},
+    tool::{CustomTool, Tool, ToolChoice, ToolResult, ToolUse},
 };
-use conversion_ox::anthropic_gemini::{anthropic_to_gemini_request, anthropic_tool_to_gemini_tool};
-use gemini_ox::tool::FunctionMetadata;
+use conversion_ox::anthropic_gemini::{
+    anthropic_to_gemini_request, anthropic_tool_to_gemini_tool, gemini_to_anthropic_request,
+    gemini_tool_to_anthropic_tool,
+};
+use gemini_ox::{content::PartData, tool::config::Mode};
 use serde_json;
 use std::fs;
 
@@ -146,6 +149,74 @@ fn test_cache_control_is_dropped_in_conversion() {
 }
 
 #[test]
+fn test_tool_choice_roundtrip_preserves_selection() {
+    let tool_name = "Task".to_string();
+    let messages = Messages(vec![Message {
+        role: Role::User,
+        content: StringOrContents::String("Use the Task tool".to_string()),
+    }]);
+
+    let tool = Tool::Custom(
+        CustomTool::new(tool_name.clone(), "Does work".to_string())
+            .with_schema(serde_json::json!({"type": "object"})),
+    );
+
+    let chat_request = ChatRequest {
+        model: "gemini-2.0-flash".to_string(),
+        max_tokens: 512,
+        messages,
+        system: None,
+        metadata: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        stream: None,
+        stop_sequences: None,
+        tools: Some(vec![tool]),
+        tool_choice: Some(ToolChoice::Tool {
+            name: tool_name.clone(),
+        }),
+        thinking: None,
+    };
+
+    let gemini_request = anthropic_to_gemini_request(chat_request);
+    let roundtrip = gemini_to_anthropic_request(gemini_request).expect("roundtrip succeeds");
+
+    assert_eq!(
+        roundtrip.tool_choice,
+        Some(ToolChoice::Tool { name: tool_name }),
+        "forced tool selection should round-trip"
+    );
+}
+
+#[test]
+fn test_schema_roundtrip_restores_original_property_names() {
+    let original_schema = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "-leading": {"type": "string"},
+            "normal": {"type": "integer"}
+        },
+        "required": ["-leading"]
+    });
+
+    let anthropic_tool = Tool::Custom(
+        CustomTool::new("Task".to_string(), "Does work".to_string())
+            .with_schema(original_schema.clone()),
+    );
+
+    let gemini_tool = anthropic_tool_to_gemini_tool(anthropic_tool.clone());
+    let restored_tool = gemini_tool_to_anthropic_tool(gemini_tool);
+
+    let restored_schema = match restored_tool {
+        Tool::Custom(custom) => custom.input_schema,
+        _ => panic!("expected custom tool"),
+    };
+
+    assert_eq!(restored_schema, original_schema);
+}
+
+#[test]
 fn test_anthropic_request_with_tools_and_cache_control() {
     // This test verifies that a complex Anthropic request with tools and cache_control
     // can be parsed and converted without errors
@@ -223,4 +294,137 @@ fn test_anthropic_request_with_tools_and_cache_control() {
         }
         _ => panic!("Expected FunctionResponse in user response content"),
     }
+}
+
+#[test]
+fn test_tool_choice_is_preserved_in_conversion() {
+    fn base_request() -> ChatRequest {
+        ChatRequest {
+            model: "claude-3-sonnet".to_string(),
+            max_tokens: 100,
+            messages: Messages(vec![Message {
+                role: Role::User,
+                content: StringOrContents::String("Hello".to_string()),
+            }]),
+            system: None,
+            metadata: None,
+            stop_sequences: None,
+            stream: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            tools: None,
+            tool_choice: None,
+            thinking: None,
+        }
+    }
+
+    let mut auto_request = base_request();
+    auto_request.tool_choice = Some(ToolChoice::Auto);
+    let auto_converted = anthropic_to_gemini_request(auto_request);
+    let auto_config = auto_converted
+        .tool_config
+        .expect("expected tool config for auto choice");
+    let auto_function_config = auto_config
+        .function_calling_config
+        .expect("expected function calling config");
+    assert_eq!(auto_function_config.mode, Some(Mode::Auto));
+    assert!(auto_function_config.allowed_function_names.is_none());
+
+    let mut any_request = base_request();
+    any_request.tool_choice = Some(ToolChoice::Any);
+    let any_converted = anthropic_to_gemini_request(any_request);
+    let any_config = any_converted
+        .tool_config
+        .expect("expected tool config for any choice");
+    let any_function_config = any_config
+        .function_calling_config
+        .expect("expected function calling config");
+    assert_eq!(any_function_config.mode, Some(Mode::Any));
+    assert!(any_function_config.allowed_function_names.is_none());
+
+    let mut specific_request = base_request();
+    let tool_name = "Task".to_string();
+    specific_request.tools = Some(vec![Tool::Custom(CustomTool::new(
+        tool_name.clone(),
+        "Test tool".to_string(),
+    ))]);
+    specific_request.tool_choice = Some(ToolChoice::Tool {
+        name: tool_name.clone(),
+    });
+    let specific_converted = anthropic_to_gemini_request(specific_request);
+    let specific_config = specific_converted
+        .tool_config
+        .expect("expected tool config for specific tool choice");
+    let specific_function_config = specific_config
+        .function_calling_config
+        .expect("expected function calling config");
+    assert_eq!(specific_function_config.mode, Some(Mode::Any));
+    assert_eq!(
+        specific_function_config.allowed_function_names,
+        Some(vec![tool_name])
+    );
+}
+
+#[test]
+fn test_tool_result_conversion_preserves_name_and_handles_empty_content() {
+    use anthropic_ox::message::Role as AnthropicRole;
+    use anthropic_ox::response::{ChatResponse as AnthropicResponse, Usage};
+    use conversion_ox::anthropic_gemini::anthropic_to_gemini_response;
+
+    let tool_use = ToolUse {
+        id: "toolu_123".to_string(),
+        name: "call_weather".to_string(),
+        input: serde_json::json!({ "location": "SF" }),
+        cache_control: None,
+    };
+
+    let tool_result = ToolResult {
+        tool_use_id: tool_use.id.clone(),
+        content: Vec::new(),
+        is_error: None,
+        cache_control: None,
+    };
+
+    let anthropic_response = AnthropicResponse {
+        id: "resp_123".to_string(),
+        r#type: "message".to_string(),
+        role: AnthropicRole::Assistant,
+        content: vec![
+            Content::ToolUse(tool_use.clone()),
+            Content::ToolResult(tool_result.clone()),
+        ],
+        model: "claude-3-sonnet".to_string(),
+        stop_reason: None,
+        stop_sequence: None,
+        usage: Usage::default(),
+    };
+
+    let gemini_response =
+        anthropic_to_gemini_response(anthropic_response).expect("conversion should succeed");
+
+    let parts = &gemini_response
+        .candidates
+        .first()
+        .expect("expected candidate")
+        .content
+        .parts;
+
+    assert_eq!(
+        parts.len(),
+        2,
+        "expected function call and function response parts"
+    );
+
+    let response_part = parts
+        .iter()
+        .find_map(|part| match &part.data {
+            PartData::FunctionResponse(resp) => Some(resp),
+            _ => None,
+        })
+        .expect("expected function response part");
+
+    assert_eq!(response_part.name, tool_use.name);
+    assert_eq!(response_part.id.as_ref().unwrap(), &tool_result.tool_use_id);
+    assert_eq!(response_part.response, serde_json::json!([]));
 }

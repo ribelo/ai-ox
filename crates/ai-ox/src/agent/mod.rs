@@ -247,7 +247,7 @@ impl Agent {
                     let hooks_for_task = hooks_clone.clone();
                     let approved_tools_for_task = approved_tools.clone();
 
-                    join_set.spawn(async move { 
+                    join_set.spawn(async move {
                         let call_name = call_clone.name.clone();
                         let result = if tools.is_dangerous_function(&call_name) {
                             // Check if pre-approved first
@@ -260,7 +260,7 @@ impl Agent {
                                     tool_name: call_name.clone(),
                                     args: call_clone.args.clone(),
                                 };
-                                
+
                                 if hooks.request_approval(approval_request).await {
                                     // Approved this time - execute the tool
                                     tools.invoke(call_clone.clone()).await

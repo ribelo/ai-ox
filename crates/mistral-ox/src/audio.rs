@@ -1,8 +1,6 @@
 use bon::Builder;
 use serde::{Deserialize, Serialize};
 
-use crate::MistralRequestError;
-
 /// Request for audio transcription
 #[derive(Debug, Clone, Serialize, Builder)]
 pub struct TranscriptionRequest {

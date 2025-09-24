@@ -3,8 +3,7 @@
 #[cfg(test)]
 mod tests {
     use futures_util::StreamExt;
-    use mistral_ox::message::Message;
-    use mistral_ox::*;
+    use mistral_ox::{ResponseFormat, message::Message, *};
 
     fn get_client() -> Mistral {
         Mistral::load_from_env().expect("MISTRAL_API_KEY must be set for integration tests")
@@ -68,7 +67,7 @@ mod tests {
         assert_eq!(embeddings.model, "mistral-embed");
         assert_eq!(embeddings.data.len(), 1);
         assert!(!embeddings.data[0].embedding.is_empty());
-        assert!(embeddings.usage.prompt_tokens > 0);
+        assert!(embeddings.usage.prompt_tokens() > 0);
     }
 
     #[tokio::test]
@@ -296,9 +295,9 @@ async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check usage if present
     if let Some(usage) = &response.usage {
-        assert!(usage.prompt_tokens > 0);
-        assert!(usage.completion_tokens > 0);
-        assert!(usage.total_tokens > 0);
+        assert!(usage.prompt_tokens() > 0);
+        assert!(usage.completion_tokens() > 0);
+        assert!(usage.total_tokens() > 0);
     }
 
     println!("✅ Basic chat test passed");
@@ -475,9 +474,7 @@ async fn test_json_mode() -> Result<(), Box<dyn std::error::Error>> {
         .build();
 
     // Manually set response format for JSON mode
-    request.response_format = Some(serde_json::json!({
-        "type": "json_object"
-    }));
+    request.response_format = Some(ResponseFormat::JsonObject);
 
     let response = client.send(&request).await?;
 

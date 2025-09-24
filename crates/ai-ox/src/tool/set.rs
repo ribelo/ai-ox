@@ -1,6 +1,5 @@
 use super::{Tool, ToolBox, ToolError, ToolHooks, ToolUse};
 use futures_util::future::BoxFuture;
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// A container that holds multiple toolboxes and provides a unified interface
@@ -141,6 +140,7 @@ mod tests {
     use crate::tool::{FunctionMetadata, Tool};
     use futures_util::FutureExt;
     use serde_json::json;
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     // Mock toolbox for testing

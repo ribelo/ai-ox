@@ -13,7 +13,7 @@ use crate::{
 use async_stream::try_stream;
 use bon::Builder;
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
-use mistral_ox::{Mistral, tool::ToolChoice};
+use mistral_ox::{Mistral, ResponseFormat, tool::ToolChoice};
 
 /// Returns the default tool choice for Mistral models.
 /// Defaults to Auto, allowing the model to decide when to use tools.
@@ -137,9 +137,7 @@ impl Model for MistralModel {
             )?;
 
             // Set response format to JSON
-            mistral_request.response_format = Some(serde_json::json!({
-                "type": "json_object"
-            }));
+            mistral_request.response_format = Some(ResponseFormat::JsonObject);
 
             let response = self
                 .client
@@ -172,10 +170,10 @@ impl Model for MistralModel {
                     usage.requests = 1;
                     usage
                         .input_tokens_by_modality
-                        .insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
+                        .insert(crate::usage::Modality::Text, u.prompt_tokens() as u64);
                     usage
                         .output_tokens_by_modality
-                        .insert(crate::usage::Modality::Text, u.completion_tokens as u64);
+                        .insert(crate::usage::Modality::Text, u.completion_tokens() as u64);
                     usage
                 })
                 .unwrap_or_else(Usage::new);

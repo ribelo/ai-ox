@@ -1,7 +1,7 @@
 use gemini_ox::{
+    Gemini, Model,
     content::{Content, Part, Role, Text},
     request::GenerateContentRequest,
-    Gemini, Model,
 };
 use serde::Deserialize;
 use std::{env, fs, path::PathBuf};
@@ -50,12 +50,14 @@ async fn test_oauth_without_project_fails_as_expected() {
 
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
-        .content_list(vec![Content::builder()
-            .parts(vec![Part::new(Text::from(
-                "Hello! Just respond 'OK' to test OAuth.",
-            ))])
-            .role(Role::User)
-            .build()])
+        .content_list(vec![
+            Content::builder()
+                .parts(vec![Part::new(Text::from(
+                    "Hello! Just respond 'OK' to test OAuth.",
+                ))])
+                .role(Role::User)
+                .build(),
+        ])
         .build();
 
     let response = request.send(&gemini).await;
@@ -89,12 +91,14 @@ async fn test_oauth_with_project() {
 
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
-        .content_list(vec![Content::builder()
-            .parts(vec![Part::new(Text::from(
-                "Hello! Just respond 'OK' to test OAuth with project.",
-            ))])
-            .role(Role::User)
-            .build()])
+        .content_list(vec![
+            Content::builder()
+                .parts(vec![Part::new(Text::from(
+                    "Hello! Just respond 'OK' to test OAuth with project.",
+                ))])
+                .role(Role::User)
+                .build(),
+        ])
         .build();
 
     let response = request.send(&gemini).await;
@@ -118,10 +122,12 @@ async fn test_oauth_streaming() {
 
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
-        .content_list(vec![Content::builder()
-            .parts(vec![Part::new(Text::from("Count to 3 slowly."))])
-            .role(Role::User)
-            .build()])
+        .content_list(vec![
+            Content::builder()
+                .parts(vec![Part::new(Text::from("Count to 3 slowly."))])
+                .role(Role::User)
+                .build(),
+        ])
         .build();
 
     let mut stream = request.stream(&gemini);
@@ -172,10 +178,12 @@ fn test_oauth_request_construction() {
 
     let request = GenerateContentRequest::builder()
         .model(Model::Gemini20Flash001)
-        .content_list(vec![Content::builder()
-            .parts(vec![Part::new(Text::from("Test message"))])
-            .role(Role::User)
-            .build()])
+        .content_list(vec![
+            Content::builder()
+                .parts(vec![Part::new(Text::from("Test message"))])
+                .role(Role::User)
+                .build(),
+        ])
         .build();
 
     // Test that we can create OAuth requests without panicking

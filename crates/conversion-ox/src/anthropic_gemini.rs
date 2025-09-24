@@ -6,10 +6,12 @@ use anthropic_ox::{
     message::{Content as AnthropicContent, Role as AnthropicRole},
     request::ChatRequest as AnthropicRequest,
     response::{ChatResponse as AnthropicResponse, StopReason as AnthropicStopReason},
-    tool::Tool as AnthropicTool,
+    tool::{Tool as AnthropicTool, ToolChoice as AnthropicToolChoice},
 };
 
 use uuid;
+
+use ai_ox_common::usage::TokenUsage;
 
 use gemini_ox::{
     content::{
@@ -20,16 +22,24 @@ use gemini_ox::{
         ThinkingConfig, request::GenerateContentRequest as GeminiRequest,
         response::GenerateContentResponse as GeminiResponse,
     },
-    tool::{FunctionMetadata, Tool as GeminiTool},
+    tool::{
+        FunctionMetadata, Tool as GeminiTool,
+        config::{Mode as GeminiFunctionMode, ToolConfig as GeminiToolConfig},
+    },
 };
+
+use std::collections::HashMap;
+
+const ORIGINAL_PROPERTY_NAME_KEY: &str = "__anthropic_original_property_name";
 
 /// Convert Anthropic ChatRequest to Gemini GenerateContentRequest
 pub fn anthropic_to_gemini_request(anthropic_request: AnthropicRequest) -> GeminiRequest {
     let mut gemini_contents = Vec::new();
 
     // First pass: collect all tool names from all messages for ID mapping and check for thinking content
-    let mut tool_id_to_name = std::collections::HashMap::new();
+    let mut tool_id_to_name = HashMap::new();
     let mut has_thinking_content = false;
+    let tool_choice = anthropic_request.tool_choice.clone();
 
     for message in &anthropic_request.messages.0 {
         if let anthropic_ox::message::StringOrContents::Contents(contents) = &message.content {
@@ -111,6 +121,10 @@ pub fn anthropic_to_gemini_request(anthropic_request: AnthropicRequest) -> Gemin
         request.tools = Some(tools);
     }
 
+    if let Some(tool_choice) = tool_choice {
+        request.tool_config = Some(convert_tool_choice_to_tool_config(&tool_choice));
+    }
+
     // Enable thinking config if we detected thinking content or model name suggests thinking
     if has_thinking_content || request.model.contains("thinking") {
         // Set up generation config with thinking support
@@ -152,9 +166,9 @@ pub fn gemini_to_anthropic_response(
     let usage = gemini_response
         .usage_metadata
         .map(|usage| anthropic_ox::response::Usage {
-            input_tokens: Some(usage.prompt_token_count),
-            output_tokens: usage.candidates_token_count,
-            thinking_tokens: usage.thoughts_token_count,
+            input_tokens: usage.prompt_token_count.try_into().ok(),
+            output_tokens: usage.candidates_token_count.and_then(|t| t.try_into().ok()),
+            thinking_tokens: usage.thoughts_token_count.and_then(|t| t.try_into().ok()),
         })
         .unwrap_or_default();
 
@@ -173,7 +187,7 @@ pub fn gemini_to_anthropic_response(
 /// Convert Anthropic message content (StringOrContents) to Gemini parts
 fn convert_anthropic_message_content_to_parts(
     content: &anthropic_ox::message::StringOrContents,
-    tool_id_to_name: &std::collections::HashMap<String, String>,
+    tool_id_to_name: &HashMap<String, String>,
 ) -> Vec<GeminiPart> {
     match content {
         anthropic_ox::message::StringOrContents::String(text) => {
@@ -190,7 +204,7 @@ fn convert_anthropic_message_content_to_parts(
 /// Convert Anthropic content blocks to Gemini parts
 fn convert_anthropic_content_to_parts(
     content: &[AnthropicContent],
-    tool_id_to_name: &std::collections::HashMap<String, String>,
+    tool_id_to_name: &HashMap<String, String>,
 ) -> Vec<GeminiPart> {
     content
         .iter()
@@ -234,34 +248,17 @@ fn convert_anthropic_content_to_parts(
                     }
                 }
 
-                let response = if content_parts.len() == 1 {
-                    // Single content part - return it directly
-                    content_parts.into_iter().next().unwrap()
-                } else {
-                    // Multiple content parts - return as array
-                    serde_json::Value::Array(content_parts)
+                let response = match content_parts.len() {
+                    0 => serde_json::Value::Array(Vec::new()),
+                    1 => content_parts.into_iter().next().unwrap(),
+                    _ => serde_json::Value::Array(content_parts),
                 };
 
-                // Get the tool name from the mapping, with fallback to extracting from ID
+                // Use the tool name recorded from the corresponding ToolUse when available.
                 let tool_name = tool_id_to_name
                     .get(&tool_result.tool_use_id)
                     .cloned()
-                    .unwrap_or_else(|| {
-                        // Fallback: try to extract from tool_use_id if it contains tool name
-                        // For UUIDs, use a generic name
-                        if tool_result.tool_use_id.len() == 36
-                            && tool_result.tool_use_id.matches('-').count() == 4
-                        {
-                            "function_tool".to_string()
-                        } else {
-                            tool_result
-                                .tool_use_id
-                                .split('_')
-                                .next()
-                                .unwrap_or("unknown_tool")
-                                .to_string()
-                        }
-                    });
+                    .unwrap_or_else(|| tool_result.tool_use_id.clone());
 
                 Some(GeminiPart::new(PartData::FunctionResponse(
                     gemini_ox::content::FunctionResponse {
@@ -619,16 +616,24 @@ pub fn draft07_to_openapi3(schema: serde_json::Value) -> serde_json::Value {
                 if let serde_json::Value::Object(props) = properties_value {
                     let has_non_hyphen = props.keys().any(|key| !key.starts_with('-'));
                     let mut transformed_props = serde_json::Map::new();
-                    let mut rename_map = std::collections::HashMap::new();
+                    let mut rename_map = HashMap::new();
 
                     for (key, prop_value) in props.into_iter() {
-                        let converted = draft07_to_openapi3(prop_value);
+                        let mut converted = draft07_to_openapi3(prop_value);
                         if has_non_hyphen {
                             let sanitized = sanitize_property_name(&key);
                             if sanitized != key
                                 && !sanitized.is_empty()
                                 && !transformed_props.contains_key(&sanitized)
                             {
+                                if let serde_json::Value::Object(mut obj_value) = converted {
+                                    obj_value.insert(
+                                        ORIGINAL_PROPERTY_NAME_KEY.to_string(),
+                                        serde_json::Value::String(key.clone()),
+                                    );
+                                    converted = serde_json::Value::Object(obj_value);
+                                }
+
                                 rename_map.insert(key.clone(), sanitized.clone());
                                 transformed_props.insert(sanitized, converted);
                                 continue;
@@ -685,18 +690,92 @@ fn sanitize_property_name(name: &str) -> String {
     name.trim_start_matches('-').to_string()
 }
 
+fn restore_original_property_names(schema: serde_json::Value) -> serde_json::Value {
+    match schema {
+        serde_json::Value::Object(mut obj) => {
+            if let Some(properties_value) = obj.remove("properties") {
+                if let serde_json::Value::Object(props) = properties_value {
+                    let mut restored_props = serde_json::Map::new();
+                    let mut rename_map: HashMap<String, String> = HashMap::new();
+
+                    for (name, value) in props.into_iter() {
+                        let restored_value = restore_original_property_names(value);
+                        if let serde_json::Value::Object(mut prop_obj) = restored_value {
+                            if let Some(serde_json::Value::String(original)) =
+                                prop_obj.remove(ORIGINAL_PROPERTY_NAME_KEY)
+                            {
+                                rename_map.insert(name.clone(), original.clone());
+                                restored_props
+                                    .insert(original, serde_json::Value::Object(prop_obj));
+                                continue;
+                            }
+                            restored_props.insert(name, serde_json::Value::Object(prop_obj));
+                        } else {
+                            restored_props.insert(name, restored_value);
+                        }
+                    }
+
+                    if !rename_map.is_empty() {
+                        if let Some(serde_json::Value::Array(mut required)) = obj.remove("required")
+                        {
+                            for entry in required.iter_mut() {
+                                if let Some(current) = entry.as_str() {
+                                    if let Some(original) = rename_map.get(current) {
+                                        *entry = serde_json::Value::String(original.clone());
+                                    }
+                                }
+                            }
+                            obj.insert("required".to_string(), serde_json::Value::Array(required));
+                        }
+                    }
+
+                    obj.insert(
+                        "properties".to_string(),
+                        serde_json::Value::Object(restored_props),
+                    );
+                } else {
+                    obj.insert(
+                        "properties".to_string(),
+                        restore_original_property_names(properties_value),
+                    );
+                }
+            }
+
+            if let Some(items) = obj.get_mut("items") {
+                let restored = restore_original_property_names(items.clone());
+                *items = restored;
+            }
+
+            if let Some(additional_items) = obj.get_mut("additionalItems") {
+                let restored = restore_original_property_names(additional_items.clone());
+                *additional_items = restored;
+            }
+
+            serde_json::Value::Object(obj)
+        }
+        serde_json::Value::Array(values) => serde_json::Value::Array(
+            values
+                .into_iter()
+                .map(restore_original_property_names)
+                .collect(),
+        ),
+        other => other,
+    }
+}
+
 /// Convert Gemini Tool to Anthropic Tool
 pub fn gemini_tool_to_anthropic_tool(gemini_tool: GeminiTool) -> AnthropicTool {
     match gemini_tool {
         GeminiTool::FunctionDeclarations(functions) => {
             // Take the first function if multiple are present
             if let Some(func) = functions.into_iter().next() {
+                let restored_schema = restore_original_property_names(func.parameters);
                 let custom_tool = anthropic_ox::tool::CustomTool::new(
                     func.name,
                     func.description
                         .unwrap_or_else(|| "Unknown function".to_string()),
                 )
-                .with_schema(func.parameters);
+                .with_schema(restored_schema);
                 let tool = AnthropicTool::Custom(custom_tool);
                 tool
             } else {
@@ -838,6 +917,11 @@ pub fn gemini_to_anthropic_request(
         None
     };
 
+    let tool_choice = gemini_request
+        .tool_config
+        .as_ref()
+        .and_then(convert_tool_config_to_tool_choice);
+
     let anthropic_tools = if let Some(tools) = gemini_request.tools {
         let mut converted_tools = Vec::new();
         for tool_json in tools {
@@ -862,7 +946,7 @@ pub fn gemini_to_anthropic_request(
     };
 
     // Build request using chained maybe_ methods for all optional fields
-    let request = AnthropicRequest::builder()
+    let mut request = AnthropicRequest::builder()
         .model(gemini_request.model)
         .messages(anthropic_ox::message::Messages(anthropic_messages))
         .maybe_system(system_instruction.map(anthropic_ox::message::StringOrContents::String))
@@ -911,6 +995,10 @@ pub fn gemini_to_anthropic_request(
         .maybe_tools(anthropic_tools)
         .build();
 
+    if let Some(choice) = tool_choice {
+        request.tool_choice = Some(choice);
+    }
+
     Ok(request)
 }
 
@@ -924,6 +1012,7 @@ pub fn anthropic_to_gemini_response(
     };
 
     let mut gemini_parts = Vec::new();
+    let mut tool_id_to_name = HashMap::new();
 
     // Convert Anthropic content to Gemini parts - content is now directly Vec<Content>
     for content in anthropic_response.content {
@@ -945,6 +1034,7 @@ pub fn anthropic_to_gemini_response(
                 });
             }
             AnthropicContent::ToolUse(tool_use) => {
+                tool_id_to_name.insert(tool_use.id.clone(), tool_use.name.clone());
                 gemini_parts.push(GeminiPart {
                     data: PartData::FunctionCall(gemini_ox::content::FunctionCall {
                         id: Some(tool_use.id),
@@ -977,17 +1067,20 @@ pub fn anthropic_to_gemini_response(
                     }
                 }
 
-                let response = if content_parts.len() == 1 {
-                    // Single content part - return it directly
-                    content_parts.into_iter().next().unwrap()
-                } else {
-                    // Multiple content parts - return as array
-                    serde_json::Value::Array(content_parts)
+                let response = match content_parts.len() {
+                    0 => serde_json::Value::Array(Vec::new()),
+                    1 => content_parts.into_iter().next().unwrap(),
+                    _ => serde_json::Value::Array(content_parts),
                 };
+
+                let response_name = tool_id_to_name
+                    .get(&tool_result.tool_use_id)
+                    .cloned()
+                    .unwrap_or_else(|| tool_result.tool_use_id.clone());
                 gemini_parts.push(GeminiPart {
                     data: PartData::FunctionResponse(gemini_ox::content::FunctionResponse {
                         id: Some(tool_result.tool_use_id),
-                        name: "function_tool".to_string(),
+                        name: response_name,
                         response,
                         will_continue: None,
                         scheduling: None,
@@ -1037,19 +1130,57 @@ pub fn anthropic_to_gemini_response(
     Ok(GeminiResponse {
         candidates: vec![candidate],
         prompt_feedback: None,
-        usage_metadata: Some(UsageMetadata {
-            prompt_token_count: anthropic_response.usage.input_tokens.unwrap_or_default(),
-            candidates_token_count: anthropic_response.usage.output_tokens,
-            total_token_count: anthropic_response.usage.input_tokens.unwrap_or_default()
-                + anthropic_response.usage.output_tokens.unwrap_or_default(),
-            cached_content_token_count: None,
-            thoughts_token_count: anthropic_response.usage.thinking_tokens,
-            cache_tokens_details: None,
-            candidates_tokens_details: None,
-            prompt_tokens_details: None,
-            tool_use_prompt_tokens_details: None,
-            tool_use_prompt_token_count: None,
-        }),
+        usage_metadata: {
+            let token_usage: TokenUsage = anthropic_response.usage.into();
+            Some(UsageMetadata {
+                prompt_token_count: token_usage.prompt_tokens.unwrap_or(0),
+                candidates_token_count: token_usage.completion_tokens,
+                total_token_count: token_usage.total_tokens(),
+                cached_content_token_count: None,
+                thoughts_token_count: token_usage.reasoning_tokens,
+                cache_tokens_details: None,
+                candidates_tokens_details: None,
+                prompt_tokens_details: None,
+                tool_use_prompt_tokens_details: None,
+                tool_use_prompt_token_count: None,
+            })
+        },
         model_version: Some(anthropic_response.model),
     })
+}
+
+fn convert_tool_choice_to_tool_config(tool_choice: &AnthropicToolChoice) -> GeminiToolConfig {
+    match tool_choice {
+        AnthropicToolChoice::Auto => GeminiToolConfig::new().mode(GeminiFunctionMode::Auto),
+        AnthropicToolChoice::Any => GeminiToolConfig::new().mode(GeminiFunctionMode::Any),
+        AnthropicToolChoice::Tool { name } => GeminiToolConfig::new()
+            .mode(GeminiFunctionMode::Any)
+            .allowed_function_names([name.clone()]),
+    }
+}
+
+fn convert_tool_config_to_tool_choice(
+    tool_config: &GeminiToolConfig,
+) -> Option<AnthropicToolChoice> {
+    let function_config = tool_config.function_calling_config.as_ref()?;
+    let mode = function_config.mode.unwrap_or(GeminiFunctionMode::Auto);
+    match mode {
+        GeminiFunctionMode::Auto | GeminiFunctionMode::ModeUnspecified => {
+            Some(AnthropicToolChoice::Auto)
+        }
+        GeminiFunctionMode::None => Some(AnthropicToolChoice::Auto),
+        GeminiFunctionMode::Any => {
+            if let Some(names) = &function_config.allowed_function_names {
+                if names.len() == 1 {
+                    Some(AnthropicToolChoice::Tool {
+                        name: names[0].clone(),
+                    })
+                } else {
+                    Some(AnthropicToolChoice::Any)
+                }
+            } else {
+                Some(AnthropicToolChoice::Any)
+            }
+        }
+    }
 }

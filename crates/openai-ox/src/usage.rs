@@ -1,16 +1,12 @@
 use serde::{Deserialize, Serialize};
 
+use ai_ox_common::usage::TokenUsage;
+
 /// Token usage information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Usage {
-    /// Number of tokens in the prompt
-    pub prompt_tokens: u32,
-
-    /// Number of tokens in the completion
-    pub completion_tokens: u32,
-
-    /// Total number of tokens used
-    pub total_tokens: u32,
+    #[serde(flatten)]
+    pub tokens: TokenUsage,
 
     /// Detailed token usage breakdown (if available)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -26,11 +22,11 @@ pub struct Usage {
 pub struct PromptTokensDetails {
     /// Tokens used for cached content
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub cached_tokens: Option<u32>,
+    pub cached_tokens: Option<u64>,
 
     /// Tokens used for audio processing
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub audio_tokens: Option<u32>,
+    pub audio_tokens: Option<u64>,
 }
 
 /// Detailed completion token usage
@@ -38,38 +34,49 @@ pub struct PromptTokensDetails {
 pub struct CompletionTokensDetails {
     /// Tokens used for reasoning (if applicable)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reasoning_tokens: Option<u32>,
+    pub reasoning_tokens: Option<u64>,
 
     /// Tokens used for audio generation
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub audio_tokens: Option<u32>,
+    pub audio_tokens: Option<u64>,
 }
 
 impl Usage {
     /// Create a new usage instance
-    pub fn new(prompt_tokens: u32, completion_tokens: u32) -> Self {
+    pub fn new(prompt_tokens: u64, completion_tokens: u64) -> Self {
         Self {
-            prompt_tokens,
-            completion_tokens,
-            total_tokens: prompt_tokens + completion_tokens,
+            tokens: TokenUsage::with_prompt_completion(prompt_tokens, completion_tokens),
             prompt_tokens_details: None,
             completion_tokens_details: None,
         }
     }
 
+    pub fn prompt_tokens(&self) -> u64 {
+        self.tokens.prompt_tokens()
+    }
+
+    pub fn completion_tokens(&self) -> u64 {
+        self.tokens.completion_tokens()
+    }
+
+    pub fn total_tokens(&self) -> u64 {
+        self.tokens.total_tokens()
+    }
+
     /// Calculate the total cost based on token pricing
     pub fn calculate_cost(&self, prompt_price_per_1k: f64, completion_price_per_1k: f64) -> f64 {
-        let prompt_cost = (self.prompt_tokens as f64 / 1000.0) * prompt_price_per_1k;
-        let completion_cost = (self.completion_tokens as f64 / 1000.0) * completion_price_per_1k;
+        let prompt_cost = (self.tokens.prompt_tokens() as f64 / 1000.0) * prompt_price_per_1k;
+        let completion_cost =
+            (self.tokens.completion_tokens() as f64 / 1000.0) * completion_price_per_1k;
         prompt_cost + completion_cost
     }
 
     /// Get the ratio of completion tokens to prompt tokens
     pub fn completion_ratio(&self) -> f64 {
-        if self.prompt_tokens == 0 {
+        if self.tokens.prompt_tokens() == 0 {
             0.0
         } else {
-            self.completion_tokens as f64 / self.prompt_tokens as f64
+            self.tokens.completion_tokens() as f64 / self.tokens.prompt_tokens() as f64
         }
     }
 
@@ -88,9 +95,7 @@ impl std::ops::Add for Usage {
 
     fn add(self, other: Self) -> Self {
         Self {
-            prompt_tokens: self.prompt_tokens + other.prompt_tokens,
-            completion_tokens: self.completion_tokens + other.completion_tokens,
-            total_tokens: self.total_tokens + other.total_tokens,
+            tokens: self.tokens + other.tokens,
             prompt_tokens_details: None, // Could be implemented to merge details
             completion_tokens_details: None,
         }
@@ -99,9 +104,7 @@ impl std::ops::Add for Usage {
 
 impl std::ops::AddAssign for Usage {
     fn add_assign(&mut self, other: Self) {
-        self.prompt_tokens += other.prompt_tokens;
-        self.completion_tokens += other.completion_tokens;
-        self.total_tokens += other.total_tokens;
+        self.tokens += other.tokens;
         // Details are lost in accumulation for simplicity
         self.prompt_tokens_details = None;
         self.completion_tokens_details = None;

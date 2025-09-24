@@ -52,7 +52,7 @@ use bon::Builder;
 #[cfg(feature = "leaky-bucket")] // Add cfg attribute here
 use leaky_bucket::RateLimiter;
 use schemars::JsonSchema;
-use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer, ser::SerializeStruct};
 use serde_json::Value;
 #[cfg(feature = "leaky-bucket")] // Add cfg attribute here
 use std::sync::Arc;

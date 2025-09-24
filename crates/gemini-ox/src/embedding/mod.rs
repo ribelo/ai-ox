@@ -154,7 +154,7 @@ impl EmbedContentRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{content::Content, Gemini, Model};
+    use crate::{Gemini, Model, content::Content};
 
     #[tokio::test]
     #[ignore = "Requires GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
@@ -246,8 +246,8 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "Requires GOOGLE_AI_API_KEY environment variable and makes actual API calls"]
-    async fn test_embedding_with_output_dimensionality(
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn test_embedding_with_output_dimensionality()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let api_key = match std::env::var("GEMINI_API_KEY")
             .or_else(|_| std::env::var("GOOGLE_AI_API_KEY"))
         {

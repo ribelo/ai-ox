@@ -1,5 +1,6 @@
 use crate::message::AssistantMessage;
-use ai_ox_common::openai_format::TokenUsage;
+use ai_ox_common::timestamp::Timestamp;
+use ai_ox_common::usage::TokenUsage;
 use serde::{Deserialize, Serialize};
 
 // Mistral chat response format (uses multimodal AssistantMessage)
@@ -7,11 +8,11 @@ use serde::{Deserialize, Serialize};
 pub struct ChatResponse {
     pub id: String,
     pub object: String,
-    pub created: u64,
+    pub created: Timestamp,
     pub model: String,
     pub choices: Vec<Choice>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
+    pub usage: Option<TokenUsage>,
 }
 
 pub type Usage = TokenUsage;
@@ -29,11 +30,11 @@ pub struct Choice {
 pub struct ChatCompletionChunk {
     pub id: String,
     pub object: String,
-    pub created: u64,
+    pub created: Timestamp,
     pub model: String,
     pub choices: Vec<StreamChoice>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub usage: Option<Usage>,
+    pub usage: Option<TokenUsage>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

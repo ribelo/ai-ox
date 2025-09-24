@@ -1,8 +1,8 @@
 use crate::{
+    Gemini, GeminiRequestError,
     content::Content,
     generate_content::usage::UsageMetadata,
-    tool::{config::ToolConfig, Tool},
-    Gemini, GeminiRequestError,
+    tool::{Tool, config::ToolConfig},
 };
 use ai_ox_common::request_builder::{Endpoint, HttpMethod};
 use bon::Builder;

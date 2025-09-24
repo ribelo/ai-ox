@@ -1,7 +1,7 @@
 use bon::Builder;
 use core::fmt;
-use futures_util::stream::{self, BoxStream};
 use futures_util::StreamExt;
+use futures_util::stream::{self, BoxStream};
 #[cfg(feature = "leaky-bucket")]
 use leaky_bucket::RateLimiter;
 #[cfg(feature = "leaky-bucket")]

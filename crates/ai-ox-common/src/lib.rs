@@ -13,12 +13,17 @@
 pub mod error;
 pub mod openai_format;
 pub mod request_builder;
+pub mod response_format;
 pub mod streaming;
+pub mod timestamp;
+pub mod usage;
 
 pub use error::CommonRequestError;
 pub use openai_format::*;
 pub use request_builder::{Endpoint, HttpMethod, MultipartForm, RequestBuilder};
 pub use streaming::SseParser;
+pub use timestamp::Timestamp;
+pub use usage::TokenUsage;
 
 /// Re-export common types for convenience
 pub use async_trait::async_trait;

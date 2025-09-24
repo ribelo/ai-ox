@@ -1,16 +1,16 @@
 use crate::{
-    generate_content::{request::GenerateContentRequest, response::GenerateContentResponse},
     Gemini, GeminiRequestError,
+    generate_content::{request::GenerateContentRequest, response::GenerateContentResponse},
 };
 use ai_ox_common::{
+    BoxStream, CommonRequestError,
     request_builder::{
         AuthMethod, Endpoint, HttpMethod, RequestBuilder, RequestConfig, StreamOptions,
     },
-    BoxStream, CommonRequestError,
 };
 use futures_util::stream::BoxStream as FuturesBoxStream;
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::io::{Error as IoError, ErrorKind};
 

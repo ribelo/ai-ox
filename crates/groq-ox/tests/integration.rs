@@ -277,9 +277,9 @@ async fn test_basic_chat() -> Result<(), Box<dyn std::error::Error>> {
 
     // Check usage if present
     if let Some(usage) = &response.usage {
-        assert!(usage.prompt_tokens > 0);
-        assert!(usage.completion_tokens > 0);
-        assert!(usage.total_tokens > 0);
+        assert!(usage.prompt_tokens() > 0);
+        assert!(usage.completion_tokens() > 0);
+        assert!(usage.total_tokens() > 0);
     }
 
     println!("Basic chat test passed");

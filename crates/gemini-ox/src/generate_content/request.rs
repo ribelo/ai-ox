@@ -2,7 +2,7 @@ use bon::Builder;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::tool::{config::ToolConfig, Tool};
+use crate::tool::{Tool, config::ToolConfig};
 
 use super::{GenerationConfig, SafetySettings};
 use crate::content::Content;

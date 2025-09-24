@@ -1,5 +1,6 @@
 use crate::Usage;
 use ai_ox_common::openai_format::ToolCall;
+use ai_ox_common::usage::TokenUsage;
 use serde::{Deserialize, Serialize};
 
 /// Error object returned when the model fails to generate a Response
@@ -596,13 +597,20 @@ impl ResponsesResponse {
 impl From<ResponsesUsage> for Usage {
     fn from(responses_usage: ResponsesUsage) -> Self {
         Self {
-            prompt_tokens: responses_usage.input_tokens,
-            completion_tokens: responses_usage.output_tokens,
-            total_tokens: responses_usage.total_tokens,
+            tokens: TokenUsage {
+                prompt_tokens: Some(responses_usage.input_tokens as u64),
+                completion_tokens: Some(responses_usage.output_tokens as u64),
+                total_tokens: Some(responses_usage.total_tokens as u64),
+                cache_creation_tokens: None,
+                cache_read_tokens: None,
+                reasoning_tokens: responses_usage.reasoning_tokens.map(|t| t as u64),
+                tool_prompt_tokens: None,
+                thoughts_tokens: None,
+            },
             prompt_tokens_details: None,
             completion_tokens_details: responses_usage.reasoning_tokens.map(|reasoning_tokens| {
                 crate::usage::CompletionTokensDetails {
-                    reasoning_tokens: Some(reasoning_tokens),
+                    reasoning_tokens: Some(reasoning_tokens as u64),
                     audio_tokens: None,
                 }
             }),
@@ -614,12 +622,12 @@ impl From<ResponsesUsage> for Usage {
 impl From<Usage> for ResponsesUsage {
     fn from(usage: Usage) -> Self {
         Self {
-            input_tokens: usage.prompt_tokens,
-            output_tokens: usage.completion_tokens,
-            total_tokens: usage.total_tokens,
+            input_tokens: usage.prompt_tokens() as u32,
+            output_tokens: usage.completion_tokens() as u32,
+            total_tokens: usage.total_tokens() as u32,
             input_tokens_details: None,
             output_tokens_details: None,
-            reasoning_tokens: None,
+            reasoning_tokens: usage.tokens.reasoning_tokens.map(|t| t as u32),
             cache: None,
         }
     }

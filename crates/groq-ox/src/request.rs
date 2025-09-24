@@ -2,23 +2,13 @@
 // This demonstrates Grug's approach: inherit base types, add provider extensions
 
 use bon::Builder;
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde::Serialize;
 
-// Import base OpenAI format types
-use ai_ox_common::openai_format::{Message, Tool, ToolChoice};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ResponseFormat {
-    Text,
-    JsonObject,
-    #[serde(untagged)]
-    JsonSchema {
-        r#type: String,
-        json_schema: Value,
-    },
-}
+// Import base OpenAI-format types and shared response format
+use ai_ox_common::{
+    openai_format::{Message, Tool, ToolChoice},
+    response_format::ResponseFormat,
+};
 
 /// Groq chat request - uses base OpenAI format with Groq-specific extensions
 ///

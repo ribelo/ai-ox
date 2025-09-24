@@ -14,7 +14,7 @@ use ai_ox_common::openai_format::ToolChoice;
 use async_stream::try_stream;
 use bon::Builder;
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::BoxStream};
-use groq_ox::{Groq, request::ResponseFormat};
+use groq_ox::{Groq, ResponseFormat};
 
 /// Returns the default tool choice for Groq models.
 /// Defaults to Auto, allowing the model to decide when to use tools.
@@ -141,13 +141,10 @@ impl Model for GroqModel {
             let schema_value: serde_json::Value = serde_json::from_str(&schema)
                 .map_err(|e| GroqError::ResponseParsing(format!("Invalid schema: {}", e)))?;
 
-            groq_request.response_format = Some(ResponseFormat::JsonSchema {
-                r#type: "json_schema".to_string(),
-                json_schema: serde_json::json!({
-                    "name": "response",
-                    "schema": schema_value
-                }),
-            });
+            groq_request.response_format = Some(ResponseFormat::json_schema(serde_json::json!({
+                "name": "response",
+                "schema": schema_value
+            })));
 
             let response = self
                 .client
@@ -173,10 +170,10 @@ impl Model for GroqModel {
                     usage.requests = 1;
                     usage
                         .input_tokens_by_modality
-                        .insert(crate::usage::Modality::Text, u.prompt_tokens as u64);
+                        .insert(crate::usage::Modality::Text, u.prompt_tokens() as u64);
                     usage
                         .output_tokens_by_modality
-                        .insert(crate::usage::Modality::Text, u.completion_tokens as u64);
+                        .insert(crate::usage::Modality::Text, u.completion_tokens() as u64);
                     usage
                 })
                 .unwrap_or_else(Usage::new);

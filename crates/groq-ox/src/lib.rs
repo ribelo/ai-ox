@@ -24,6 +24,7 @@ pub use usage::Usage;
 
 // Re-export types from ai-ox-common for convenience
 pub use ai_ox_common::openai_format::{Message, Tool, ToolCall, ToolChoice};
+pub use ai_ox_common::response_format::ResponseFormat;
 
 // Create a tool module with helper functions for backward compatibility
 pub mod tool {

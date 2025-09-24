@@ -7,24 +7,31 @@ use anthropic_ox::{
     },
     request::{ChatRequest as AnthropicRequest, ThinkingConfig},
     response::{ChatResponse as AnthropicResponse, StopReason},
+    tool::{
+        CustomTool, Tool, ToolChoice as AnthropicToolChoice, ToolResult, ToolResultContent, ToolUse,
+    },
 };
 
 use openai_ox::{
     request::ChatRequest as OpenAIRequest,
     response::{ChatResponse as OpenAIResponse, Choice as OpenAIChoice},
     responses::{
-        ReasoningItem, ResponseMessage, ResponseOutputContent, ResponseOutputItem, ResponsesInput,
-        ResponsesRequest, ResponsesResponse, response::TextItem,
+        ResponseOutputContent, ResponseOutputItem, ResponsesInput, ResponsesRequest,
+        ResponsesResponse,
     },
 };
 
-use ai_ox_common::openai_format::{Message as OpenAIMessage, MessageRole as OpenAIRole};
+use ai_ox_common::openai_format::{
+    Message as OpenAIMessage, MessageRole as OpenAIRole, ToolChoice as OpenAIToolChoice,
+};
 
 use conversion_ox::anthropic_openai::{
     anthropic_to_openai_request, anthropic_to_openai_responses_request,
     anthropic_to_openai_responses_response, openai_responses_to_anthropic_request,
-    openai_responses_to_anthropic_response, openai_to_anthropic_response,
+    openai_responses_to_anthropic_response, openai_to_anthropic_request,
+    openai_to_anthropic_response,
 };
+use serde_json::json;
 
 #[test]
 fn test_anthropic_to_openai_basic_conversion() {
@@ -67,6 +74,292 @@ fn test_anthropic_to_openai_basic_conversion() {
 }
 
 #[test]
+fn test_tool_call_names_are_sanitized_in_openai_request() {
+    let tool_name = "My Cool Tool!";
+    let sanitized = "my_cool_tool";
+
+    let anthropic_request = AnthropicRequest::builder()
+        .model("claude-3-haiku-20240307")
+        .messages(vec![
+            AnthropicMessage {
+                role: AnthropicRole::User,
+                content: StringOrContents::String("Use the tool".to_string()),
+            },
+            AnthropicMessage {
+                role: AnthropicRole::Assistant,
+                content: StringOrContents::Contents(vec![AnthropicContent::ToolUse(ToolUse::new(
+                    "call_1".to_string(),
+                    tool_name.to_string(),
+                    json!({"action": "run"}),
+                ))]),
+            },
+        ])
+        .tools(vec![Tool::Custom(
+            CustomTool::new(tool_name.to_string(), "Does things".to_string())
+                .with_schema(json!({"type": "object"})),
+        )])
+        .build();
+
+    let openai_request = anthropic_to_openai_request(anthropic_request).unwrap();
+
+    let registered_name = openai_request
+        .tools
+        .as_ref()
+        .and_then(|tools| tools.first())
+        .map(|tool| tool.function.name.as_str())
+        .expect("tool registered");
+    assert_eq!(
+        registered_name, sanitized,
+        "tool registration should be sanitized"
+    );
+
+    let call_name = openai_request
+        .messages
+        .iter()
+        .find_map(|msg| {
+            msg.tool_calls
+                .as_ref()?
+                .first()
+                .map(|call| call.function.name.as_str())
+        })
+        .expect("tool call present");
+    assert_eq!(
+        call_name, sanitized,
+        "tool call should reuse sanitized function name"
+    );
+
+    let roundtrip_request = openai_to_anthropic_request(openai_request).unwrap();
+
+    let restored_tool_name = roundtrip_request
+        .tools
+        .as_ref()
+        .and_then(|tools| tools.first())
+        .and_then(|tool| match tool {
+            Tool::Custom(custom) => Some(custom.name.as_str()),
+            _ => None,
+        })
+        .expect("tool restored");
+    assert_eq!(
+        restored_tool_name, tool_name,
+        "round-trip should restore original display name"
+    );
+
+    let restored_tool_use_name = roundtrip_request
+        .messages
+        .0
+        .iter()
+        .find_map(|message| match &message.content {
+            StringOrContents::Contents(contents) => {
+                contents.iter().find_map(|content| match content {
+                    AnthropicContent::ToolUse(tool_use) => Some(tool_use.name.as_str()),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .expect("tool use restored");
+    assert_eq!(
+        restored_tool_use_name, tool_name,
+        "tool use should retain original display name after round-trip"
+    );
+}
+
+#[test]
+fn test_tool_result_roundtrip_preserves_special_characters() {
+    let tool_text = "value: pipes|and:colons".to_string();
+
+    let anthropic_response = AnthropicResponse {
+        id: "resp_test".to_string(),
+        r#type: "message".to_string(),
+        role: AnthropicRole::Assistant,
+        content: vec![AnthropicContent::ToolResult(ToolResult {
+            tool_use_id: "call_1".to_string(),
+            content: vec![ToolResultContent::Text {
+                text: tool_text.clone(),
+            }],
+            is_error: None,
+            cache_control: None,
+        })],
+        model: "claude-3-haiku-20240307".to_string(),
+        stop_reason: Some(StopReason::ToolUse),
+        stop_sequence: None,
+        usage: Default::default(),
+    };
+
+    let openai_response =
+        anthropic_to_openai_responses_response(anthropic_response.clone()).unwrap();
+    let roundtrip = openai_responses_to_anthropic_response(openai_response).unwrap();
+
+    let recovered_text = roundtrip
+        .content
+        .iter()
+        .find_map(|content| match content {
+            AnthropicContent::ToolResult(result) => {
+                result.content.iter().find_map(|part| match part {
+                    ToolResultContent::Text { text } => Some(text.clone()),
+                    _ => None,
+                })
+            }
+            _ => None,
+        })
+        .expect("tool result content should roundtrip");
+
+    assert_eq!(
+        recovered_text, tool_text,
+        "tool result text must remain intact"
+    );
+}
+
+#[test]
+fn test_legacy_tool_result_string_decodes() {
+    let legacy_text = "[TOOL_RESULT:call_legacy]text:hello:world";
+
+    let openai_response = ResponsesResponse {
+        id: "resp_legacy".to_string(),
+        created_at: 0,
+        output_text: String::new(),
+        error: None,
+        incomplete_details: None,
+        instructions: None,
+        metadata: None,
+        model: "gpt-test".to_string(),
+        object: "response".to_string(),
+        output: vec![ResponseOutputItem::Message {
+            id: "msg_legacy".to_string(),
+            content: vec![ResponseOutputContent::Text {
+                text: legacy_text.to_string(),
+                annotations: vec![],
+            }],
+            role: "assistant".to_string(),
+            status: "completed".to_string(),
+        }],
+        parallel_tool_calls: false,
+        temperature: None,
+        tool_choice: None,
+        tools: vec![],
+        top_p: None,
+        background: None,
+        conversation: None,
+        max_output_tokens: None,
+        previous_response_id: None,
+        prompt_cache_key: None,
+        max_tool_calls: None,
+        service_tier: None,
+        top_logprobs: None,
+        reasoning: None,
+        safety_identifier: None,
+        status: Some("completed".to_string()),
+        text: None,
+        truncation: None,
+        usage: None,
+        user: None,
+    };
+
+    let anthropic_response = openai_responses_to_anthropic_response(openai_response).unwrap();
+
+    let tool_result = anthropic_response
+        .content
+        .iter()
+        .find_map(|content| match content {
+            AnthropicContent::ToolResult(result) => Some(result),
+            _ => None,
+        })
+        .expect("legacy tool result should decode");
+
+    assert_eq!(tool_result.tool_use_id, "call_legacy");
+
+    let text_part = tool_result
+        .content
+        .iter()
+        .find_map(|part| match part {
+            ToolResultContent::Text { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .expect("text content present");
+
+    assert_eq!(text_part, "hello:world");
+}
+
+#[test]
+fn test_anthropic_tool_choice_and_stop_sequences_map_to_openai_chat() {
+    fn base_request() -> AnthropicRequest {
+        AnthropicRequest::builder()
+            .model("claude-3-haiku-20240307")
+            .messages(vec![AnthropicMessage {
+                role: AnthropicRole::User,
+                content: StringOrContents::String("Hello".to_string()),
+            }])
+            .build()
+    }
+
+    let tool_display_name = "Weather Lookup (beta)".to_string();
+    let sanitized_tool_name = "weather_lookup_beta".to_string();
+    let base_tool = Tool::Custom(
+        CustomTool::new(tool_display_name.clone(), "Weather lookup".to_string()).with_schema(
+            json!({
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"]
+            }),
+        ),
+    );
+
+    let stop_sequences = vec!["STOP".to_string(), "END".to_string()];
+
+    let mut auto_request = base_request();
+    auto_request.tools = Some(vec![base_tool.clone()]);
+    auto_request.tool_choice = Some(AnthropicToolChoice::Auto);
+    auto_request.stop_sequences = Some(stop_sequences.clone());
+    let openai_auto = anthropic_to_openai_request(auto_request).expect("conversion should succeed");
+    assert_eq!(openai_auto.stop, Some(stop_sequences.clone()));
+    match openai_auto
+        .tool_choice
+        .expect("expected tool choice for auto")
+    {
+        OpenAIToolChoice::Auto => {}
+        other => panic!("expected OpenAI Auto tool choice, got {other:?}"),
+    }
+    assert_eq!(openai_auto.parallel_tool_calls, None);
+
+    let mut any_request = base_request();
+    any_request.tools = Some(vec![base_tool.clone()]);
+    any_request.tool_choice = Some(AnthropicToolChoice::Any);
+    let openai_any = anthropic_to_openai_request(any_request).expect("conversion should succeed");
+    match openai_any
+        .tool_choice
+        .expect("expected tool choice for any")
+    {
+        OpenAIToolChoice::Required => {}
+        other => panic!("expected OpenAI Required tool choice, got {other:?}"),
+    }
+    assert_eq!(openai_any.parallel_tool_calls, Some(false));
+
+    let mut specific_request = base_request();
+    specific_request.tools = Some(vec![base_tool]);
+    specific_request.tool_choice = Some(AnthropicToolChoice::Tool {
+        name: tool_display_name.clone(),
+    });
+    let openai_specific =
+        anthropic_to_openai_request(specific_request).expect("conversion should succeed");
+    match openai_specific
+        .tool_choice
+        .expect("expected tool choice for specific tool")
+    {
+        OpenAIToolChoice::Specific { function, .. } => {
+            assert_eq!(function.name, sanitized_tool_name);
+        }
+        other => panic!("expected specific function tool choice, got {other:?}"),
+    }
+    assert_eq!(openai_specific.parallel_tool_calls, Some(false));
+
+    let mut empty_stop_request = base_request();
+    empty_stop_request.stop_sequences = Some(Vec::new());
+    let openai_empty =
+        anthropic_to_openai_request(empty_stop_request).expect("conversion should succeed");
+    assert_eq!(openai_empty.stop, Some(Vec::new()));
+}
+
+#[test]
 fn test_openai_to_anthropic_response_conversion() {
     // Create OpenAI response
     let openai_choice = OpenAIChoice {
@@ -88,7 +381,7 @@ fn test_openai_to_anthropic_response_conversion() {
     let openai_response = OpenAIResponse {
         id: "chatcmpl-test123".to_string(),
         object: "chat.completion".to_string(),
-        created: 1234567890,
+        created: 1_234_567_890,
         model: "gpt-3.5-turbo".to_string(),
         choices: vec![openai_choice],
         usage: None,
@@ -199,7 +492,7 @@ fn test_complex_conversation_roundtrip() {
     let simulated_response = OpenAIResponse {
         id: "complex-test".to_string(),
         object: "chat.completion".to_string(),
-        created: 1234567890,
+        created: 1_234_567_890,
         model: "claude-3-sonnet-20240229".to_string(),
         choices: vec![OpenAIChoice {
             index: 0,
@@ -256,7 +549,7 @@ fn test_error_handling() {
     let empty_openai_response = OpenAIResponse {
         id: "empty-test".to_string(),
         object: "chat.completion".to_string(),
-        created: 1234567890,
+        created: 1_234_567_890,
         model: "gpt-3.5-turbo".to_string(),
         choices: vec![], // Empty choices
         usage: None,
@@ -281,7 +574,7 @@ fn simulate_openai_response_from_request(request: &OpenAIRequest) -> OpenAIRespo
     OpenAIResponse {
         id: "simulated-response".to_string(),
         object: "chat.completion".to_string(),
-        created: 1234567890,
+        created: 1_234_567_890,
         model: request.model.clone(),
         choices: vec![OpenAIChoice {
             index: 0,
@@ -354,6 +647,60 @@ fn test_anthropic_to_openai_responses_request_basic() {
         responses_request.include,
         Some(vec!["reasoning.encrypted_content".to_string()])
     );
+}
+
+#[test]
+fn test_anthropic_tool_choice_maps_to_openai_responses_request() {
+    fn base_request() -> AnthropicRequest {
+        AnthropicRequest::builder()
+            .model("claude-3-opus-20240229")
+            .messages(vec![AnthropicMessage {
+                role: AnthropicRole::User,
+                content: StringOrContents::String("Hello".to_string()),
+            }])
+            .build()
+    }
+
+    let tool_display_name = "Weather Lookup (beta)".to_string();
+    let sanitized_tool_name = "weather_lookup_beta".to_string();
+    let base_tool = Tool::Custom(
+        CustomTool::new(tool_display_name.clone(), "Weather lookup".to_string()).with_schema(
+            json!({
+                "type": "object",
+                "properties": {"location": {"type": "string"}},
+                "required": ["location"]
+            }),
+        ),
+    );
+
+    let mut auto_request = base_request();
+    auto_request.tools = Some(vec![base_tool.clone()]);
+    auto_request.tool_choice = Some(AnthropicToolChoice::Auto);
+    let responses_auto =
+        anthropic_to_openai_responses_request(auto_request).expect("conversion should succeed");
+    assert_eq!(responses_auto.tool_choice.as_deref(), Some("auto"));
+    assert_eq!(responses_auto.parallel_tool_calls, None);
+
+    let mut any_request = base_request();
+    any_request.tools = Some(vec![base_tool.clone()]);
+    any_request.tool_choice = Some(AnthropicToolChoice::Any);
+    let responses_any =
+        anthropic_to_openai_responses_request(any_request).expect("conversion should succeed");
+    assert_eq!(responses_any.tool_choice.as_deref(), Some("any"));
+    assert_eq!(responses_any.parallel_tool_calls, Some(false));
+
+    let mut specific_request = base_request();
+    specific_request.tools = Some(vec![base_tool]);
+    specific_request.tool_choice = Some(AnthropicToolChoice::Tool {
+        name: tool_display_name,
+    });
+    let responses_specific =
+        anthropic_to_openai_responses_request(specific_request).expect("conversion should succeed");
+    assert_eq!(
+        responses_specific.tool_choice.as_deref(),
+        Some(sanitized_tool_name.as_str())
+    );
+    assert_eq!(responses_specific.parallel_tool_calls, Some(false));
 }
 
 #[test]
