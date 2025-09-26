@@ -1,11 +1,69 @@
 use chrono::{DateTime, TimeZone, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, de};
 
 /// Unified timestamp type shared across all providers.
 /// Internally stores as DateTime<Utc> for consistency and precision.
 /// Provides conversions to/from Unix timestamps and ISO strings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Timestamp(DateTime<Utc>);
+
+impl<'de> Deserialize<'de> for Timestamp {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct TimestampVisitor;
+
+        impl<'de> de::Visitor<'de> for TimestampVisitor {
+            type Value = Timestamp;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a UNIX timestamp (int) or RFC 3339 string")
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Timestamp::from_unix_timestamp_i64(value))
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(Timestamp::from_unix_timestamp(value))
+            }
+
+            fn visit_f64<E>(self, value: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if !value.is_finite() {
+                    return Err(E::custom("floating point timestamp is not finite"));
+                }
+                Ok(Timestamp::from_unix_timestamp_i64(value.trunc() as i64))
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Timestamp::from_iso_string(value)
+                    .map_err(|err| E::custom(format!("invalid RFC 3339 timestamp: {err}")))
+            }
+
+            fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                self.visit_str(&value)
+            }
+        }
+
+        deserializer.deserialize_any(TimestampVisitor)
+    }
+}
 
 impl Timestamp {
     /// Create a new timestamp from the current time
@@ -97,5 +155,24 @@ impl From<i64> for Timestamp {
 impl From<Timestamp> for i64 {
     fn from(ts: Timestamp) -> Self {
         ts.to_unix_timestamp_i64()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Timestamp;
+
+    #[test]
+    fn deserializes_from_integer_seconds() {
+        let json = "1758887156";
+        let ts: Timestamp = serde_json::from_str(json).expect("integer timestamps should parse");
+        assert_eq!(ts.to_unix_timestamp_i64(), 1_758_887_156);
+    }
+
+    #[test]
+    fn deserializes_from_rfc3339_string() {
+        let json = "\"2025-09-26T11:45:56Z\"";
+        let ts: Timestamp = serde_json::from_str(json).expect("RFC3339 string should parse");
+        assert_eq!(ts.to_unix_timestamp_i64(), 1_758_887_156);
     }
 }

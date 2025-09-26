@@ -368,6 +368,24 @@ mod tests {
     }
 
     #[test]
+    fn test_chat_completion_chunk_accepts_integer_timestamp() {
+        let json = serde_json::json!({
+            "id": "chunk",
+            "provider": "openrouter",
+            "model": "grok",
+            "object": "chat.completion.chunk",
+            "created": 1_758_887_156,
+            "choices": [],
+            "usage": null
+        });
+
+        let raw = serde_json::to_string(&json).expect("serialize test chunk");
+        let chunk: ChatCompletionChunk =
+            serde_json::from_str(&raw).expect("integer timestamp should deserialize");
+        assert_eq!(chunk.created.to_unix_timestamp_i64(), 1_758_887_156);
+    }
+
+    #[test]
     fn test_extract_reasoning_content_empty() {
         let result = extract_reasoning_content(None, None, None);
         assert_eq!(result.len(), 0);
