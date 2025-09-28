@@ -1,0 +1,29 @@
+[package]
+name = "opencode-zen"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Opencode Zen OpenAI-compatible API client for Rust"
+readme = "README.md"
+repository = "https://github.com/ribelo/ai-ox"
+categories = ["api-bindings", "asynchronous"]
+keywords = ["opencode", "zen", "ai", "api", "client"]
+
+[features]
+default = []
+leaky-bucket = ["dep:leaky-bucket"]
+
+[dependencies]
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+futures-util = { workspace = true }
+async-stream = { workspace = true }
+ai-ox-common = { workspace = true }
+
+leaky-bucket = { workspace = true, optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "test-util"] }
+wiremock = "0.6"
