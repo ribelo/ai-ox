@@ -177,7 +177,18 @@ impl crate::Groq {
             .await?;
 
         if res.status().is_success() {
-            Ok(res.json::<TranscriptionResponse>().await?)
+            if request.response_format == Some(TranscriptionFormat::Text) {
+                let text = res.text().await?;
+                Ok(TranscriptionResponse {
+                    text,
+                    language: None,
+                    duration: None,
+                    segments: None,
+                    words: None,
+                })
+            } else {
+                Ok(res.json::<TranscriptionResponse>().await?)
+            }
         } else {
             let status = res.status();
             let bytes = res.bytes().await?;

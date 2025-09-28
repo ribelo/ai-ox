@@ -1,4 +1,4 @@
-use ai_ox_common::openai_format::{Message as GroqMessage, MessageRole as GroqMessageRole};
+use ai_ox_common::openai_format::Message as GroqMessage;
 use groq_ox::{
     request::ChatRequest,
     response::{ChatCompletionChunk, ChatResponse},
